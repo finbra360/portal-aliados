@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-finbra-purple: #5d5bdb;
+  --color-finbra-lilac: #e9aef9;
+  --color-finbra-gray: #5d5d5d;
+  --font-sans: "Montserrat", sans-serif;
+}
+
+body {
+  background-color: #f7f7fb;
+  color: #000000;
+}
