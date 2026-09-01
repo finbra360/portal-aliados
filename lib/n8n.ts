@@ -33,6 +33,12 @@ export interface VerifyCodeResponse {
 
 export interface PorMes {
   mes: string;
+  anio: number;
+  monto: number;
+}
+
+export interface OperacionFondeada {
+  fecha: string;
   monto: number;
 }
 
@@ -40,6 +46,7 @@ export interface BrokerStats {
   totalHistorico: number;
   creditosCount: number;
   porMes: PorMes[];
+  operaciones: OperacionFondeada[];
 }
 
 export interface Recurso {
@@ -51,6 +58,35 @@ export interface Recurso {
 
 export interface RecursosResponse {
   recursos: Recurso[];
+}
+
+export type LeaderboardCriterio = "monto" | "operaciones";
+
+export interface LeaderboardEntry {
+  brokerId: string;
+  nombre: string;
+  totalColocado: number;
+  numOperaciones: number;
+  ticketPromedio: number;
+}
+
+export interface LeaderboardResponse {
+  ranking: LeaderboardEntry[];
+  criterioActual: LeaderboardCriterio;
+}
+
+/**
+ * No implementado todavía — no existe backend de concursos. El tipo queda
+ * definido para que activar un concurso futuro solo requiera el webhook.
+ */
+export interface Contest {
+  id: string;
+  nombre: string;
+  periodoInicio: string;
+  periodoFin: string;
+  criterio: LeaderboardCriterio | "puntos";
+  premio: string;
+  standings: LeaderboardEntry[];
 }
 
 export function requestCode(email: string) {
@@ -73,6 +109,12 @@ export function getStats(brokerId: string) {
 
 export function getRecursos() {
   return callWebhook<RecursosResponse>("/webhook/broker-portal-recursos", {
+    method: "GET",
+  });
+}
+
+export function getLeaderboard() {
+  return callWebhook<LeaderboardResponse>("/webhook/broker-portal-leaderboard", {
     method: "GET",
   });
 }

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 
-const PROTECTED_PATHS = ["/dashboard", "/recursos"];
+const PROTECTED_PATHS = ["/dashboard", "/recursos", "/operaciones", "/ranking", "/comisiones", "/concursos", "/perfil"];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -22,5 +22,14 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/recursos/:path*", "/login"],
+  matcher: [
+    "/dashboard/:path*",
+    "/recursos/:path*",
+    "/operaciones/:path*",
+    "/ranking/:path*",
+    "/comisiones/:path*",
+    "/concursos/:path*",
+    "/perfil/:path*",
+    "/login",
+  ],
 };
