@@ -1,4 +1,5 @@
 import { getRecursos, type Recurso } from "@/lib/n8n";
+import { listResources } from "@/lib/db/resources";
 import {
   PRODUCTO,
   PERFIL_CLIENTE_IDEAL,
@@ -34,6 +35,13 @@ export default async function RecursosPage() {
     recursos = data.recursos;
   } catch {
     loadError = true;
+  }
+
+  let cmsResources: Awaited<ReturnType<typeof listResources>> = [];
+  try {
+    cmsResources = await listResources(true);
+  } catch {
+    // El CMS de recursos es un complemento — si falla, seguimos con lo que venga de n8n.
   }
 
   const porCategoria = recursos.reduce<Record<string, Recurso[]>>((acc, recurso) => {
@@ -82,6 +90,43 @@ export default async function RecursosPage() {
             por el equipo de marketing. Mientras tanto, aquí tienes información clave para vender:
           </p>
         </Card>
+      )}
+
+      {cmsResources.length > 0 && (
+        <div className="space-y-6">
+          {Object.entries(
+            cmsResources.reduce<Record<string, typeof cmsResources>>((acc, r) => {
+              (acc[r.categoria] ??= []).push(r);
+              return acc;
+            }, {}),
+          ).map(([categoria, items]) => (
+            <section key={categoria}>
+              <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-finbra-purple">{categoria}</h2>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {items.map((item) =>
+                  item.url ? (
+                    <a
+                      key={item.id}
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="rounded-xl border border-finbra-purple/10 bg-white p-5 shadow-[0_2px_12px_rgba(93,91,219,0.12)] transition hover:shadow-[0_4px_24px_rgba(93,91,219,0.2)]"
+                    >
+                      <Badge>{item.tipo}</Badge>
+                      <p className="mt-2 font-medium">{item.titulo}</p>
+                    </a>
+                  ) : (
+                    <div key={item.id} className="rounded-xl border border-finbra-purple/10 bg-white p-5 shadow-[0_2px_12px_rgba(93,91,219,0.12)]">
+                      <Badge>{item.tipo}</Badge>
+                      <p className="mt-2 font-medium">{item.titulo}</p>
+                      {item.contenido && <p className="mt-1 text-sm text-finbra-gray">{item.contenido}</p>}
+                    </div>
+                  ),
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
       )}
 
       <DraftSection title="Ficha de producto">

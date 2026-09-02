@@ -8,19 +8,20 @@
     "start": "next start"
   },
   "dependencies": {
+    "jose": "6.2.9",
     "next": "16.3.1",
+    "postgres": "^3.4.9",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "jose": "6.2.9",
     "recharts": "3.10.1"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@tailwindcss/postcss": "4.3.3",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "postcss": "^8",
     "tailwindcss": "4.3.3",
-    "@tailwindcss/postcss": "4.3.3",
-    "postcss": "^8"
+    "typescript": "^5"
   }
 }
