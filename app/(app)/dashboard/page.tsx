@@ -2,6 +2,7 @@ import Link from "next/link";
 import { cookies } from "next/headers";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { getBrokerContext } from "@/lib/broker-data";
+import { summarizeCommissions } from "@/lib/commissions";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import StatCard from "@/components/ui/StatCard";
@@ -39,6 +40,7 @@ export default async function DashboardPage() {
   const ticketPromedio = stats.creditosCount > 0 ? stats.totalHistorico / stats.creditosCount : 0;
   const brokerArriba = position && position > 1 ? ctx.leaderboard.ranking[position - 2] : null;
   const faltaParaSubir = brokerArriba ? brokerArriba.totalColocado - stats.totalHistorico : 0;
+  const comisiones = summarizeCommissions(stats.operaciones);
 
   return (
     <div className="space-y-6">
@@ -116,15 +118,34 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      <EmptyState
-        title="Comisiones aún no conectadas"
-        description="Cuando tu comisión esté disponible en el sistema, la verás aquí. Mientras tanto revisa la sección Comisiones para más detalle."
-        action={
-          <Link href="/comisiones" className="text-sm font-semibold text-finbra-purple hover:underline">
-            Ir a Comisiones →
-          </Link>
-        }
-      />
+      {stats.operaciones.length === 0 ? (
+        <EmptyState
+          title="Comisiones aún no disponibles"
+          description="En cuanto tengas tu primera colocación con Finbra, tu comisión aparecerá aquí."
+          action={
+            <Link href="/comisiones" className="text-sm font-semibold text-finbra-purple hover:underline">
+              Ir a Comisiones →
+            </Link>
+          }
+        />
+      ) : (
+        <Card>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm text-finbra-gray">Comisión total generada</p>
+              <p className="mt-1 text-3xl font-bold text-finbra-purple">{formatCurrency(comisiones.totalGenerado)}</p>
+              {comisiones.countPendienteDefinir > 0 && (
+                <p className="mt-1 text-xs text-finbra-gray">
+                  {comisiones.countPendienteDefinir} operación(es) sin % de apertura capturado todavía
+                </p>
+              )}
+            </div>
+            <Link href="/comisiones" className="text-sm font-semibold text-finbra-purple hover:underline">
+              Ver detalle →
+            </Link>
+          </div>
+        </Card>
+      )}
 
       <Card>
         <p className="mb-4 text-sm font-medium text-finbra-gray">Colocación en el tiempo</p>

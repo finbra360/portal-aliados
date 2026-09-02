@@ -40,6 +40,10 @@ export interface PorMes {
 export interface OperacionFondeada {
   fecha: string;
   monto: number;
+  /** % de comisión de apertura pactado con el cliente. undefined si no se ha capturado en el Sheet. */
+  comisionAperturaPct?: number;
+  /** true solo cuando el cliente ya terminó de pagar el crédito. */
+  pagadoTotalidad: boolean;
 }
 
 export interface BrokerStats {
