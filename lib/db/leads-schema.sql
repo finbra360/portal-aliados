@@ -263,3 +263,20 @@ CREATE TABLE IF NOT EXISTS lead_calibration_suggestions (
 
 CREATE INDEX IF NOT EXISTS idx_lead_calibration_suggestions_reviewed ON lead_calibration_suggestions(reviewed, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_lead_calibration_suggestions_vertical ON lead_calibration_suggestions(vertical_pack_id);
+
+-- Control de cuota y visibilidad de costo (Etapa 7): un registro por llamada a una
+-- fuente externa de pago o con cuota limitada. SerpApi (plan gratuito = 100
+-- busquedas/mes) es la unica con un limite duro que de verdad se puede romper,
+-- por eso es la unica con gate en Discovery -- Anthropic se registra solo para
+-- visibilidad de volumen (el costo real en dolares se revisa en la consola de
+-- Anthropic, aqui no se inventa una cifra que el workflow no puede calcular).
+CREATE TABLE IF NOT EXISTS lead_api_usage (
+  id SERIAL PRIMARY KEY,
+  source TEXT NOT NULL CHECK (source IN ('serpapi', 'anthropic')),
+  outcome TEXT NOT NULL CHECK (outcome IN ('exitoso', 'omitido_por_cuota', 'error')),
+  vertical_pack_id TEXT REFERENCES lead_vertical_packs(id),
+  metadata JSONB,
+  called_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_lead_api_usage_source_date ON lead_api_usage(source, called_at);
