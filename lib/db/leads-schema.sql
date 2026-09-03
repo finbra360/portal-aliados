@@ -102,6 +102,12 @@ CREATE TABLE IF NOT EXISTS lead_companies (
   ciclo_cobranza_dias_estimado INTEGER,
   cliente_b2b_confirmado BOOLEAN NOT NULL DEFAULT false,
 
+  -- Cuántas veces Enrichment intentó leer el sitio. Existe para cortar el
+  -- reintento infinito sobre sitios genuinamente caídos (DNS muerto, 403, 500,
+  -- certificado vencido): al llegar al tope, la empresa deja la cola de
+  -- Enrichment y se califica con lo que dio la fuente original.
+  enrichment_intentos INTEGER NOT NULL DEFAULT 0,
+
   -- Hard gate de garantía (Etapa 4): el hecho y la confianza en el hecho
   -- son campos separados a propósito -- garantia_verificado=false es lo
   -- que fuerza HITL aunque tiene_garantia_* sea true.
@@ -222,6 +228,16 @@ CREATE TABLE IF NOT EXISTS lead_hitl_review (
   resolved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Columnas agregadas después de la primera versión del esquema. CREATE TABLE
+-- IF NOT EXISTS no las agrega a una tabla que ya existe, así que van aparte
+-- para que este archivo siga siendo idempotente sobre bases ya creadas.
+ALTER TABLE lead_companies ADD COLUMN IF NOT EXISTS enrichment_intentos INTEGER NOT NULL DEFAULT 0;
+
+-- Enrichment consulta por esta combinación en cada corrida.
+CREATE INDEX IF NOT EXISTS idx_lead_companies_enrichment_cola
+  ON lead_companies(enrichment_intentos)
+  WHERE descripcion IS NULL AND domain IS NOT NULL;
 
 -- Dedup: dominio es la clave más fuerte, único cuando existe.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_lead_companies_domain ON lead_companies(domain) WHERE domain IS NOT NULL;
