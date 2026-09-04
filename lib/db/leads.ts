@@ -1,7 +1,11 @@
 import { sql } from "@/lib/db";
 import { logAudit } from "./audit";
 
-export type LeadCategoria = "hot" | "warm" | "qualified" | "discarded";
+// contacto_directo: pasó los hard gates con datos del directorio público pero no
+// tiene sitio web que enriquecer. No se gradúa contra hot/warm/qualified porque
+// sin ventas, ciclo de cobranza ni señales su score no da para rankear; se
+// trabaja como lista de correo o teléfono.
+export type LeadCategoria = "hot" | "warm" | "qualified" | "discarded" | "contacto_directo";
 
 export type LeadEstatusComercial =
   | "nuevo"
@@ -23,6 +27,7 @@ export interface LeadCompany {
   domain: string | null;
   websiteUrl: string | null;
   telefonoPrincipal: string | null;
+  correoCorporativo: string | null;
   empleadosEstimado: number | null;
   antiguedadAniosEstimado: number | null;
   tieneGarantiaVehicular: boolean;
@@ -52,6 +57,7 @@ function mapCompanyRow(r: Record<string, unknown>): LeadCompany {
     domain: (r.domain as string) ?? null,
     websiteUrl: (r.website_url as string) ?? null,
     telefonoPrincipal: (r.telefono_principal as string) ?? null,
+    correoCorporativo: (r.correo_corporativo as string) ?? null,
     empleadosEstimado: r.empleados_estimado != null ? Number(r.empleados_estimado) : null,
     antiguedadAniosEstimado: r.antiguedad_anios_estimado != null ? Number(r.antiguedad_anios_estimado) : null,
     tieneGarantiaVehicular: Boolean(r.tiene_garantia_vehicular),
@@ -115,7 +121,14 @@ export async function countLeadsByCategoria(): Promise<Record<string, number>> {
     FROM lead_companies
     GROUP BY COALESCE(categoria, 'sin_calificar')
   `;
-  const base: Record<string, number> = { hot: 0, warm: 0, qualified: 0, discarded: 0, sin_calificar: 0 };
+  const base: Record<string, number> = {
+    hot: 0,
+    warm: 0,
+    qualified: 0,
+    contacto_directo: 0,
+    discarded: 0,
+    sin_calificar: 0,
+  };
   for (const r of rows) {
     base[r.categoria as string] = r.count as number;
   }

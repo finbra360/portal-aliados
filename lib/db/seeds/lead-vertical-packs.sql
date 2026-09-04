@@ -14,7 +14,7 @@ VALUES (
   '{
     "fuentes_prioritarias": ["denue", "google_maps", "serper_search"],
     "icp": {
-      "empleados_min": 10,
+      "empleados_min": 3,
       "empleados_max": 150,
       "ventas_mxn_min": 10000000,
       "ventas_mxn_max": 100000000,

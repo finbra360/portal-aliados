@@ -20,6 +20,7 @@ const TABS: { value: string | undefined; label: string }[] = [
   { value: "hot", label: "Hot" },
   { value: "warm", label: "Warm" },
   { value: "qualified", label: "Qualified" },
+  { value: "contacto_directo", label: "Contacto directo" },
   { value: "discarded", label: "Discarded" },
 ];
 
@@ -86,10 +87,15 @@ export default async function LeadsPage({
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Leads</h1>
 
-      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Hot" value={String(counts.hot)} icon={<IconFlame />} />
         <StatCard label="Warm" value={String(counts.warm)} icon={<IconTrendingUp />} />
         <StatCard label="Qualified" value={String(counts.qualified)} icon={<IconTarget />} />
+        <StatCard
+          label="Contacto directo"
+          value={String(counts.contacto_directo)}
+          sublabel="sin sitio web: llamar o mandar correo"
+        />
         <StatCard label="Discarded" value={String(counts.discarded)} icon={<IconListChecks />} />
         <StatCard label="Sin calificar todavía" value={String(counts.sin_calificar)} sublabel="en proceso en el pipeline" />
       </div>
@@ -152,7 +158,7 @@ export default async function LeadsPage({
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                 <th className="px-4 py-3">Empresa</th>
-                <th className="px-4 py-3">Teléfono</th>
+                <th className="px-4 py-3">Contacto</th>
                 <th className="px-4 py-3">Ubicación</th>
                 <th className="px-4 py-3">Empleados</th>
                 <th className="px-4 py-3">Antigüedad</th>
@@ -187,8 +193,23 @@ export default async function LeadsPage({
                       )}
                     </td>
                     <td className="px-4 py-3 text-xs">
-                      {lead.telefonoPrincipal ? (
-                        formatTelefono(lead.telefonoPrincipal)
+                      {lead.correoCorporativo || lead.telefonoPrincipal ? (
+                        <div className="space-y-0.5">
+                          {lead.correoCorporativo && (
+                            <a
+                              href={`mailto:${lead.correoCorporativo}`}
+                              className="block truncate text-finbra-purple hover:underline"
+                              title={lead.correoCorporativo}
+                            >
+                              {lead.correoCorporativo}
+                            </a>
+                          )}
+                          {lead.telefonoPrincipal && (
+                            <a href={`tel:${lead.telefonoPrincipal}`} className="block hover:underline">
+                              {formatTelefono(lead.telefonoPrincipal)}
+                            </a>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-finbra-gray">Pendiente</span>
                       )}

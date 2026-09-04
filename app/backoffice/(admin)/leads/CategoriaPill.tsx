@@ -4,6 +4,7 @@ const LABELS: Record<LeadCategoria, string> = {
   hot: "Hot",
   warm: "Warm",
   qualified: "Qualified",
+  contacto_directo: "Contacto directo",
   discarded: "Discarded",
 };
 
@@ -11,6 +12,7 @@ const CLASSES: Record<LeadCategoria, string> = {
   hot: "bg-red-100 text-red-700",
   warm: "bg-amber-100 text-amber-800",
   qualified: "bg-sky-100 text-sky-700",
+  contacto_directo: "bg-emerald-100 text-emerald-800",
   discarded: "bg-black/5 text-finbra-gray",
 };
 

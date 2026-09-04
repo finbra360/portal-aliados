@@ -120,7 +120,12 @@ CREATE TABLE IF NOT EXISTS lead_companies (
   intent_score NUMERIC(5, 2),
   data_quality_score NUMERIC(5, 2),
   total_score NUMERIC(5, 2),
-  categoria TEXT CHECK (categoria IN ('hot', 'warm', 'qualified', 'discarded')),
+  -- contacto_directo: empresas que pasaron los hard gates con datos de la fuente
+  -- (DENUE) pero que nunca tendrán sitio web que enriquecer. No se graduan en
+  -- hot/warm/qualified a propósito: sin datos de ventas, ciclo de cobranza ni
+  -- señales, su score se mueve en un rango de ~10 puntos que no alcanza para
+  -- rankear sin inventar precisión. Se trabajan como lista de correo/teléfono.
+  categoria TEXT CHECK (categoria IN ('hot', 'warm', 'qualified', 'discarded', 'contacto_directo')),
   score_explicacion TEXT,
 
   estatus_comercial TEXT NOT NULL DEFAULT 'nuevo' CHECK (
@@ -233,6 +238,12 @@ CREATE TABLE IF NOT EXISTS lead_hitl_review (
 -- IF NOT EXISTS no las agrega a una tabla que ya existe, así que van aparte
 -- para que este archivo siga siendo idempotente sobre bases ya creadas.
 ALTER TABLE lead_companies ADD COLUMN IF NOT EXISTS enrichment_intentos INTEGER NOT NULL DEFAULT 0;
+
+-- Amplía el CHECK de categoria para admitir 'contacto_directo' en bases que se
+-- crearon antes de que existiera esa categoría.
+ALTER TABLE lead_companies DROP CONSTRAINT IF EXISTS lead_companies_categoria_check;
+ALTER TABLE lead_companies ADD CONSTRAINT lead_companies_categoria_check
+  CHECK (categoria IN ('hot', 'warm', 'qualified', 'discarded', 'contacto_directo'));
 
 -- Enrichment consulta por esta combinación en cada corrida.
 CREATE INDEX IF NOT EXISTS idx_lead_companies_enrichment_cola
