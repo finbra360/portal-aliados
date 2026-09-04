@@ -168,8 +168,12 @@ CREATE TABLE IF NOT EXISTS lead_sources (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID REFERENCES lead_companies(id) ON DELETE CASCADE,
   contact_id UUID REFERENCES lead_contacts(id) ON DELETE CASCADE,
+  -- 'serper_search' tiene que estar aquí porque Normalization copia el
+  -- source_type del candidato tal cual, y lead_raw_candidates lo usa para lo que
+  -- viene de SerpApi. Sin él, cada candidato de SerpApi tumbaba la corrida
+  -- completa de Normalization y atoraba todo el backlog detrás.
   source_type TEXT NOT NULL CHECK (
-    source_type IN ('denue', 'google_maps', 'sitio_web', 'google_search', 'proveedor_enriquecimiento', 'ia_inferido')
+    source_type IN ('denue', 'google_maps', 'serper_search', 'sitio_web', 'google_search', 'proveedor_enriquecimiento', 'ia_inferido')
   ),
   source_ref TEXT,
   raw_payload JSONB,
@@ -238,6 +242,11 @@ CREATE TABLE IF NOT EXISTS lead_hitl_review (
 -- IF NOT EXISTS no las agrega a una tabla que ya existe, así que van aparte
 -- para que este archivo siga siendo idempotente sobre bases ya creadas.
 ALTER TABLE lead_companies ADD COLUMN IF NOT EXISTS enrichment_intentos INTEGER NOT NULL DEFAULT 0;
+
+-- Amplía el CHECK de lead_sources.source_type para admitir 'serper_search'.
+ALTER TABLE lead_sources DROP CONSTRAINT IF EXISTS lead_sources_source_type_check;
+ALTER TABLE lead_sources ADD CONSTRAINT lead_sources_source_type_check
+  CHECK (source_type IN ('denue', 'google_maps', 'serper_search', 'sitio_web', 'google_search', 'proveedor_enriquecimiento', 'ia_inferido'));
 
 -- Amplía el CHECK de categoria para admitir 'contacto_directo' en bases que se
 -- crearon antes de que existiera esa categoría.
