@@ -35,7 +35,14 @@ export async function middleware(req: NextRequest) {
     if (isLogin && adminSession) {
       return NextResponse.redirect(new URL(dashboardPath, req.url));
     }
-    return rewriteTarget ? NextResponse.rewrite(new URL(rewriteTarget, req.url)) : NextResponse.next();
+    if (rewriteTarget) {
+      // Clonar nextUrl y solo cambiar el pathname: construir la URL desde cero
+      // descarta el query string, y con él los filtros y la paginación.
+      const rewritten = req.nextUrl.clone();
+      rewritten.pathname = rewriteTarget;
+      return NextResponse.rewrite(rewritten);
+    }
+    return NextResponse.next();
   }
 
   const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
