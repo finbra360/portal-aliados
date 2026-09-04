@@ -145,14 +145,18 @@ export default async function LeadsPage({
         <Card className="overflow-x-auto p-0">
           <table className="w-full min-w-[1100px] table-fixed text-left text-sm">
             <colgroup>
+              {/* Contacto se lleva el ancho que sobra de Ubicación: los correos
+                  corporativos son largos y truncados no sirven de nada. Empresa y
+                  Antigüedad se mantienen porque el nombre es el identificador y
+                  "9.9 años" no debe partirse en dos líneas. */}
               <col className="w-[22%]" />
-              <col className="w-[13%]" />
-              <col className="w-[13%]" />
-              <col className="w-[8%]" />
-              <col className="w-[8%]" />
+              <col className="w-[19%]" />
               <col className="w-[10%]" />
+              <col className="w-[7%]" />
+              <col className="w-[8%]" />
               <col className="w-[9%]" />
               <col className="w-[9%]" />
+              <col className="w-[8%]" />
               <col className="w-[8%]" />
             </colgroup>
             <thead>
