@@ -243,6 +243,13 @@ CREATE TABLE IF NOT EXISTS lead_hitl_review (
 -- para que este archivo siga siendo idempotente sobre bases ya creadas.
 ALTER TABLE lead_companies ADD COLUMN IF NOT EXISTS enrichment_intentos INTEGER NOT NULL DEFAULT 0;
 
+-- Unidades de flota propia. El ICP de transporte exige un mínimo (unidades_flota_min)
+-- porque la flota es la garantía del crédito, pero el dato solo existía dentro del
+-- texto de la descripción y por eso el gate nunca se podía aplicar. NULL significa
+-- "no sabemos", que no es lo mismo que "no tiene": un NULL manda el lead a
+-- pending_enrichment, nunca lo descarta.
+ALTER TABLE lead_companies ADD COLUMN IF NOT EXISTS unidades_flota_estimado INTEGER;
+
 -- Amplía el CHECK de lead_sources.source_type para admitir 'serper_search'.
 ALTER TABLE lead_sources DROP CONSTRAINT IF EXISTS lead_sources_source_type_check;
 ALTER TABLE lead_sources ADD CONSTRAINT lead_sources_source_type_check
