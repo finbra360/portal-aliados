@@ -1,10 +1,5 @@
-import { parseAsmxJson } from "./parse";
-import type {
-  ConsultarClientesResponse,
-  ConsultarCreditosResponse,
-  ConsultarSaldoCreditoResponse,
-  SiacEnvelope,
-} from "./types";
+import { decodeEntities, parseAsmxJson } from "./parse";
+import type { ConsultarSaldoCreditoResponse, ListadoCobranzaResponse, SiacEnvelope } from "./types";
 
 export type SiacAmbiente = "pruebas" | "produccion";
 
@@ -24,20 +19,33 @@ export interface SiacCallRecord {
   respuesta: unknown;
 }
 
+/**
+ * - reintentable=false: SIAC contestó y el problema no se arregla solo
+ *   (parámetro faltante, filtro mal formado, error de negocio en Detalle).
+ * - reintentable=true: red, tiempo de espera o un 5xx sin explicación.
+ */
 export class SiacError extends Error {
   readonly operacion: string;
   readonly detalle: string | null;
+  readonly reintentable: boolean;
 
-  constructor(message: string, operacion: string, detalle: string | null) {
+  constructor(message: string, operacion: string, detalle: string | null, reintentable: boolean) {
     super(message);
     this.name = "SiacError";
     this.operacion = operacion;
     this.detalle = detalle;
+    this.reintentable = reintentable;
   }
 }
 
-const TIMEOUT_MS = 30_000;
+const TIMEOUT_MS = 60_000;
 const REINTENTOS = 2;
+
+// ListadoCobranzaJSON escribe el parámetro "Autentificacion" (con "fi");
+// el resto de los servicios usan "ClaveAutenticacion".
+const NOMBRE_CLAVE: Record<string, string> = {
+  ListadoCobranzaJSON: "ClaveAutentificacion",
+};
 
 export function getSiacConfig(): SiacConfig | null {
   const baseUrl = process.env.SIAC_BASE_URL;
@@ -49,14 +57,29 @@ export function getSiacConfig(): SiacConfig | null {
   return { baseUrl: baseUrl.replace(/\/$/, ""), razonSocial, claveAutenticacion, ambiente };
 }
 
+/** Clasifica una respuesta que no es el sobre JSON de SIAC. */
+function errorDeRespuesta(operacion: string, status: number, texto: string): SiacError {
+  const limpio = decodeEntities(texto).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  const falta = limpio.match(/Falta el par[aá]metro:\s*([\w]+)/i);
+  if (falta) {
+    return new SiacError(`SIAC ${operacion}: falta el parámetro ${falta[1]}`, operacion, `Falta el parámetro: ${falta[1]}`, false);
+  }
+  if (/FormatoIncorrectoJson/i.test(limpio)) {
+    return new SiacError(`SIAC ${operacion}: filtro con formato incorrecto`, operacion, limpio.slice(0, 300), false);
+  }
+  return new SiacError(`SIAC ${operacion} respondió ${status}: ${limpio.slice(0, 200)}`, operacion, null, status >= 500);
+}
+
 /**
- * Cliente de solo lectura para ConsultasSIACSuiteJSON.asmx. Cada operación
- * se llama por POST form-urlencoded con RazonSocial y ClaveAutenticacion en
- * el body. Reintenta errores de red y 5xx; no reintenta cuando SIAC responde
- * con un Detalle distinto de "CORRECTO", porque eso no se arregla solo.
+ * Cliente de solo lectura para ConsultasSIACSuiteJSON.asmx.
+ *
+ * SIAC pidió no hacer cargas masivas con servicios individuales: la foto
+ * diaria usa UNA llamada a ListadoCobranzaJSON, y consultarSaldoCredito es
+ * solo para consultas puntuales que pide una persona.
  */
 export class SiacClient {
   llamadas = 0;
+  duracionMs = 0;
   private readonly config: SiacConfig;
   private readonly onCall?: (record: SiacCallRecord) => void | Promise<void>;
 
@@ -68,14 +91,15 @@ export class SiacClient {
   private async call<T extends SiacEnvelope>(operacion: string, parametros: Record<string, string>): Promise<T> {
     const body = new URLSearchParams({
       RazonSocial: this.config.razonSocial,
-      ClaveAutenticacion: this.config.claveAutenticacion,
+      [NOMBRE_CLAVE[operacion] ?? "ClaveAutenticacion"]: this.config.claveAutenticacion,
       ...parametros,
     });
 
     let ultimoError: unknown = null;
     for (let intento = 0; intento <= REINTENTOS; intento++) {
-      if (intento > 0) await new Promise((r) => setTimeout(r, 1000 * 3 ** (intento - 1)));
+      if (intento > 0) await new Promise((r) => setTimeout(r, 2000 * 3 ** (intento - 1)));
       this.llamadas++;
+      const inicio = Date.now();
       let httpStatus: number | null = null;
       let texto = "";
       try {
@@ -88,39 +112,58 @@ export class SiacClient {
         });
         httpStatus = res.status;
         texto = await res.text();
-        if (res.status >= 500) {
-          throw new SiacError(`SIAC ${operacion} respondió ${res.status}`, operacion, null);
-        }
+        this.duracionMs += Date.now() - inicio;
+
+        if (!/<string[^>]*>/.test(texto)) throw errorDeRespuesta(operacion, res.status, texto);
         const data = parseAsmxJson<T>(texto);
         await this.onCall?.({ operacion, parametros, httpStatus, detalle: data.Detalle ?? null, respuesta: data });
         if (data.Detalle !== "CORRECTO") {
-          // Un Detalle de error es una respuesta válida de SIAC: no se reintenta.
-          throw new SiacError(`SIAC ${operacion}: ${data.Detalle}`, operacion, data.Detalle ?? "sin detalle");
+          const detalle = String(data.Detalle ?? "sin detalle");
+          const formato = /FormatoIncorrectoJson/i.test(detalle);
+          throw new SiacError(
+            `SIAC ${operacion}: ${formato ? "filtro con formato incorrecto" : detalle}`,
+            operacion,
+            detalle,
+            false,
+          );
         }
         return data;
       } catch (e) {
-        if (e instanceof SiacError && e.detalle !== null) throw e;
+        if (httpStatus === null) this.duracionMs += Date.now() - inicio;
+        const registrado = e instanceof SiacError && httpStatus !== null && /<string[^>]*>/.test(texto);
+        if (!registrado) {
+          await this.onCall?.({
+            operacion,
+            parametros,
+            httpStatus,
+            detalle: e instanceof SiacError ? e.detalle : null,
+            respuesta: texto ? decodeEntities(texto).slice(0, 2000) : String(e),
+          });
+        }
+        if (e instanceof SiacError && !e.reintentable) throw e;
         ultimoError = e;
-        await this.onCall?.({
-          operacion,
-          parametros,
-          httpStatus,
-          detalle: null,
-          respuesta: texto ? texto.slice(0, 2000) : String(e),
-        });
       }
     }
-    throw ultimoError instanceof Error ? ultimoError : new SiacError(`SIAC ${operacion} falló`, operacion, null);
+    throw ultimoError instanceof Error
+      ? ultimoError
+      : new SiacError(`SIAC ${operacion} falló`, operacion, null, true);
   }
 
-  consultarClientes() {
-    return this.call<ConsultarClientesResponse>("ConsultarClientes", { idCliente: "0", nombre: "", rfc: "" });
+  /**
+   * Foto de cobranza de toda la cartera activa a `corteFecha` (NoControl vacío),
+   * o de un solo crédito (NoControl con valor). Lee la foto que el Monitor de
+   * Servicios de SIAC guarda a las 00:00; no calcula al momento.
+   */
+  listadoCobranza(corteFecha: string, noControl = "") {
+    const contenido = {
+      ListadoFiltroCobranza: [
+        { CorteFecha: corteFecha, NoControl: noControl, Cliente: "", TipoCredito: "", Cobrador: "", Sucursal: "", Estado: "", Municipio: "" },
+      ],
+    };
+    return this.call<ListadoCobranzaResponse>("ListadoCobranzaJSON", { Contenido: JSON.stringify(contenido) });
   }
 
-  consultarCreditos(idCliente: string) {
-    return this.call<ConsultarCreditosResponse>("ConsultarCreditos", { IDCliente: idCliente, NoControl: "" });
-  }
-
+  /** Saldo calculado al vuelo de UN crédito. Solo bajo demanda, nunca en lote. */
   consultarSaldoCredito(noControl: string, idCliente: string, fechaCorte: string) {
     return this.call<ConsultarSaldoCreditoResponse>("ConsultarSaldoCredito", {
       NoControl: noControl,

@@ -1,13 +1,11 @@
 // Reglas determinísticas de cobranza. Funciones puras, sin acceso a base de
 // datos ni a SIAC, para poder probarlas con `node --test` y auditarlas: cada
-// alerta o evento sale de una regla escrita aquí, no de un modelo.
+// evento o alerta sale de una regla escrita aquí, no de un modelo.
 
-/** Saldo vencido mínimo para considerar a un cliente en mora (regla del prototipo de n8n). */
-export const UMBRAL_MORA = 1000;
+/** Umbral por defecto; el vigente vive en col_settings.umbral_mora. */
+export const UMBRAL_MORA_DEFAULT = 1000;
 /** Días después de la fecha compromiso antes de marcar una promesa como incumplida. */
 export const GRACIA_PROMESA_DIAS = 1;
-/** Huecos de hasta estos días se rellenan día por día en la foto diaria; más largos van al script de reconstrucción. */
-export const MAX_DIAS_RELLENO = 14;
 
 const CENTAVO = 0.005;
 
@@ -38,7 +36,8 @@ export function daysBetween(desde: string, hasta: string): number {
 /**
  * Normaliza un teléfono mexicano al formato de WhatsApp: 52 + 10 dígitos.
  * Acepta "55 1234 5678", "+52 55...", "521 55..." (formato viejo de celular).
- * Regresa null si no quedan exactamente 10 dígitos nacionales.
+ * Regresa null si no quedan exactamente 10 dígitos nacionales: ese teléfono
+ * hay que corregirlo en SIAC.
  */
 export function normalizePhoneMx(raw: string | null | undefined): string | null {
   let d = String(raw ?? "").replace(/\D/g, "");
@@ -47,91 +46,145 @@ export function normalizePhoneMx(raw: string | null | undefined): string | null 
   return d.length === 10 ? `52${d}` : null;
 }
 
+/**
+ * El teléfono del titular al que se manda WhatsApp: Celular y, si viene vacío
+ * (lo más común en SIAC), TelefonoCliente. Si el campo elegido no tiene 10
+ * dígitos no se intenta con el otro: se marca para corregir.
+ */
+export function campoTelefonoPrincipal(c: { celular: string | null; telefonoCliente: string | null }): "Celular" | "TelefonoCliente" | null {
+  if (c.celular && c.celular.replace(/\D/g, "")) return "Celular";
+  if (c.telefonoCliente && c.telefonoCliente.replace(/\D/g, "")) return "TelefonoCliente";
+  return null;
+}
+
 // ---------------------------------------------------------------- buckets
 
-export type Bucket = "1-7" | "8-30" | "31-60" | "61-90" | "90+";
-export const BUCKETS: Bucket[] = ["1-7", "8-30", "31-60", "61-90", "90+"];
+export type Bucket = "al_corriente" | "1-7" | "8-30" | "31-60" | "61-90" | "90+";
+export const BUCKETS: Bucket[] = ["al_corriente", "1-7", "8-30", "31-60", "61-90", "90+"];
 
-export function bucketFor(diasAtraso: number | null): Bucket | null {
-  if (diasAtraso === null || diasAtraso < 1) return null;
-  if (diasAtraso <= 7) return "1-7";
-  if (diasAtraso <= 30) return "8-30";
-  if (diasAtraso <= 60) return "31-60";
-  if (diasAtraso <= 90) return "61-90";
+/** Bucket de aging a partir de `Antiguedad` (días de atraso de SIAC). */
+export function bucketFor(antiguedad: number): Bucket {
+  if (antiguedad < 1) return "al_corriente";
+  if (antiguedad <= 7) return "1-7";
+  if (antiguedad <= 30) return "8-30";
+  if (antiguedad <= 60) return "31-60";
+  if (antiguedad <= 90) return "61-90";
   return "90+";
 }
 
-// ---------------------------------------------------------------- eventos entre dos fotos
+// ---------------------------------------------------------------- eventos de un crédito
 
-/** Lo mínimo de una foto de saldo que necesitan las reglas. */
-export interface DayState {
+/** Lo mínimo de una foto del listado que necesitan las reglas. */
+export interface CreditState {
   fechaCorte: string;
-  saldoVencido: number;
-  capitalVencido: number;
-  sumaPagos: number;
-  sumaCondonaciones: number;
-  sumaQuitas: number;
-  sumaCastigos: number;
-  /** Inicio de la racha actual de vencido; null si no hay vencido o si no se conoce. */
-  vencidoDesde: string | null;
+  antiguedad: number;
+  totalVencido: number;
+  vencimientosVencidos: number | null;
+  fechaUltimoPago: string | null;
 }
 
-export type CreditEventTipo = "pago" | "entrada_vencido" | "regularizacion" | "condonacion" | "quita" | "castigo";
+export type CreditEventTipo = "pago_detectado" | "entrada_mora" | "regularizacion" | "nueva_mensualidad_vencida";
 
 export interface DerivedEvent {
   tipo: CreditEventTipo;
   fechaEvento: string;
-  monto: number | null;
+  antiguedadAntes: number;
+  antiguedadDespues: number;
   vencidoAntes: number;
   vencidoDespues: number;
 }
 
 /**
- * Compara la foto de un día con la del día inmediatamente anterior y regresa
- * los eventos de ese día y el `vencidoDesde` de la foto nueva.
+ * Compara la foto de hoy de un crédito con la anterior (no importa si hay
+ * días de por medio) y regresa lo que pasó.
  *
- * Si no hay foto anterior (primera vez que se ve el crédito), no se generan
- * eventos y, si ya trae vencido, `vencidoDesde` queda null: no sabemos desde
- * cuándo está vencido hasta correr la reconstrucción histórica.
+ * - pago_detectado: cambió FechaUltimoPago. Sin monto: el listado no lo trae.
+ * - entrada_mora: pasó de 0 a >0 días de atraso. La fecha es la de corte
+ *   menos la antigüedad, así que es exacta aunque falten fotos.
+ * - regularizacion: pasó de >0 a 0 días de atraso.
+ * - nueva_mensualidad_vencida: ya estaba en atraso y subieron los
+ *   vencimientos vencidos (venció otra mensualidad sin pagarse).
+ *
+ * Sin foto anterior (primera vez que se ve el crédito) no hay eventos: lo que
+ * ya estaba vencido se ve en la foto misma, con su antigüedad.
  */
-export function deriveDay(
-  prev: DayState | null,
-  curr: Omit<DayState, "vencidoDesde">,
-): { vencidoDesde: string | null; events: DerivedEvent[] } {
-  if (!prev) return { vencidoDesde: null, events: [] };
-
-  const base = { fechaEvento: curr.fechaCorte, vencidoAntes: prev.saldoVencido, vencidoDespues: curr.saldoVencido };
+export function deriveCreditEvents(prev: CreditState | null, curr: CreditState): DerivedEvent[] {
+  if (!prev) return [];
+  const base = {
+    antiguedadAntes: prev.antiguedad,
+    antiguedadDespues: curr.antiguedad,
+    vencidoAntes: prev.totalVencido,
+    vencidoDespues: curr.totalVencido,
+  };
   const events: DerivedEvent[] = [];
-  const delta = (a: number, b: number) => Math.round((b - a) * 100) / 100;
 
-  const pagos = delta(prev.sumaPagos, curr.sumaPagos);
-  if (pagos > CENTAVO) events.push({ tipo: "pago", monto: pagos, ...base });
-  const condonaciones = delta(prev.sumaCondonaciones, curr.sumaCondonaciones);
-  if (condonaciones > CENTAVO) events.push({ tipo: "condonacion", monto: condonaciones, ...base });
-  const quitas = delta(prev.sumaQuitas, curr.sumaQuitas);
-  if (quitas > CENTAVO) events.push({ tipo: "quita", monto: quitas, ...base });
-  const castigos = delta(prev.sumaCastigos, curr.sumaCastigos);
-  if (castigos > CENTAVO) events.push({ tipo: "castigo", monto: castigos, ...base });
-
-  const antesVencido = prev.saldoVencido > CENTAVO;
-  const ahoraVencido = curr.saldoVencido > CENTAVO;
-  if (!antesVencido && ahoraVencido) events.push({ tipo: "entrada_vencido", monto: curr.saldoVencido, ...base });
-  if (antesVencido && !ahoraVencido) events.push({ tipo: "regularizacion", monto: null, ...base });
-
-  const vencidoDesde = ahoraVencido ? (antesVencido ? prev.vencidoDesde : curr.fechaCorte) : null;
-  return { vencidoDesde, events };
+  if (curr.fechaUltimoPago && curr.fechaUltimoPago !== prev.fechaUltimoPago && (!prev.fechaUltimoPago || curr.fechaUltimoPago > prev.fechaUltimoPago)) {
+    events.push({ tipo: "pago_detectado", fechaEvento: curr.fechaUltimoPago, ...base });
+  }
+  if (prev.antiguedad === 0 && curr.antiguedad > 0) {
+    events.push({ tipo: "entrada_mora", fechaEvento: addDays(curr.fechaCorte, -curr.antiguedad), ...base });
+  }
+  if (prev.antiguedad > 0 && curr.antiguedad === 0) {
+    events.push({ tipo: "regularizacion", fechaEvento: curr.fechaCorte, ...base });
+  }
+  if (
+    prev.antiguedad > 0 &&
+    curr.antiguedad > 0 &&
+    prev.vencimientosVencidos !== null &&
+    curr.vencimientosVencidos !== null &&
+    curr.vencimientosVencidos > prev.vencimientosVencidos
+  ) {
+    events.push({ tipo: "nueva_mensualidad_vencida", fechaEvento: curr.fechaCorte, ...base });
+  }
+  return events;
 }
 
-// ---------------------------------------------------------------- alertas
+// ---------------------------------------------------------------- foto vieja
+
+/**
+ * ¿SIAC regresó la misma foto que la anterior? Pasa si el Monitor de
+ * Servicios no corrió a las 00:00. Un crédito en atraso siempre cambia de un
+ * día a otro (suben los días de atraso y los moratorios), así que si hay al
+ * menos uno en atraso y NINGÚN crédito cambió nada, la foto es vieja.
+ *
+ * Sin créditos en atraso no hay forma de saberlo: se regresa "sin_evidencia"
+ * y la foto se acepta.
+ */
+export function photoFreshness(
+  prev: Map<string, CreditState>,
+  curr: Map<string, CreditState>,
+): "actualizada" | "vieja" | "sin_evidencia" {
+  if (prev.size === 0) return "sin_evidencia";
+  let comparables = 0;
+  let enAtraso = 0;
+  for (const [id, c] of curr) {
+    const p = prev.get(id);
+    if (!p) return "actualizada"; // apareció un crédito nuevo
+    if (p.fechaCorte === c.fechaCorte) continue;
+    comparables++;
+    if (p.antiguedad > 0) enAtraso++;
+    const igual =
+      p.antiguedad === c.antiguedad &&
+      Math.abs(p.totalVencido - c.totalVencido) < CENTAVO &&
+      p.fechaUltimoPago === c.fechaUltimoPago &&
+      p.vencimientosVencidos === c.vencimientosVencidos;
+    if (!igual) return "actualizada";
+  }
+  for (const id of prev.keys()) if (!curr.has(id)) return "actualizada"; // salió un crédito
+  return comparables > 0 && enAtraso > 0 ? "vieja" : "sin_evidencia";
+}
+
+// ---------------------------------------------------------------- alertas por cliente
 
 export type AlertTipo =
-  | "entrada_vencido"
-  | "aumento_vencido"
+  | "entrada_mora"
+  | "nueva_mensualidad_vencida"
   | "cambio_bucket"
   | "promesa_incumplida"
   | "mensaje_fallido"
   | "telefono_invalido"
-  | "sync_fallido";
+  | "sync_fallido"
+  | "foto_vieja";
 
 export interface AlertDraft {
   tipo: AlertTipo;
@@ -140,64 +193,67 @@ export interface AlertDraft {
   detalle: Record<string, unknown>;
 }
 
-export function diasAtraso(state: Pick<DayState, "fechaCorte" | "vencidoDesde">): number | null {
-  return state.vencidoDesde ? daysBetween(state.vencidoDesde, state.fechaCorte) : null;
+/** Totales de un cliente en una foto: la mora se decide por cliente, no por crédito. */
+export interface ClientState {
+  totalVencido: number;
+  maxAntiguedad: number;
+  vencimientosVencidos: number;
+}
+
+export function aggregateClient(creditos: CreditState[]): ClientState {
+  return {
+    totalVencido: Math.round(creditos.reduce((s, c) => s + c.totalVencido, 0) * 100) / 100,
+    maxAntiguedad: creditos.reduce((m, c) => Math.max(m, c.antiguedad), 0),
+    vencimientosVencidos: creditos.reduce((s, c) => s + (c.vencimientosVencidos ?? 0), 0),
+  };
 }
 
 /**
- * Alertas de un crédito al pasar de un día al siguiente:
- * - entrada_vencido: el saldo vencido cruza el umbral de mora.
- * - aumento_vencido: ya estaba en mora y creció el CAPITAL vencido (venció otra
- *   mensualidad sin pagarse). No se usa el saldo vencido total porque los
- *   moratorios lo hacen crecer todos los días y la alerta sería ruido.
- * - cambio_bucket: pasa a 31-60, 61-90 o 90+. Los buckets menores ya los
- *   cubre entrada_vencido.
+ * Alertas de un cliente al comparar su foto de hoy con la anterior:
+ * - entrada_mora: su saldo vencido total cruza el umbral (por debajo son residuos).
+ * - nueva_mensualidad_vencida: ya estaba en mora y venció otra mensualidad sin pago.
+ * - cambio_bucket: su crédito más atrasado pasa a 31-60, 61-90 o 90+. Los
+ *   buckets menores ya los cubre entrada_mora.
  */
-export function deriveCreditAlerts(prev: DayState | null, curr: DayState, creditId: string): AlertDraft[] {
+export function deriveClientAlerts(
+  prev: ClientState | null,
+  curr: ClientState,
+  clientId: string,
+  umbral: number,
+  fechaCorte: string,
+): AlertDraft[] {
   if (!prev) return [];
   const alerts: AlertDraft[] = [];
-  const enMoraAntes = prev.saldoVencido >= UMBRAL_MORA;
-  const enMoraAhora = curr.saldoVencido >= UMBRAL_MORA;
+  const enMoraAntes = prev.totalVencido >= umbral;
+  const enMoraAhora = curr.totalVencido >= umbral;
 
   if (!enMoraAntes && enMoraAhora) {
     alerts.push({
-      tipo: "entrada_vencido",
+      tipo: "entrada_mora",
       severidad: "atencion",
-      dedupeKey: `entrada_vencido:${creditId}`,
-      detalle: { fecha: curr.fechaCorte, saldoVencido: curr.saldoVencido },
+      dedupeKey: `entrada_mora:${clientId}`,
+      detalle: { fecha: fechaCorte, totalVencido: curr.totalVencido, diasAtraso: curr.maxAntiguedad },
     });
   }
-
-  if (enMoraAntes && enMoraAhora && curr.capitalVencido - prev.capitalVencido > CENTAVO) {
+  if (enMoraAntes && enMoraAhora && curr.vencimientosVencidos > prev.vencimientosVencidos) {
     alerts.push({
-      tipo: "aumento_vencido",
+      tipo: "nueva_mensualidad_vencida",
       severidad: "atencion",
-      dedupeKey: `aumento_vencido:${creditId}`,
-      detalle: {
-        fecha: curr.fechaCorte,
-        capitalVencidoAntes: prev.capitalVencido,
-        capitalVencidoAhora: curr.capitalVencido,
-      },
+      dedupeKey: `nueva_mensualidad_vencida:${clientId}`,
+      detalle: { fecha: fechaCorte, vencimientosVencidos: curr.vencimientosVencidos, totalVencido: curr.totalVencido },
     });
   }
-
-  const bucketAntes = bucketFor(diasAtraso(prev));
-  const bucketAhora = bucketFor(diasAtraso(curr));
-  if (
-    enMoraAhora &&
-    bucketAhora &&
-    bucketAhora !== bucketAntes &&
-    BUCKETS.indexOf(bucketAhora) >= BUCKETS.indexOf("31-60") &&
-    (bucketAntes === null || BUCKETS.indexOf(bucketAhora) > BUCKETS.indexOf(bucketAntes))
-  ) {
+  const bAntes = BUCKETS.indexOf(bucketFor(prev.maxAntiguedad));
+  const bAhora = BUCKETS.indexOf(bucketFor(curr.maxAntiguedad));
+  if (enMoraAhora && bAhora > bAntes && bAhora >= BUCKETS.indexOf("31-60")) {
+    const bucket = BUCKETS[bAhora];
     alerts.push({
       tipo: "cambio_bucket",
-      severidad: bucketAhora === "90+" ? "critica" : "atencion",
-      dedupeKey: `cambio_bucket:${creditId}:${bucketAhora}`,
-      detalle: { fecha: curr.fechaCorte, bucketAntes, bucketAhora, diasAtraso: diasAtraso(curr) },
+      severidad: bucket === "90+" ? "critica" : "atencion",
+      dedupeKey: `cambio_bucket:${clientId}:${bucket}`,
+      detalle: { fecha: fechaCorte, bucketAntes: BUCKETS[bAntes], bucketAhora: bucket, diasAtraso: curr.maxAntiguedad },
     });
   }
-
   return alerts;
 }
 
@@ -206,25 +262,30 @@ export function deriveCreditAlerts(prev: DayState | null, curr: DayState, credit
 export type PromiseEstado = "vigente" | "cumplida" | "parcial" | "incumplida";
 
 /**
- * Resuelve una promesa con los pagos que detectó SIAC.
+ * Resuelve una promesa SIN montos de pago (el listado no los trae; llegan con
+ * ConsultarPagos). Es una aproximación y se puede corregir a mano:
  *
- * Cuentan los pagos desde el día en que se registró la promesa hasta la fecha
- * compromiso + GRACIA_PROMESA_DIAS. `datosHasta` es la fecha de corte de la
- * última foto (no la fecha de hoy): la promesa solo se da por incumplida
- * cuando ya tenemos datos de SIAC de todo el periodo de gracia.
+ * - cumplida: hubo pago en la ventana y el vencido bajó al menos el monto
+ *   prometido, o quedó por debajo del umbral de mora.
+ * - parcial: hubo pago en la ventana, pero no alcanzó.
+ * - incumplida: no hubo pago y ya tenemos fotos de todo el periodo de gracia.
+ *
+ * La ventana va del día en que se registró la promesa a la fecha compromiso
+ * + GRACIA_PROMESA_DIAS. `datosHasta` es la fecha de corte de la última foto,
+ * no la fecha de hoy.
  */
 export function resolvePromise(
-  promesa: { monto: number; creadaEl: string; fechaCompromiso: string },
-  pagos: { fecha: string; monto: number }[],
+  promesa: { monto: number; creadaEl: string; fechaCompromiso: string; vencidoAlCrear: number },
+  fechasPago: string[],
+  vencidoActual: number,
   datosHasta: string,
-): { estado: PromiseEstado; montoPagado: number } {
+  umbral: number,
+): PromiseEstado {
   const limite = addDays(promesa.fechaCompromiso, GRACIA_PROMESA_DIAS);
-  const montoPagado =
-    Math.round(
-      pagos.filter((p) => p.fecha >= promesa.creadaEl && p.fecha <= limite).reduce((s, p) => s + p.monto, 0) * 100,
-    ) / 100;
-
-  if (montoPagado >= promesa.monto - CENTAVO) return { estado: "cumplida", montoPagado };
-  if (datosHasta >= limite) return { estado: montoPagado > CENTAVO ? "parcial" : "incumplida", montoPagado };
-  return { estado: "vigente", montoPagado };
+  const pago = fechasPago.some((f) => f >= promesa.creadaEl && f <= limite);
+  if (pago) {
+    const bajo = promesa.vencidoAlCrear - vencidoActual;
+    return bajo >= promesa.monto - CENTAVO || vencidoActual < umbral ? "cumplida" : datosHasta >= limite ? "parcial" : "vigente";
+  }
+  return datosHasta >= limite ? "incumplida" : "vigente";
 }

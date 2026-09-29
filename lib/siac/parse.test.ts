@@ -1,20 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseAsmxJson, siacDate, toSnapshotValues, SiacParseError } from "./parse.ts";
-import type { ConsultarSaldoCreditoResponse } from "./types.ts";
+import { decodeEntities, parseAsmxJson, parseListado, siacDate, SiacParseError } from "./parse.ts";
+import type { ListadoCobranzaItem, ListadoCobranzaResponse } from "./types.ts";
 
-// Respuesta con la forma real de ConsultarSaldoCredito; montos y nombre ficticios.
-const saldo: ConsultarSaldoCreditoResponse = {
-  Detalle: "CORRECTO",
-  Generales: { NoControl: "9999 R", IDCliente: "000000999", NombreCliente: "CLIENTE FICTICIO & HIJOS", FechaCalculo: "2026-09-28T00:00:00" },
-  SaldoVigente: { saldoVigente: 0, CapitalVigente: 0, IVACapitalVigente: 0, InteresesVigentes: 0, IVAInteresesVigentes: 0, ComisionesFuturas: 0, IVAComisionesFuturas: 0 },
-  SaldoVencido: {
-    saldoVencido: 160047.64, CapitalVencido: 149160.33, IVACapitalVencido: 0, InteresesVencidos: 4880.86, IVAInteresesVencidos: 0,
-    InteresesMoratorios: 1180.85, IVAInteresesMoratorios: 0, ComisionesVencidas: 4160, IVAComisionesVencidas: 665.6,
+// Forma real de ListadoCobranzaJSON; nombres, teléfonos y montos ficticios.
+const item = (over: { g?: object; k?: object; cr?: object; v?: object } = {}): ListadoCobranzaItem => ({
+  InformacionGeneral: { NoCredito: "9001 R", NumeroCliente: "000000901", Cliente: "EMPRESA FICTICIA, S.A. DE C.V.", TipoCredito: "SIMPLE", Sucursal: null, NombrePromotor: "", ...over.g },
+  CondicionesFinanciamientoCobranza: { Tasa: 24.5, MontoCredito: 500000.456, FechaMinistracion: "2025-06-20T00:00:00", FechaTerminoContrato: "2026-09-20T00:00:00", Vencimientos: 15, PlazoMeses: 15 },
+  InformacionContacto: { TelefonoCliente: "55 1111 2222", Celular: "", CorreoCliente: "contacto@ejemplo.test", NombreAval: "AVAL FICTICIO", TelefonoAval: "5533334444", ...over.k },
+  CobranzaRespuesta: {
+    Antiguedad: 4, Atrasomaximo: 12, FechaUltimoPago: "2026-08-25T00:00:00", NumeroVecesMora: 2, VencimientosCubiertos: 14,
+    VencimientosVencidos: 1, VencimientosPorVencer: 0, FrecuenciaPagos: "MENSUAL", DiasSinMovimiento: 35,
+    ProximoVencimiento: "1800-01-01T00:00:00", MontoPorVencer: 0, ...over.cr,
   },
-  Totales: { SaldoActual: 160047.64, TotalPagar: 160047.64, SaldoGlobal: 160047.64, CAT: "62%" },
-  Sumatorias: { Ministraciones: 1800000, Pagos: 2223457.04, Comisiones: 4825.6, Condonaciones: 0, Quitas: 0, Castigos: 0 },
-};
+  Vencido: { InteresesMoratorios: 1180.851, IVAVencido: 665.6, TotalVencido: 160047.644, TotalAdeudo: 160047.64, TotalGlobal: 160047.64, ...over.v },
+});
 
 const envolver = (json: string) =>
   `<?xml version="1.0" encoding="utf-8"?>\r\n<string xmlns="http://tempuri.org/">${json
@@ -24,9 +24,14 @@ const envolver = (json: string) =>
     .replace(/"/g, "&quot;")}</string>`;
 
 test("desenvuelve el JSON que SIAC manda dentro del XML", () => {
-  const r = parseAsmxJson<ConsultarSaldoCreditoResponse>(envolver(JSON.stringify(saldo)));
-  assert.deepEqual(r, saldo);
-  assert.equal(r.Generales.NombreCliente, "CLIENTE FICTICIO & HIJOS");
+  const r: ListadoCobranzaResponse = { Detalle: "CORRECTO", vListEntCredito: [{ Cobranza: [item()] }] };
+  assert.deepEqual(parseAsmxJson(envolver(JSON.stringify(r))), r);
+});
+
+test("decodifica entidades numéricas como &#225;", () => {
+  assert.equal(decodeEntities("Jos&#233; Mar&#237;a Garc&#xED;a &amp; Hijos"), "José María García & Hijos");
+  const r = parseAsmxJson<{ Detalle: string; x: string }>(`<string xmlns="http://tempuri.org/">{&quot;Detalle&quot;:&quot;CORRECTO&quot;,&quot;x&quot;:&quot;Cr&#233;dito&quot;}</string>`);
+  assert.equal(r.x, "Crédito");
 });
 
 test("un &quot; literal dentro del texto no se convierte en comillas", () => {
@@ -35,22 +40,54 @@ test("un &quot; literal dentro del texto no se convierte en comillas", () => {
 });
 
 test("respuestas que no son el sobre de SIAC truenan con un error claro", () => {
-  assert.throws(() => parseAsmxJson("<html>Server Error</html>"), SiacParseError);
+  assert.throws(() => parseAsmxJson("Falta el parámetro: Contenido"), SiacParseError);
   assert.throws(() => parseAsmxJson('<string xmlns="http://tempuri.org/">{no es json</string>'), SiacParseError);
 });
 
-test("fechas de SIAC a YYYY-MM-DD", () => {
+test("fechas centinela de SIAC se guardan como vacías", () => {
   assert.equal(siacDate("2025-06-20T00:00:00"), "2025-06-20");
+  assert.equal(siacDate("1800-01-01T00:00:00"), null, "ProximoVencimiento sin pagos futuros");
+  assert.equal(siacDate("0001-01-01T00:00:00"), null, "FechaAlta no confiable");
   assert.equal(siacDate(null), null);
   assert.equal(siacDate("basura"), null);
 });
 
-test("saldo a columnas de la foto", () => {
-  const v = toSnapshotValues(saldo);
-  assert.equal(v.saldoVencido, 160047.64);
-  assert.equal(v.capitalVencido, 149160.33);
-  assert.equal(v.ivaComisionesVencidas, 665.6);
-  assert.equal(v.sumaPagos, 2223457.04);
-  assert.equal(v.cat, "62%");
-  assert.equal(v.fechaCalculoSiac, "2026-09-28");
+test("listado a créditos limpios", () => {
+  const r: ListadoCobranzaResponse = { Detalle: "CORRECTO", vListEntCredito: [{ Cobranza: [item()] }] };
+  const { creditos, descartados } = parseListado(r);
+  assert.equal(descartados.length, 0);
+  const c = creditos[0];
+  assert.equal(c.noCredito, "9001 R", "NoCredito es texto con sufijo");
+  assert.equal(c.numeroCliente, "000000901");
+  assert.equal(c.credito.fechaMinistracion, "2025-06-20");
+  assert.equal(c.credito.montoCredito, 500000.46);
+  assert.equal(c.credito.sucursal, null);
+  assert.equal(c.credito.nombrePromotor, null, "vacío cuenta como null");
+  assert.equal(c.credito.frecuenciaPagos, "MENSUAL");
+  assert.equal(c.contacto.celular, null);
+  assert.equal(c.contacto.telefonoCliente, "55 1111 2222");
+  assert.equal(c.foto.antiguedad, 4);
+  assert.equal(c.foto.proximoVencimiento, null);
+  assert.equal(c.foto.fechaUltimoPago, "2026-08-25");
+  assert.equal(c.foto.totalVencido, 160047.64, "redondeo a 2 decimales");
+  assert.equal(c.foto.interesesMoratorios, 1180.85);
+});
+
+test("varios bloques, varios créditos por cliente y créditos sin identificar", () => {
+  const r: ListadoCobranzaResponse = {
+    Detalle: "CORRECTO",
+    vListEntCredito: [
+      { Cobranza: [item(), item({ g: { NoCredito: "9002 2D" } })] },
+      { Cobranza: [item({ g: { NoCredito: "", NumeroCliente: "000000902" } })] },
+      {},
+    ],
+  };
+  const { creditos, descartados } = parseListado(r);
+  assert.deepEqual(creditos.map((c) => c.noCredito), ["9001 R", "9002 2D"]);
+  assert.equal(descartados.length, 1);
+});
+
+test("antigüedad negativa o vacía cuenta como al corriente", () => {
+  const r: ListadoCobranzaResponse = { Detalle: "CORRECTO", vListEntCredito: [{ Cobranza: [item({ cr: { Antiguedad: null } }), item({ g: { NoCredito: "x" }, cr: { Antiguedad: -3 } })] }] };
+  assert.deepEqual(parseListado(r).creditos.map((c) => c.foto.antiguedad), [0, 0]);
 });

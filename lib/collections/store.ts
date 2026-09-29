@@ -1,176 +1,78 @@
-// Escrituras compartidas por la foto diaria (sync.ts) y la reconstrucción
-// histórica (backfill.ts): fotos de saldo, eventos, alertas y sus entradas
-// en el timeline.
+// Escrituras de cobranza compartidas: eventos, alertas y sus entradas en el
+// timeline, configuración y el registro de llamadas a SIAC.
 
 import type { TransactionSql } from "postgres";
 import { sql } from "@/lib/db";
-import type { SnapshotValues } from "@/lib/siac/parse";
-import type { AlertDraft, DayState, DerivedEvent } from "./rules";
+import type { AlertDraft, DerivedEvent } from "./rules";
 
 export type Tx = TransactionSql;
 
 export const peso = (n: number) => n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
+const dias = (n: number | undefined) => (n === 1 ? "1 día" : `${n ?? 0} días`);
 
-export interface ActiveCredit {
-  id: string;
-  client_id: string;
-  id_cliente_siac: string;
-  no_control: string;
-  fecha_alta: string;
+/** Lee un valor de col_settings, o `porDefecto` si no existe o no se puede leer como el tipo esperado. */
+export async function getSetting<T>(key: string, porDefecto: T): Promise<T> {
+  const [row] = await sql`SELECT value FROM col_settings WHERE key = ${key}`;
+  if (!row || row.value === null || row.value === undefined) return porDefecto;
+  return typeof porDefecto === "number" ? (Number(row.value) as T) : (row.value as T);
 }
 
-/** Lo que las reglas necesitan de una foto completa. */
-export function dayValues(fechaCorte: string, v: SnapshotValues): Omit<DayState, "vencidoDesde"> {
-  return {
-    fechaCorte,
-    saldoVencido: v.saldoVencido,
-    capitalVencido: v.capitalVencido,
-    sumaPagos: v.sumaPagos,
-    sumaCondonaciones: v.sumaCondonaciones,
-    sumaQuitas: v.sumaQuitas,
-    sumaCastigos: v.sumaCastigos,
+/** Registra cada llamada a SIAC en col_siac_raw. El cliente nunca incluye credenciales en `parametros`. */
+export function siacCallRecorder(runId: number) {
+  return async (r: { operacion: string; parametros: Record<string, string>; httpStatus: number | null; detalle: string | null; respuesta: unknown }) => {
+    await sql`
+      INSERT INTO col_siac_raw (sync_run_id, operacion, parametros, http_status, detalle, respuesta)
+      VALUES (${runId}, ${r.operacion}, ${JSON.stringify(r.parametros)}::jsonb, ${r.httpStatus}, ${r.detalle},
+              ${JSON.stringify(r.respuesta ?? null)}::jsonb)
+    `;
   };
 }
 
-function toDayState(r: Record<string, unknown>): DayState {
-  return {
-    fechaCorte: r.fecha_corte as string,
-    saldoVencido: Number(r.saldo_vencido),
-    capitalVencido: Number(r.capital_vencido),
-    sumaPagos: Number(r.suma_pagos),
-    sumaCondonaciones: Number(r.suma_condonaciones),
-    sumaQuitas: Number(r.suma_quitas),
-    sumaCastigos: Number(r.suma_castigos),
-    vencidoDesde: (r.vencido_desde as string) ?? null,
-  };
-}
+// ---------------------------------------------------------------- eventos
 
-// Función y no constante: un fragmento de postgres.js no debe reusarse entre consultas.
-const columnasEstado = () => sql`
-  to_char(fecha_corte, 'YYYY-MM-DD') AS fecha_corte, saldo_vencido, capital_vencido, suma_pagos,
-  suma_condonaciones, suma_quitas, suma_castigos, to_char(vencido_desde, 'YYYY-MM-DD') AS vencido_desde
-`;
+export type EventTipo = DerivedEvent["tipo"] | "salida_listado";
 
-/** Última foto de un crédito antes de una fecha. */
-export async function loadPrevState(creditId: string, antesDe: string): Promise<DayState | null> {
-  const [r] = await sql`
-    SELECT ${columnasEstado()} FROM col_balance_snapshots
-    WHERE credit_id = ${creditId} AND fecha_corte < ${antesDe}
-    ORDER BY fecha_corte DESC LIMIT 1
-  `;
-  return r ? toDayState(r) : null;
-}
-
-/** Fotos que tomó la sincronización diaria (no la reconstrucción), en orden. */
-export async function loadDailyStates(creditId: string): Promise<DayState[]> {
-  const rows = await sql`
-    SELECT ${columnasEstado()} FROM col_balance_snapshots
-    WHERE credit_id = ${creditId} AND origen IN ('diaria', 'credito')
-    ORDER BY fecha_corte
-  `;
-  return rows.map(toDayState);
-}
-
-export async function upsertSnapshot(
-  tx: Tx,
-  p: {
-    creditId: string;
-    fechaCorte: string;
-    origen: "diaria" | "reconstruccion" | "credito";
-    runId: number;
-    values: SnapshotValues;
-    vencidoDesde: string | null;
-  },
-) {
-  const v = p.values;
-  const row = {
-    credit_id: p.creditId,
-    fecha_corte: p.fechaCorte,
-    origen: p.origen,
-    sync_run_id: p.runId,
-    saldo_vigente: v.saldoVigente,
-    capital_vigente: v.capitalVigente,
-    iva_capital_vigente: v.ivaCapitalVigente,
-    intereses_vigentes: v.interesesVigentes,
-    iva_intereses_vigentes: v.ivaInteresesVigentes,
-    comisiones_futuras: v.comisionesFuturas,
-    iva_comisiones_futuras: v.ivaComisionesFuturas,
-    saldo_vencido: v.saldoVencido,
-    capital_vencido: v.capitalVencido,
-    iva_capital_vencido: v.ivaCapitalVencido,
-    intereses_vencidos: v.interesesVencidos,
-    iva_intereses_vencidos: v.ivaInteresesVencidos,
-    intereses_moratorios: v.interesesMoratorios,
-    iva_intereses_moratorios: v.ivaInteresesMoratorios,
-    comisiones_vencidas: v.comisionesVencidas,
-    iva_comisiones_vencidas: v.ivaComisionesVencidas,
-    saldo_actual: v.saldoActual,
-    total_pagar: v.totalPagar,
-    saldo_global: v.saldoGlobal,
-    cat: v.cat,
-    suma_ministraciones: v.sumaMinistraciones,
-    suma_pagos: v.sumaPagos,
-    suma_comisiones: v.sumaComisiones,
-    suma_condonaciones: v.sumaCondonaciones,
-    suma_quitas: v.sumaQuitas,
-    suma_castigos: v.sumaCastigos,
-    vencido_desde: p.vencidoDesde,
-    fecha_calculo_siac: v.fechaCalculoSiac,
-  };
-  const { credit_id: _c, fecha_corte: _f, ...cambios } = row;
-  await tx`
-    INSERT INTO col_balance_snapshots ${tx(row)}
-    ON CONFLICT (credit_id, fecha_corte) DO UPDATE SET ${tx(cambios)}, obtenido_at = now()
-  `;
-}
-
-const ACTIVIDAD_POR_EVENTO: Record<DerivedEvent["tipo"], string> = {
-  pago: "pago_detectado",
-  entrada_vencido: "entrada_vencido",
-  regularizacion: "regularizacion",
-  condonacion: "ajuste_siac",
-  quita: "ajuste_siac",
-  castigo: "ajuste_siac",
+const DESCRIPCION: Record<EventTipo, (noCredito: string, e: Partial<DerivedEvent>) => string> = {
+  pago_detectado: (n) => `SIAC registró un pago en el crédito ${n} (monto no disponible en el listado)`,
+  entrada_mora: (n, e) => `El crédito ${n} entró en atraso (${peso(e.vencidoDespues ?? 0)} vencidos)`,
+  regularizacion: (n, e) => `El crédito ${n} quedó al corriente (tenía ${dias(e.antiguedadAntes)} de atraso)`,
+  nueva_mensualidad_vencida: (n, e) => `Venció otra mensualidad del crédito ${n} sin pagarse (${dias(e.antiguedadDespues)} de atraso)`,
+  salida_listado: (n) => `El crédito ${n} ya no aparece en el listado de cobranza de SIAC`,
 };
 
-function describirEvento(ev: DerivedEvent, noControl: string): string {
-  switch (ev.tipo) {
-    case "pago":
-      return `Pago de ${peso(ev.monto ?? 0)} registrado en SIAC (crédito ${noControl})`;
-    case "entrada_vencido":
-      return `El crédito ${noControl} entró a vencido con ${peso(ev.vencidoDespues)}`;
-    case "regularizacion":
-      return `El crédito ${noControl} quedó al corriente (tenía ${peso(ev.vencidoAntes)} vencidos)`;
-    default:
-      return `${ev.tipo[0].toUpperCase()}${ev.tipo.slice(1)} de ${peso(ev.monto ?? 0)} en SIAC (crédito ${noControl})`;
-  }
-}
-
 /** Inserta el evento y su entrada en el timeline. Regresa 1 si era nuevo. */
-export async function insertEvent(tx: Tx, runId: number, cr: ActiveCredit, ev: DerivedEvent): Promise<number> {
+export async function insertEvent(
+  tx: Tx,
+  p: { runId: number; creditId: string; clientId: string; noCredito: string; tipo: EventTipo; event: Partial<DerivedEvent> & { fechaEvento: string } },
+): Promise<number> {
+  const e = p.event;
   const [row] = await tx`
-    INSERT INTO col_credit_events (credit_id, tipo, fecha_evento, monto, vencido_antes, vencido_despues, detectado_en)
-    VALUES (${cr.id}, ${ev.tipo}, ${ev.fechaEvento}, ${ev.monto}, ${ev.vencidoAntes}, ${ev.vencidoDespues}, ${runId})
+    INSERT INTO col_credit_events (credit_id, tipo, fecha_evento, antiguedad_antes, antiguedad_despues, vencido_antes, vencido_despues, detectado_en)
+    VALUES (${p.creditId}, ${p.tipo}, ${e.fechaEvento}, ${e.antiguedadAntes ?? null}, ${e.antiguedadDespues ?? null},
+            ${e.vencidoAntes ?? null}, ${e.vencidoDespues ?? null}, ${p.runId})
     ON CONFLICT (credit_id, tipo, fecha_evento) DO NOTHING
     RETURNING id
   `;
   if (!row) return 0;
   await tx`
     INSERT INTO col_activities (client_id, credit_id, tipo, descripcion, event_id, actor, ocurrido_at)
-    VALUES (${cr.client_id}, ${cr.id}, ${ACTIVIDAD_POR_EVENTO[ev.tipo]}, ${describirEvento(ev, cr.no_control)},
-            ${row.id}, 'sistema', (${ev.fechaEvento}::date + time '12:00') AT TIME ZONE 'America/Mexico_City')
+    VALUES (${p.clientId}, ${p.creditId}, ${p.tipo}, ${DESCRIPCION[p.tipo](p.noCredito, e)}, ${row.id}, 'sistema',
+            (${e.fechaEvento}::date + time '12:00') AT TIME ZONE 'America/Mexico_City')
   `;
   return 1;
 }
 
+// ---------------------------------------------------------------- alertas
+
 const TITULO_ALERTA: Record<AlertDraft["tipo"], string> = {
-  entrada_vencido: "Entró a mora",
-  aumento_vencido: "Venció otra mensualidad sin pago",
+  entrada_mora: "Entró a mora",
+  nueva_mensualidad_vencida: "Venció otra mensualidad sin pago",
   cambio_bucket: "Subió de rango de atraso",
   promesa_incumplida: "Promesa de pago incumplida",
   mensaje_fallido: "No se pudo entregar un WhatsApp",
   telefono_invalido: "En mora y sin teléfono válido para WhatsApp",
   sync_fallido: "Falló la sincronización con SIAC",
+  foto_vieja: "SIAC no actualizó la foto del día",
 };
 
 /** Abre la alerta si no hay otra abierta con la misma llave, y la anota en el timeline. Regresa 1 si era nueva. */
@@ -192,13 +94,11 @@ export async function openAlert(tx: Tx, clientId: string | null, creditId: strin
   return 1;
 }
 
-/** Registra cada llamada a SIAC en col_siac_raw (sin credenciales; el cliente nunca las incluye). */
-export function siacCallRecorder(runId: number) {
-  return async (r: { operacion: string; parametros: Record<string, string>; httpStatus: number | null; detalle: string | null; respuesta: unknown }) => {
-    await sql`
-      INSERT INTO col_siac_raw (sync_run_id, operacion, parametros, http_status, detalle, respuesta)
-      VALUES (${runId}, ${r.operacion}, ${JSON.stringify(r.parametros)}::jsonb, ${r.httpStatus}, ${r.detalle},
-              ${JSON.stringify(r.respuesta ?? null)}::jsonb)
-    `;
-  };
+/** Cierra alertas abiertas que dejaron de aplicar (por ejemplo, sync fallida tras una corrida buena). */
+export async function closeAlerts(tx: Tx, dedupeKeys: string[]) {
+  if (dedupeKeys.length === 0) return;
+  await tx`
+    UPDATE col_alerts SET estado = 'atendida', atendida_por = 'sistema', atendida_at = now()
+    WHERE estado = 'abierta' AND dedupe_key IN ${tx(dedupeKeys)}
+  `;
 }

@@ -3,14 +3,18 @@ import { getSiacConfig } from "@/lib/siac/client";
 import { runDailySync } from "@/lib/collections/sync";
 import { notifySlack } from "@/lib/collections/notify";
 
-// ~100 llamadas a SIAC en lotes de 5; con huecos que rellenar pueden ser más.
-export const maxDuration = 300;
+// Una sola llamada a SIAC; el margen es para la escritura en la base.
+export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
 /**
- * Foto diaria de la cartera. La dispara el cron de Vercel (vercel.json) con
- * `Authorization: Bearer $CRON_SECRET`. Con el mismo secreto se puede correr a
- * mano para una fecha pasada: /api/cron/siac-sync?fecha=2026-09-27
+ * Foto diaria de la cartera (una llamada a ListadoCobranzaJSON). La disparan
+ * los crons de vercel.json con `Authorization: Bearer $CRON_SECRET`:
+ *
+ *   6:00 CDMX   /api/cron/siac-sync               foto de hoy
+ *   9:00 CDMX   /api/cron/siac-sync?reintento=1   solo si la de las 6:00 no quedó completa
+ *
+ * Con el mismo secreto se puede correr a mano para otra fecha: ?fecha=2026-10-01
  */
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
@@ -25,10 +29,14 @@ export async function GET(req: NextRequest) {
   }
 
   const fecha = req.nextUrl.searchParams.get("fecha") ?? undefined;
-  const todos = req.nextUrl.searchParams.get("todos") === "1";
+  const reintento = req.nextUrl.searchParams.get("reintento") === "1";
 
   try {
-    const result = await runDailySync({ disparadoPor: fecha ? "manual" : "cron", fechaCorte: fecha, consultarTodosLosClientes: todos });
+    const result = await runDailySync({
+      disparadoPor: fecha ? "manual" : reintento ? "cron_reintento" : "cron",
+      fechaCorte: fecha,
+      soloSiFalta: reintento,
+    });
     return NextResponse.json(result, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     // Errores antes de poder registrar la corrida (base caída, fecha inválida).

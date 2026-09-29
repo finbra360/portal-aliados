@@ -1,98 +1,90 @@
 // Respuestas de los web services de SIAC Suite (ConsultasSIACSuiteJSON.asmx).
-// Solo incluye campos verificados contra el ambiente de pruebas el 2026-09-28;
-// lo demás se conserva en el `raw` de cada tabla.
+// Solo incluye campos verificados contra el ambiente de pruebas (28 y 29 de
+// septiembre de 2026). Muchos llegan vacíos o null; lo demás se conserva en
+// el `raw` de cada tabla.
 
 export interface SiacEnvelope {
   Detalle: string;
 }
 
-export interface SiacCliente {
-  IdCliente: string;
-  Nombre: string | null;
-  Rfc: string | null;
-  Celular: string | null;
-  NumeroTelefono: string | null;
-  Email: string | null;
-  Email2?: string | null;
-  [campo: string]: unknown;
-}
+type Texto = string | null | undefined;
+type Numero = number | string | null | undefined;
 
-export interface ConsultarClientesResponse extends SiacEnvelope {
-  ClienteOuts?: SiacCliente[];
-}
-
-export interface SiacCredito {
-  Generales: {
-    IDCliente: string;
-    NombreCliente: string;
-    NoControl: string;
-    TipoCredito: string | null;
-    FechaAlta: string;
-    MontoCredito: number;
+export interface ListadoCobranzaItem {
+  InformacionGeneral: {
+    NoCredito: Texto;
+    NumeroCliente: Texto;
+    Cliente: Texto;
+    TipoCredito?: Texto;
+    Referencia?: Texto;
+    Sucursal?: Texto;
+    Municipio?: Texto;
+    TipoProducto?: Texto;
+    IDCobrador?: Texto;
+    NombrePromotor?: Texto;
+    ProgramaEspecial?: Texto;
+    ReferenciaClubPago?: Texto;
+    CLABEClubPago?: Texto;
   };
-  CondicionesFinanciamiento: {
-    TasaNormal: string | null;
-    TasaNormalPuntosAdicionales: number | null;
-    TasaMoratoria: string | null;
-    TasaMoratoriaPuntosAdicionales: number | null;
-    TasaMoratoriaFactor: number | null;
-    PeriodoPago: string | null;
-    EsquemaPago: string | null;
-    FrecuenciaPago: string | null;
-    NumeroVencimientos: number | null;
-    [campo: string]: unknown;
+  CondicionesFinanciamientoCobranza?: {
+    Tasa?: Numero;
+    MontoCredito?: Numero;
+    FechaMinistracion?: Texto;
+    FechaTerminoContrato?: Texto;
+    Vencimientos?: Numero;
+    PlazoMeses?: Numero;
   };
-  Otros: {
-    EstatusCredito: string;
-    Promotor: string | null;
-    Referencia: string | null;
+  InformacionContacto?: {
+    TelefonoCliente?: Texto;
+    Celular?: Texto;
+    CorreoCliente?: Texto;
+    DomicilioParticular?: Texto;
+    DomicilioTrabajo?: Texto;
+    NombreAval?: Texto;
+    DireccionAval?: Texto;
+    TelefonoAval?: Texto;
+    CorreoAval?: Texto;
+    NombreReferencia1?: Texto;
+    DireccionReferencia1?: Texto;
+    TelefonoReferencia1?: Texto;
+    NombreReferencia2?: Texto;
+    DireccionReferencia2?: Texto;
+    TelefonoReferencia2?: Texto;
   };
-  [campo: string]: unknown;
+  CobranzaRespuesta: {
+    /** Días de atraso actuales. */
+    Antiguedad: Numero;
+    Atrasomaximo?: Numero;
+    FechaUltimoPago?: Texto;
+    NumeroVecesMora?: Numero;
+    VencimientosCubiertos?: Numero;
+    VencimientosVencidos?: Numero;
+    VencimientosPorVencer?: Numero;
+    FrecuenciaPagos?: Texto;
+    DiasSinMovimiento?: Numero;
+    /** "1800-01-01" cuando ya no hay pagos futuros. */
+    ProximoVencimiento?: Texto;
+    /** Total pendiente por vencer, NO la mensualidad. */
+    MontoPorVencer?: Numero;
+  };
+  Vencido: {
+    InteresesMoratorios: Numero;
+    IVAVencido: Numero;
+    TotalVencido: Numero;
+    TotalAdeudo: Numero;
+    TotalGlobal: Numero;
+  };
 }
 
-export interface ConsultarCreditosResponse extends SiacEnvelope {
-  ListadoCreditos?: SiacCredito[];
+export interface ListadoCobranzaResponse extends SiacEnvelope {
+  vListEntCredito?: { Cobranza?: ListadoCobranzaItem[] }[];
 }
 
+/** Respuesta de ConsultarSaldoCredito (solo bajo demanda). */
 export interface ConsultarSaldoCreditoResponse extends SiacEnvelope {
-  Generales: {
-    NoControl: string;
-    IDCliente: string;
-    NombreCliente: string;
-    FechaCalculo: string;
-  };
-  SaldoVigente: {
-    saldoVigente: number;
-    CapitalVigente: number;
-    IVACapitalVigente: number;
-    InteresesVigentes: number;
-    IVAInteresesVigentes: number;
-    ComisionesFuturas: number;
-    IVAComisionesFuturas: number;
-  };
-  SaldoVencido: {
-    saldoVencido: number;
-    CapitalVencido: number;
-    IVACapitalVencido: number;
-    InteresesVencidos: number;
-    IVAInteresesVencidos: number;
-    InteresesMoratorios: number;
-    IVAInteresesMoratorios: number;
-    ComisionesVencidas: number;
-    IVAComisionesVencidas: number;
-  };
-  Totales: {
-    SaldoActual: number;
-    TotalPagar: number;
-    SaldoGlobal: number;
-    CAT: string | null;
-  };
-  Sumatorias: {
-    Ministraciones: number;
-    Pagos: number;
-    Comisiones: number;
-    Condonaciones: number;
-    Quitas: number;
-    Castigos: number;
-  };
+  Generales: { NoControl: string; IDCliente: string; NombreCliente: string; FechaCalculo: string };
+  SaldoVigente: Record<string, number> & { saldoVigente: number };
+  SaldoVencido: Record<string, number> & { saldoVencido: number };
+  Totales: { SaldoActual: number; TotalPagar: number; SaldoGlobal: number; CAT: string | null };
+  Sumatorias: Record<string, number>;
 }

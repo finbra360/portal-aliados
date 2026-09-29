@@ -2,25 +2,25 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   addDays,
+  aggregateClient,
   bucketFor,
+  campoTelefonoPrincipal,
   daysBetween,
-  deriveCreditAlerts,
-  deriveDay,
+  deriveClientAlerts,
+  deriveCreditEvents,
   fechaMexico,
   normalizePhoneMx,
+  photoFreshness,
   resolvePromise,
-  type DayState,
+  type CreditState,
 } from "./rules.ts";
 
-const dia = (over: Partial<DayState> = {}): DayState => ({
-  fechaCorte: "2026-09-24",
-  saldoVencido: 0,
-  capitalVencido: 0,
-  sumaPagos: 1_000_000,
-  sumaCondonaciones: 0,
-  sumaQuitas: 0,
-  sumaCastigos: 0,
-  vencidoDesde: null,
+const credito = (over: Partial<CreditState> = {}): CreditState => ({
+  fechaCorte: "2026-09-28",
+  antiguedad: 0,
+  totalVencido: 0,
+  vencimientosVencidos: 0,
+  fechaUltimoPago: "2026-09-15",
   ...over,
 });
 
@@ -29,112 +29,114 @@ test("fechas en hora de Ciudad de México", () => {
   assert.equal(fechaMexico(new Date("2026-09-29T03:00:00Z")), "2026-09-28");
   assert.equal(fechaMexico(new Date("2026-09-29T07:00:00Z")), "2026-09-29");
   assert.equal(addDays("2026-02-28", 1), "2026-03-01");
-  assert.equal(addDays("2026-01-01", -1), "2025-12-31");
   assert.equal(daysBetween("2026-09-25", "2026-09-28"), 3);
 });
 
-test("teléfonos: se normalizan a 52 + 10 dígitos o se rechazan", () => {
+test("teléfonos: 52 + 10 dígitos o se marcan para corregir", () => {
   assert.equal(normalizePhoneMx("55 1234 5678"), "525512345678");
   assert.equal(normalizePhoneMx("+52 (55) 1234-5678"), "525512345678");
   assert.equal(normalizePhoneMx("5215512345678"), "525512345678");
-  assert.equal(normalizePhoneMx("12345"), null);
-  assert.equal(normalizePhoneMx(""), null);
+  assert.equal(normalizePhoneMx("551234567"), null, "un dígito de menos");
+  assert.equal(normalizePhoneMx("55123456789"), null, "un dígito de más");
   assert.equal(normalizePhoneMx(null), null);
 });
 
-test("buckets de antigüedad", () => {
-  assert.equal(bucketFor(null), null);
-  assert.equal(bucketFor(0), null);
+test("teléfono principal: Celular y, si viene vacío, TelefonoCliente", () => {
+  assert.equal(campoTelefonoPrincipal({ celular: "5511112222", telefonoCliente: "5533334444" }), "Celular");
+  assert.equal(campoTelefonoPrincipal({ celular: null, telefonoCliente: "5533334444" }), "TelefonoCliente");
+  assert.equal(campoTelefonoPrincipal({ celular: " - ", telefonoCliente: "5533334444" }), "TelefonoCliente", "sin dígitos cuenta como vacío");
+  assert.equal(campoTelefonoPrincipal({ celular: null, telefonoCliente: null }), null);
+});
+
+test("buckets de aging sobre Antiguedad", () => {
+  assert.equal(bucketFor(0), "al_corriente");
   assert.equal(bucketFor(1), "1-7");
-  assert.equal(bucketFor(7), "1-7");
   assert.equal(bucketFor(8), "8-30");
   assert.equal(bucketFor(31), "31-60");
   assert.equal(bucketFor(90), "61-90");
   assert.equal(bucketFor(91), "90+");
 });
 
-test("primera foto de un crédito: sin eventos y sin fecha de inicio de vencido", () => {
-  const r = deriveDay(null, dia({ saldoVencido: 5000 }));
-  assert.deepEqual(r, { vencidoDesde: null, events: [] });
+test("primera foto de un crédito: sin eventos", () => {
+  assert.deepEqual(deriveCreditEvents(null, credito({ antiguedad: 40, totalVencido: 5000 })), []);
 });
 
-test("un pago se detecta por el aumento de la suma de pagos", () => {
-  const prev = dia({ fechaCorte: "2025-07-24" });
-  const r = deriveDay(prev, dia({ fechaCorte: "2025-07-25", sumaPagos: 1_158_818.36 }));
-  assert.equal(r.events.length, 1);
-  assert.equal(r.events[0].tipo, "pago");
-  assert.equal(r.events[0].monto, 158_818.36);
-  assert.equal(r.events[0].fechaEvento, "2025-07-25");
+test("pago detectado por el cambio de FechaUltimoPago, sin monto", () => {
+  const ev = deriveCreditEvents(credito(), credito({ fechaCorte: "2026-09-29", fechaUltimoPago: "2026-09-28" }));
+  assert.deepEqual(ev.map((e) => [e.tipo, e.fechaEvento]), [["pago_detectado", "2026-09-28"]]);
+  assert.ok(!("monto" in ev[0]));
 });
 
-test("entrada a vencido, racha y regularización", () => {
-  const d24 = dia({ fechaCorte: "2026-09-24" });
-  const e25 = deriveDay(d24, dia({ fechaCorte: "2026-09-25", saldoVencido: 159_000, capitalVencido: 149_000 }));
-  assert.deepEqual(e25.events.map((e) => e.tipo), ["entrada_vencido"]);
-  assert.equal(e25.vencidoDesde, "2026-09-25");
-
-  const d25 = dia({ fechaCorte: "2026-09-25", saldoVencido: 159_000, capitalVencido: 149_000, vencidoDesde: e25.vencidoDesde });
-  const e26 = deriveDay(d25, dia({ fechaCorte: "2026-09-26", saldoVencido: 159_400, capitalVencido: 149_000 }));
-  assert.deepEqual(e26.events, []);
-  assert.equal(e26.vencidoDesde, "2026-09-25", "la racha conserva su fecha de inicio");
-
-  const d26 = dia({ fechaCorte: "2026-09-26", saldoVencido: 159_400, capitalVencido: 149_000, vencidoDesde: "2026-09-25" });
-  const e27 = deriveDay(d26, dia({ fechaCorte: "2026-09-27", saldoVencido: 0, sumaPagos: 1_159_400 }));
-  assert.deepEqual(e27.events.map((e) => e.tipo).sort(), ["pago", "regularizacion"]);
-  assert.equal(e27.vencidoDesde, null);
+test("entrada a mora con su fecha exacta aunque falten fotos", () => {
+  // Última foto el 20 al corriente; la de hoy (29) trae 4 días de atraso: entró el 25.
+  const ev = deriveCreditEvents(credito({ fechaCorte: "2026-09-20" }), credito({ fechaCorte: "2026-09-29", antiguedad: 4, totalVencido: 10_050 }));
+  assert.deepEqual(ev.map((e) => [e.tipo, e.fechaEvento]), [["entrada_mora", "2026-09-25"]]);
 });
 
-test("vencido de origen desconocido sigue desconocido hasta la reconstrucción", () => {
-  const prev = dia({ saldoVencido: 5000, vencidoDesde: null });
-  const r = deriveDay(prev, dia({ fechaCorte: "2026-09-25", saldoVencido: 5100 }));
-  assert.equal(r.vencidoDesde, null);
+test("regularización y nueva mensualidad vencida", () => {
+  const enMora = credito({ antiguedad: 20, totalVencido: 10_000, vencimientosVencidos: 1 });
+  const otra = deriveCreditEvents(enMora, credito({ fechaCorte: "2026-09-29", antiguedad: 21, totalVencido: 20_100, vencimientosVencidos: 2 }));
+  assert.deepEqual(otra.map((e) => e.tipo), ["nueva_mensualidad_vencida"]);
+
+  const paga = deriveCreditEvents(enMora, credito({ fechaCorte: "2026-09-29", fechaUltimoPago: "2026-09-29" }));
+  assert.deepEqual(paga.map((e) => e.tipo).sort(), ["pago_detectado", "regularizacion"]);
 });
 
-test("alerta al cruzar el umbral de mora, no por centavos", () => {
-  const prev = dia({ saldoVencido: 0 });
-  assert.deepEqual(deriveCreditAlerts(prev, dia({ fechaCorte: "2026-09-25", saldoVencido: 375, vencidoDesde: "2026-09-25" }), "c1"), []);
-  const alerts = deriveCreditAlerts(prev, dia({ fechaCorte: "2026-09-25", saldoVencido: 18_618, vencidoDesde: "2026-09-25" }), "c1");
-  assert.deepEqual(alerts.map((a) => a.tipo), ["entrada_vencido"]);
-  assert.equal(alerts[0].dedupeKey, "entrada_vencido:c1");
+test("foto vieja: SIAC regresa exactamente lo mismo aunque hay créditos en atraso", () => {
+  const ayer = new Map([["a", credito({ fechaCorte: "2026-09-28", antiguedad: 5, totalVencido: 10_000 })], ["b", credito({ fechaCorte: "2026-09-28" })]]);
+  const igual = new Map([["a", credito({ fechaCorte: "2026-09-29", antiguedad: 5, totalVencido: 10_000 })], ["b", credito({ fechaCorte: "2026-09-29" })]]);
+  assert.equal(photoFreshness(ayer, igual), "vieja");
+
+  const nueva = new Map([["a", credito({ fechaCorte: "2026-09-29", antiguedad: 6, totalVencido: 10_025 })], ["b", credito({ fechaCorte: "2026-09-29" })]]);
+  assert.equal(photoFreshness(ayer, nueva), "actualizada");
 });
 
-test("los moratorios diarios no generan alerta; una mensualidad nueva vencida sí", () => {
-  const prev = dia({ saldoVencido: 50_000, capitalVencido: 45_000, vencidoDesde: "2026-09-01", fechaCorte: "2026-09-10" });
-  const soloMoratorios = dia({ saldoVencido: 50_400, capitalVencido: 45_000, vencidoDesde: "2026-09-01", fechaCorte: "2026-09-11" });
-  assert.deepEqual(deriveCreditAlerts(prev, soloMoratorios, "c1"), []);
-  const otraMensualidad = dia({ saldoVencido: 95_000, capitalVencido: 90_000, vencidoDesde: "2026-09-01", fechaCorte: "2026-09-11" });
-  assert.deepEqual(deriveCreditAlerts(prev, otraMensualidad, "c1").map((a) => a.tipo), ["aumento_vencido"]);
+test("foto vieja: sin créditos en atraso no hay forma de saberlo", () => {
+  const ayer = new Map([["b", credito({ fechaCorte: "2026-09-28" })]]);
+  const hoy = new Map([["b", credito({ fechaCorte: "2026-09-29" })]]);
+  assert.equal(photoFreshness(ayer, hoy), "sin_evidencia");
+  assert.equal(photoFreshness(new Map(), hoy), "sin_evidencia", "primera corrida");
 });
 
-test("cambio de bucket a 31-60 y a 90+", () => {
-  const prev = dia({ saldoVencido: 50_000, capitalVencido: 45_000, vencidoDesde: "2026-08-01", fechaCorte: "2026-08-30" });
-  const curr = dia({ saldoVencido: 50_100, capitalVencido: 45_000, vencidoDesde: "2026-08-01", fechaCorte: "2026-09-01" });
-  const a = deriveCreditAlerts(prev, curr, "c1");
-  assert.deepEqual(a.map((x) => [x.tipo, x.severidad, x.dedupeKey]), [["cambio_bucket", "atencion", "cambio_bucket:c1:31-60"]]);
-
-  const p90 = dia({ ...curr, vencidoDesde: "2026-06-02", fechaCorte: "2026-08-31" });
-  const c90 = dia({ ...curr, vencidoDesde: "2026-06-02", fechaCorte: "2026-09-01" });
-  assert.equal(deriveCreditAlerts(p90, c90, "c1")[0].severidad, "critica");
+test("foto vieja: un crédito nuevo o uno que sale cuentan como cambio", () => {
+  const ayer = new Map([["a", credito({ fechaCorte: "2026-09-28", antiguedad: 5 })]]);
+  const conNuevo = new Map([["a", credito({ fechaCorte: "2026-09-29", antiguedad: 5 })], ["z", credito({ fechaCorte: "2026-09-29" })]]);
+  assert.equal(photoFreshness(ayer, conNuevo), "actualizada");
+  assert.equal(photoFreshness(new Map([...ayer, ["b", credito()]]), new Map([["a", credito({ fechaCorte: "2026-09-29", antiguedad: 5 })]])), "actualizada");
 });
 
-test("promesa cumplida en cuanto se junta el monto", () => {
-  const p = { monto: 20_000, creadaEl: "2026-10-01", fechaCompromiso: "2026-10-05" };
-  const r = resolvePromise(p, [{ fecha: "2026-10-03", monto: 12_000 }, { fecha: "2026-10-04", monto: 8_000 }], "2026-10-04");
-  assert.deepEqual(r, { estado: "cumplida", montoPagado: 20_000 });
+test("mora por cliente: se suman sus créditos contra el umbral", () => {
+  const prev = aggregateClient([credito({ totalVencido: 400 }), credito({ totalVencido: 500 })]);
+  const curr = aggregateClient([credito({ totalVencido: 450, antiguedad: 3 }), credito({ totalVencido: 600, antiguedad: 3 })]);
+  assert.equal(curr.totalVencido, 1050);
+  const al = deriveClientAlerts(prev, curr, "k1", 1000, "2026-09-29");
+  assert.deepEqual(al.map((a) => [a.tipo, a.dedupeKey]), [["entrada_mora", "entrada_mora:k1"]]);
+  assert.deepEqual(deriveClientAlerts(prev, aggregateClient([credito({ totalVencido: 950, antiguedad: 3 })]), "k1", 1000, "2026-09-29"), [], "residuos bajo el umbral");
 });
 
-test("promesa sigue vigente mientras no tengamos datos de todo el periodo de gracia", () => {
-  const p = { monto: 20_000, creadaEl: "2026-10-01", fechaCompromiso: "2026-10-05" };
-  assert.equal(resolvePromise(p, [], "2026-10-05").estado, "vigente");
-  assert.equal(resolvePromise(p, [], "2026-10-06").estado, "incumplida");
+test("mora por cliente: nueva mensualidad vencida y cambio de bucket", () => {
+  const prev = aggregateClient([credito({ totalVencido: 10_000, antiguedad: 30, vencimientosVencidos: 1 })]);
+  const curr = aggregateClient([credito({ totalVencido: 20_000, antiguedad: 31, vencimientosVencidos: 2 })]);
+  const al = deriveClientAlerts(prev, curr, "k1", 1000, "2026-09-29");
+  assert.deepEqual(al.map((a) => [a.tipo, a.severidad]), [["nueva_mensualidad_vencida", "atencion"], ["cambio_bucket", "atencion"]]);
+
+  const p90 = aggregateClient([credito({ totalVencido: 50_000, antiguedad: 90 })]);
+  const c91 = aggregateClient([credito({ totalVencido: 50_100, antiguedad: 91 })]);
+  assert.equal(deriveClientAlerts(p90, c91, "k1", 1000, "2026-09-29")[0].severidad, "critica");
 });
 
-test("promesa parcial, y pagos fuera de la ventana no cuentan", () => {
-  const p = { monto: 20_000, creadaEl: "2026-10-01", fechaCompromiso: "2026-10-05" };
-  const pagos = [
-    { fecha: "2026-09-30", monto: 20_000 }, // antes de la promesa
-    { fecha: "2026-10-06", monto: 5_000 }, // día de gracia: cuenta
-    { fecha: "2026-10-07", monto: 20_000 }, // después de la gracia
-  ];
-  assert.deepEqual(resolvePromise(p, pagos, "2026-10-07"), { estado: "parcial", montoPagado: 5_000 });
+test("promesas sin montos de pago", () => {
+  const p = { monto: 10_000, creadaEl: "2026-10-01", fechaCompromiso: "2026-10-05", vencidoAlCrear: 25_000 };
+  // Pagó el 4 y el vencido bajó 12,000: cumplida.
+  assert.equal(resolvePromise(p, ["2026-10-04"], 13_000, "2026-10-04", 1000), "cumplida");
+  // Pagó, pero el vencido solo bajó 3,000: parcial, y solo al terminar la gracia.
+  assert.equal(resolvePromise(p, ["2026-10-04"], 22_000, "2026-10-05", 1000), "vigente");
+  assert.equal(resolvePromise(p, ["2026-10-04"], 22_000, "2026-10-06", 1000), "parcial");
+  // Quedó por debajo del umbral: cumplida aunque la resta no alcance.
+  assert.equal(resolvePromise({ ...p, vencidoAlCrear: 1_200 }, ["2026-10-04"], 300, "2026-10-04", 1000), "cumplida");
+  // No pagó.
+  assert.equal(resolvePromise(p, [], 25_300, "2026-10-05", 1000), "vigente");
+  assert.equal(resolvePromise(p, [], 25_300, "2026-10-06", 1000), "incumplida");
+  // Un pago anterior a la promesa no cuenta.
+  assert.equal(resolvePromise(p, ["2026-09-30"], 10_000, "2026-10-06", 1000), "incumplida");
 });
