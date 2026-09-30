@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decodeEntities, parseAsmxJson, parseListado, siacDate, SiacParseError } from "./parse.ts";
+import { decodeEntities, parseAsmxJson, parseListado, parsePagos, siacDate, SiacParseError } from "./parse.ts";
 import type { ListadoCobranzaItem, ListadoCobranzaResponse } from "./types.ts";
 
 // Forma real de ListadoCobranzaJSON; nombres, teléfonos y montos ficticios.
@@ -90,4 +90,28 @@ test("varios bloques, varios créditos por cliente y créditos sin identificar",
 test("antigüedad negativa o vacía cuenta como al corriente", () => {
   const r: ListadoCobranzaResponse = { Detalle: "CORRECTO", vListEntCredito: [{ Cobranza: [item({ cr: { Antiguedad: null } }), item({ g: { NoCredito: "x" }, cr: { Antiguedad: -3 } })] }] };
   assert.deepEqual(parseListado(r).creditos.map((c) => c.foto.antiguedad), [0, 0]);
+});
+
+test("pagos de ConsultarPagos con llave estable aunque SIAC no dé un identificador", () => {
+  const pago = (f: string, monto: number, captura = f) => ({
+    Generales: { NoControl: "9001 R", IDCliente: "000000901", NombreCliente: "EMPRESA FICTICIA" },
+    DetallePago: { FechaCaptura: `${captura}T00:00:00`, Monto: monto, FechaAplicacion: `${f}T00:00:00`, NoPago: 1, ConceptoPago: "TRANSFERENCIA ELECTRONICA", Comentario: "" },
+  });
+  const r = parsePagos({
+    Detalle: "CORRECTO",
+    ListadoPagos: [
+      pago("2025-07-25", 158818.36),
+      pago("2025-08-25", 158818.36),
+      pago("2025-08-25", 158818.36), // idéntico al anterior
+      pago("2025-09-25", 158818.36, "2025-09-29"), // capturado tarde
+      pago("2025-10-25", 0),
+    ],
+  });
+  assert.equal(r.length, 4, "sin el de monto 0");
+  assert.deepEqual(r.map((p) => p.ocurrencia), [1, 1, 2, 1]);
+  assert.equal(r[3].fechaAplicacion, "2025-09-25");
+  assert.equal(r[3].fechaCaptura, "2025-09-29");
+  assert.equal(r[0].concepto, "TRANSFERENCIA ELECTRONICA");
+  assert.equal(r[0].comentario, null);
+  assert.equal(parsePagos({ Detalle: "CORRECTO" }).length, 0);
 });

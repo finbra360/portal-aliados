@@ -33,7 +33,7 @@ export function siacCallRecorder(runId: number) {
 export type EventTipo = DerivedEvent["tipo"] | "salida_listado";
 
 const DESCRIPCION: Record<EventTipo, (noCredito: string, e: Partial<DerivedEvent>) => string> = {
-  pago_detectado: (n) => `SIAC registró un pago en el crédito ${n} (monto no disponible en el listado)`,
+  pago_detectado: (n) => `SIAC registró un pago en el crédito ${n}`,
   entrada_mora: (n, e) => `El crédito ${n} entró en atraso (${peso(e.vencidoDespues ?? 0)} vencidos)`,
   regularizacion: (n, e) => `El crédito ${n} quedó al corriente (tenía ${dias(e.antiguedadAntes)} de atraso)`,
   nueva_mensualidad_vencida: (n, e) => `Venció otra mensualidad del crédito ${n} sin pagarse (${dias(e.antiguedadDespues)} de atraso)`,

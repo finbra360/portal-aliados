@@ -1,5 +1,5 @@
 import { decodeEntities, parseAsmxJson } from "./parse";
-import type { ConsultarSaldoCreditoResponse, ListadoCobranzaResponse, SiacEnvelope } from "./types";
+import type { ConsultarPagosResponse, ConsultarSaldoCreditoResponse, ListadoCobranzaResponse, SiacEnvelope } from "./types";
 
 export type SiacAmbiente = "pruebas" | "produccion";
 
@@ -161,6 +161,14 @@ export class SiacClient {
       ],
     };
     return this.call<ListadoCobranzaResponse>("ListadoCobranzaJSON", { Contenido: JSON.stringify(contenido) });
+  }
+
+  /**
+   * Historia de pagos de UN crédito. Es un servicio individual: nunca en lote
+   * para toda la cartera (ver lib/collections/payments.ts).
+   */
+  consultarPagos(idCliente: string, noControl: string) {
+    return this.call<ConsultarPagosResponse>("ConsultarPagos", { IDCliente: idCliente, NoControl: noControl });
   }
 
   /** Saldo calculado al vuelo de UN crédito. Solo bajo demanda, nunca en lote. */

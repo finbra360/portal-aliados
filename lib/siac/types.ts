@@ -88,3 +88,19 @@ export interface ConsultarSaldoCreditoResponse extends SiacEnvelope {
   Totales: { SaldoActual: number; TotalPagar: number; SaldoGlobal: number; CAT: string | null };
   Sumatorias: Record<string, number>;
 }
+
+/** Respuesta de ConsultarPagos: toda la historia de pagos de un crédito. */
+export interface ConsultarPagosResponse extends SiacEnvelope {
+  ListadoPagos?: {
+    Generales?: { NoControl?: Texto; IDCliente?: Texto; NombreCliente?: Texto };
+    DetallePago?: {
+      FechaCaptura?: Texto;
+      Monto?: Numero;
+      FechaAplicacion?: Texto;
+      /** Llega en 1 en todos los registros probados: no sirve como identificador. */
+      NoPago?: Numero;
+      ConceptoPago?: Texto;
+      Comentario?: Texto;
+    };
+  }[];
+}

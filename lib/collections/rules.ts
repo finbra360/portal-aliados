@@ -262,19 +262,37 @@ export function deriveClientAlerts(
 export type PromiseEstado = "vigente" | "cumplida" | "parcial" | "incumplida";
 
 /**
- * Resuelve una promesa SIN montos de pago (el listado no los trae; llegan con
- * ConsultarPagos). Es una aproximación y se puede corregir a mano:
+ * Resuelve una promesa con los pagos de SIAC (ConsultarPagos), con monto.
+ *
+ * Cuentan los pagos aplicados desde el día en que se registró la promesa
+ * hasta la fecha compromiso + GRACIA_PROMESA_DIAS. `datosHasta` es la fecha
+ * de corte de la última foto (no la fecha de hoy): la promesa solo se da por
+ * incumplida o parcial cuando ya tenemos datos de todo el periodo de gracia.
+ */
+export function resolvePromiseConPagos(
+  promesa: { monto: number; creadaEl: string; fechaCompromiso: string },
+  pagos: { fecha: string; monto: number }[],
+  datosHasta: string,
+): { estado: PromiseEstado; montoPagado: number } {
+  const limite = addDays(promesa.fechaCompromiso, GRACIA_PROMESA_DIAS);
+  const montoPagado =
+    Math.round(pagos.filter((p) => p.fecha >= promesa.creadaEl && p.fecha <= limite).reduce((s, p) => s + p.monto, 0) * 100) / 100;
+  if (montoPagado >= promesa.monto - CENTAVO) return { estado: "cumplida", montoPagado };
+  if (datosHasta >= limite) return { estado: montoPagado > CENTAVO ? "parcial" : "incumplida", montoPagado };
+  return { estado: "vigente", montoPagado };
+}
+
+/**
+ * Respaldo cuando faltan los montos de pago (un crédito con pago detectado
+ * cuya historia no se pudo traer de ConsultarPagos). Es una aproximación y se
+ * puede corregir a mano:
  *
  * - cumplida: hubo pago en la ventana y el vencido bajó al menos el monto
  *   prometido, o quedó por debajo del umbral de mora.
  * - parcial: hubo pago en la ventana, pero no alcanzó.
  * - incumplida: no hubo pago y ya tenemos fotos de todo el periodo de gracia.
- *
- * La ventana va del día en que se registró la promesa a la fecha compromiso
- * + GRACIA_PROMESA_DIAS. `datosHasta` es la fecha de corte de la última foto,
- * no la fecha de hoy.
  */
-export function resolvePromise(
+export function resolvePromiseAproximada(
   promesa: { monto: number; creadaEl: string; fechaCompromiso: string; vencidoAlCrear: number },
   fechasPago: string[],
   vencidoActual: number,

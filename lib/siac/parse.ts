@@ -1,7 +1,7 @@
 // Lectura de respuestas de SIAC. Sin dependencias para poder probarse con
 // `node --test` directamente.
 
-import type { ListadoCobranzaItem, ListadoCobranzaResponse } from "./types";
+import type { ConsultarPagosResponse, ListadoCobranzaItem, ListadoCobranzaResponse } from "./types";
 
 export class SiacParseError extends Error {
   constructor(message: string) {
@@ -207,4 +207,44 @@ export function parseListado(r: ListadoCobranzaResponse): { creditos: ListadoCre
     }
   }
   return { creditos, descartados };
+}
+
+// ---------------------------------------------------------------- ConsultarPagos
+
+export interface PagoSiac {
+  fechaAplicacion: string;
+  fechaCaptura: string | null;
+  monto: number;
+  noPago: number | null;
+  concepto: string | null;
+  comentario: string | null;
+  /** SIAC no da un identificador único por pago: la llave es la huella de sus campos… */
+  huella: string;
+  /** …más un contador, por si hay dos pagos idénticos. */
+  ocurrencia: number;
+  raw: unknown;
+}
+
+/**
+ * Convierte la respuesta de ConsultarPagos en pagos con llave estable. Los
+ * registros sin monto o sin fecha se descartan. Si falta la fecha de
+ * aplicación se usa la de captura.
+ */
+export function parsePagos(r: ConsultarPagosResponse): PagoSiac[] {
+  const vistos = new Map<string, number>();
+  const pagos: PagoSiac[] = [];
+  for (const item of r.ListadoPagos ?? []) {
+    const d = item.DetallePago ?? {};
+    const fechaCaptura = siacDate(d.FechaCaptura);
+    const fechaAplicacion = siacDate(d.FechaAplicacion) ?? fechaCaptura;
+    const monto = money(d.Monto);
+    if (!fechaAplicacion || monto <= 0) continue;
+    const noPago = int(d.NoPago);
+    const concepto = text(d.ConceptoPago);
+    const huella = [fechaAplicacion, fechaCaptura ?? "", monto.toFixed(2), noPago ?? "", concepto ?? ""].join("|");
+    const ocurrencia = (vistos.get(huella) ?? 0) + 1;
+    vistos.set(huella, ocurrencia);
+    pagos.push({ fechaAplicacion, fechaCaptura, monto, noPago, concepto, comentario: text(d.Comentario), huella, ocurrencia, raw: item });
+  }
+  return pagos;
 }

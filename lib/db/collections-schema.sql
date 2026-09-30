@@ -37,7 +37,9 @@ CREATE TABLE IF NOT EXISTS col_settings (
 INSERT INTO col_settings (key, value, descripcion) VALUES
   ('umbral_mora', '1000', 'Saldo vencido mínimo del cliente (MXN) para considerarlo en mora y mandarle recordatorio. Por debajo son residuos.'),
   ('deposito', '{"clabe": null, "banco": null, "beneficiario": null}', 'Datos de transferencia que se incluyen en los mensajes. No vienen de SIAC.'),
-  ('ventana_envio', '{"desde": "09:00", "hasta": "19:00", "zona": "America/Mexico_City"}', 'Horario en que se permiten envíos automáticos de WhatsApp.')
+  ('ventana_envio', '{"desde": "09:00", "hasta": "19:00", "zona": "America/Mexico_City"}', 'Horario en que se permiten envíos automáticos de WhatsApp.'),
+  ('carga_inicial_pagos', '{"autorizada": false}', 'Carga única de la historia de pagos (ConsultarPagos por crédito). Apagada hasta que SIAC dé el visto bueno.'),
+  ('max_consultas_pagos_por_dia', '15', 'Tope de llamadas a ConsultarPagos que hace la foto diaria (solo créditos con un pago nuevo). Evita cargas masivas a SIAC.')
 ON CONFLICT (key) DO NOTHING;
 
 -- Una fila por corrida. `ambiente` existe porque se desarrolla contra la copia
@@ -47,7 +49,8 @@ CREATE TABLE IF NOT EXISTS col_sync_runs (
   id SERIAL PRIMARY KEY,
   ambiente TEXT NOT NULL CHECK (ambiente IN ('pruebas', 'produccion')),
   -- diaria: la foto general del día. consulta: saldo al día de un crédito, bajo demanda.
-  tipo TEXT NOT NULL CHECK (tipo IN ('diaria', 'consulta')),
+  -- pagos: carga inicial de la historia de pagos.
+  tipo TEXT NOT NULL CHECK (tipo IN ('diaria', 'consulta', 'pagos')),
   fecha_corte DATE,
   -- foto_vieja: SIAC regresó exactamente la foto anterior (el Monitor de
   -- Servicios no corrió). No se guarda nada y se reintenta más tarde.
@@ -166,6 +169,9 @@ CREATE TABLE IF NOT EXISTS col_credits (
   -- false cuando el crédito dejó de aparecer en el listado (liquidado o fuera de cartera activa).
   en_listado BOOLEAN NOT NULL DEFAULT true,
   ultimo_listado DATE,
+  -- Última vez que se trajo su historia de pagos con ConsultarPagos. NULL = nunca
+  -- (pendiente de la carga inicial).
+  pagos_sincronizados_at TIMESTAMPTZ,
   -- Operación de cobranza (esto lo edita el equipo, no SIAC).
   asignado_a TEXT,
   -- NULL = la etapa (preventiva/temprana/tardía) se calcula con reglas.
@@ -264,20 +270,35 @@ CREATE TABLE IF NOT EXISTS col_credit_events (
 
 CREATE INDEX IF NOT EXISTS idx_col_events_fecha ON col_credit_events(fecha_evento);
 
--- Pagos con monto, para cuando se contrate ConsultarPagos (hoy responde
--- "Este método web no ha sido adquirido"). Vacía en el MVP.
+-- Pagos de ConsultarPagos (por crédito; regresa toda su historia en una
+-- llamada). Para no hacer cargas masivas a SIAC se llama solo:
+-- - en la foto diaria, para los créditos con un pago nuevo (cambió
+--   FechaUltimoPago), con un tope diario (col_settings.max_consultas_pagos_por_dia);
+-- - una vez por crédito en la carga inicial, cuando SIAC la autorice;
+-- - bajo demanda desde el expediente.
+-- SIAC no da un identificador único por pago (NoPago llega en 1), así que la
+-- llave es una huella de sus campos más un contador para pagos idénticos.
 CREATE TABLE IF NOT EXISTS col_payments (
   id BIGSERIAL PRIMARY KEY,
   credit_id UUID NOT NULL REFERENCES col_credits(id) ON DELETE CASCADE,
-  id_pago_siac TEXT,
-  fecha_pago DATE NOT NULL,
+  -- Cuándo se aplicó el pago al crédito. Es la fecha que cuenta para promesas y cobranza.
+  fecha_aplicacion DATE NOT NULL,
+  -- Cuándo se capturó en SIAC; puede ser posterior a la aplicación.
+  fecha_captura DATE,
   monto NUMERIC(14, 2) NOT NULL,
-  -- Aplicación según la prelación de SIAC: comisiones, moratorios, intereses, capital (con IVA).
-  desglose JSONB,
+  no_pago INTEGER,
+  concepto TEXT,
+  comentario TEXT,
+  huella TEXT NOT NULL,
+  ocurrencia INTEGER NOT NULL DEFAULT 1,
+  sync_run_id INTEGER REFERENCES col_sync_runs(id),
   raw JSONB NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (credit_id, id_pago_siac)
+  UNIQUE (credit_id, huella, ocurrencia)
 );
+
+CREATE INDEX IF NOT EXISTS idx_col_payments_fecha ON col_payments(fecha_aplicacion);
+CREATE INDEX IF NOT EXISTS idx_col_payments_credit ON col_payments(credit_id, fecha_aplicacion);
 
 CREATE TABLE IF NOT EXISTS col_promises (
   id SERIAL PRIMARY KEY,
@@ -286,12 +307,12 @@ CREATE TABLE IF NOT EXISTS col_promises (
   credit_id UUID REFERENCES col_credits(id) ON DELETE CASCADE,
   monto NUMERIC(14, 2) NOT NULL CHECK (monto > 0),
   fecha_compromiso DATE NOT NULL,
-  -- Vencido del cliente (o del crédito) al registrar la promesa. Sin montos de
-  -- pago, la promesa se resuelve comparando contra este valor.
+  -- Vencido del cliente (o del crédito) al registrar la promesa. Solo se usa
+  -- cuando faltan los montos de pago (ver rules.ts: resolvePromiseAproximada).
   vencido_al_crear NUMERIC(14, 2) NOT NULL,
   canal TEXT CHECK (canal IN ('llamada', 'whatsapp', 'correo', 'visita', 'otro')),
   estado TEXT NOT NULL DEFAULT 'vigente' CHECK (estado IN ('vigente', 'cumplida', 'parcial', 'incumplida', 'cancelada')),
-  -- sistema: la resolvió la sincronización (aproximado, ver rules.ts).
+  -- sistema: la resolvió la sincronización (con pagos de SIAC o aproximado, ver rules.ts).
   -- manual: la resolvió una persona.
   resuelta_por TEXT CHECK (resuelta_por IN ('sistema', 'manual')),
   resuelta_at TIMESTAMPTZ,
@@ -391,7 +412,7 @@ CREATE TABLE IF NOT EXISTS col_activities (
     'llamada', 'nota', 'visita', 'correo',
     'whatsapp_enviado', 'whatsapp_recibido',
     'promesa_creada', 'promesa_resuelta',
-    'pago_detectado', 'entrada_mora', 'regularizacion', 'nueva_mensualidad_vencida', 'salida_listado',
+    'pago_detectado', 'pago_registrado', 'entrada_mora', 'regularizacion', 'nueva_mensualidad_vencida', 'salida_listado',
     'saldo_consultado', 'cambio_etapa', 'cambio_contacto', 'cambio_asignacion', 'pausa',
     'alerta'
   )),

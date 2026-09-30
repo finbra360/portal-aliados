@@ -2,6 +2,7 @@ import { sql } from "@/lib/db";
 import { SiacClient, getSiacConfig, type SiacAmbiente } from "@/lib/siac/client";
 import { parseListado, type ListadoCredito } from "@/lib/siac/parse";
 import { notifySlack } from "./notify";
+import { fetchAndStorePayments, pausa, type PaymentCredit } from "./payments";
 import {
   UMBRAL_MORA_DEFAULT,
   aggregateClient,
@@ -11,7 +12,8 @@ import {
   fechaMexico,
   normalizePhoneMx,
   photoFreshness,
-  resolvePromise,
+  resolvePromiseAproximada,
+  resolvePromiseConPagos,
   type CreditState,
 } from "./rules";
 import { closeAlerts, getSetting, insertEvent, openAlert, peso, siacCallRecorder, type Tx } from "./store";
@@ -28,6 +30,9 @@ export interface DailySyncResult {
   alertas: number;
   salidasDelListado: number;
   promesasResueltas: number;
+  /** Llamadas a ConsultarPagos (solo créditos con un pago nuevo) y pagos nuevos guardados. */
+  consultasPagos: number;
+  pagosRegistrados: number;
   llamadasSiac: number;
   duracionSiacMs: number;
   errores: string[];
@@ -92,6 +97,8 @@ export async function runDailySync(opts: {
     alertas: 0,
     salidasDelListado: 0,
     promesasResueltas: 0,
+    consultasPagos: 0,
+    pagosRegistrados: 0,
     llamadasSiac: 0,
     duracionSiacMs: 0,
     errores: [],
@@ -175,7 +182,8 @@ export async function runDailySync(opts: {
       });
     } else {
       const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
-      await sql.begin((tx) => writeDailyPhoto(tx, { runId, ambiente, fechaCorte, creditos, conocidos, umbral, result }));
+      const conPagoNuevo = await sql.begin((tx) => writeDailyPhoto(tx, { runId, ambiente, fechaCorte, creditos, conocidos, umbral, result }));
+      await syncNewPayments(siac, runId, conPagoNuevo, result);
       result.promesasResueltas = await resolvePromises(ambiente, fechaCorte, umbral, result);
       await alertInvalidPhones(ambiente, fechaCorte, umbral, result);
     }
@@ -216,8 +224,9 @@ async function writeDailyPhoto(
     umbral: number;
     result: DailySyncResult;
   },
-) {
+): Promise<PaymentCredit[]> {
   const { runId, ambiente, fechaCorte, creditos, conocidos, umbral, result } = p;
+  const conPagoNuevo: PaymentCredit[] = [];
 
   // Clientes y contactos. Un cliente con varios créditos aparece varias veces
   // en el listado; los datos de contacto se toman del primero que los traiga.
@@ -350,7 +359,9 @@ async function writeDailyPhoto(
     const prev = conocidos.get(k)?.prev ?? null;
     const curr = toState(fechaCorte, c);
     for (const ev of deriveCreditEvents(prev, curr)) {
-      result.eventos += await insertEvent(tx, { runId, creditId, clientId, noCredito: c.noCredito, tipo: ev.tipo, event: ev });
+      const nuevo = await insertEvent(tx, { runId, creditId, clientId, noCredito: c.noCredito, tipo: ev.tipo, event: ev });
+      result.eventos += nuevo;
+      if (nuevo && ev.tipo === "pago_detectado") conPagoNuevo.push({ id: creditId, clientId, numeroCliente: c.numeroCliente, noCredito: c.noCredito });
     }
     const e = estadosCliente.get(clientId) ?? { prev: [], curr: [] };
     if (prev) e.prev.push(prev);
@@ -383,11 +394,41 @@ async function writeDailyPhoto(
 
   // Una foto buena cierra las alertas de corridas anteriores que fallaron.
   await closeAlerts(tx, [`sync_fallido:${ambiente}`, `foto_vieja:${ambiente}`]);
+  return conPagoNuevo;
+}
+
+// ---------------------------------------------------------------- pagos
+
+/**
+ * Trae los montos de los pagos que detectó la foto del día (cambió
+ * FechaUltimoPago), con ConsultarPagos crédito por crédito. Normalmente son
+ * pocos; hay un tope diario para no convertirlo en carga masiva. Un fallo aquí
+ * no tumba la foto: queda como aviso y esas promesas se resuelven de forma
+ * aproximada.
+ */
+async function syncNewPayments(siac: SiacClient, runId: number, creditos: PaymentCredit[], result: DailySyncResult) {
+  if (creditos.length === 0) return;
+  const tope = await getSetting("max_consultas_pagos_por_dia", 15);
+  if (creditos.length > tope) {
+    result.avisos.push(`${creditos.length} créditos con pago nuevo; solo se consultan ${tope} (col_settings.max_consultas_pagos_por_dia). El resto, bajo demanda o mañana.`);
+  }
+  for (const cr of creditos.slice(0, tope)) {
+    result.consultasPagos++;
+    try {
+      result.pagosRegistrados += (await fetchAndStorePayments(siac, runId, cr)).nuevos;
+    } catch (e) {
+      result.avisos.push(`ConsultarPagos ${cr.noCredito}: ${(e as Error).message}`);
+    }
+    await pausa();
+  }
 }
 
 // ---------------------------------------------------------------- promesas y teléfonos
 
 async function resolvePromises(ambiente: SiacAmbiente, fechaCorte: string, umbral: number, result: DailySyncResult): Promise<number> {
+  // Por promesa: lo pagado según ConsultarPagos y si esos datos están completos,
+  // es decir, si cada pago detectado en la foto ya tiene su historia de pagos
+  // traída después. Si no, se usa el respaldo aproximado.
   const vigentes = await sql`
     SELECT p.id, p.client_id, p.credit_id, p.monto, p.vencido_al_crear,
            to_char(p.created_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS creada_el,
@@ -399,19 +440,41 @@ async function resolvePromises(ambiente: SiacAmbiente, fechaCorte: string, umbra
            (SELECT coalesce(array_agg(to_char(e.fecha_evento, 'YYYY-MM-DD')), '{}')
               FROM col_credit_events e JOIN col_credits cr ON cr.id = e.credit_id
              WHERE e.tipo = 'pago_detectado' AND cr.client_id = p.client_id
-               AND (p.credit_id IS NULL OR cr.id = p.credit_id)) AS fechas_pago
+               AND (p.credit_id IS NULL OR cr.id = p.credit_id)) AS fechas_pago_detectado,
+           (SELECT coalesce(json_agg(json_build_object('fecha', to_char(pg.fecha_aplicacion, 'YYYY-MM-DD'), 'monto', pg.monto)), '[]')
+              FROM col_payments pg JOIN col_credits cr ON cr.id = pg.credit_id
+             WHERE cr.client_id = p.client_id AND (p.credit_id IS NULL OR cr.id = p.credit_id)
+               AND pg.fecha_aplicacion >= (p.created_at AT TIME ZONE 'America/Mexico_City')::date) AS pagos,
+           NOT EXISTS (
+             SELECT 1 FROM col_credit_events e JOIN col_credits cr ON cr.id = e.credit_id
+              WHERE e.tipo = 'pago_detectado' AND cr.client_id = p.client_id
+                AND (p.credit_id IS NULL OR cr.id = p.credit_id)
+                AND e.fecha_evento >= (p.created_at AT TIME ZONE 'America/Mexico_City')::date
+                AND (cr.pagos_sincronizados_at IS NULL OR cr.pagos_sincronizados_at < e.created_at)
+           ) AS pagos_completos
     FROM col_promises p JOIN col_clients c ON c.id = p.client_id
     WHERE p.estado = 'vigente' AND c.ambiente = ${ambiente}
   `;
   let resueltas = 0;
   for (const p of vigentes) {
-    const estado = resolvePromise(
-      { monto: Number(p.monto), creadaEl: p.creada_el, fechaCompromiso: p.fecha_compromiso, vencidoAlCrear: Number(p.vencido_al_crear) },
-      p.fechas_pago as string[],
-      Number(p.vencido_actual),
-      fechaCorte,
-      umbral,
-    );
+    const promesa = { monto: Number(p.monto), creadaEl: p.creada_el as string, fechaCompromiso: p.fecha_compromiso as string };
+    let estado: "vigente" | "cumplida" | "parcial" | "incumplida";
+    let base: string;
+    if (p.pagos_completos) {
+      const pagos = (p.pagos as { fecha: string; monto: string | number }[]).map((x) => ({ fecha: x.fecha, monto: Number(x.monto) }));
+      const r = resolvePromiseConPagos(promesa, pagos, fechaCorte);
+      estado = r.estado;
+      base = `pagado ${peso(r.montoPagado)} según SIAC`;
+    } else {
+      estado = resolvePromiseAproximada(
+        { ...promesa, vencidoAlCrear: Number(p.vencido_al_crear) },
+        p.fechas_pago_detectado as string[],
+        Number(p.vencido_actual),
+        fechaCorte,
+        umbral,
+      );
+      base = "aproximado: faltan los montos de pago de SIAC";
+    }
     if (estado === "vigente") continue;
 
     await sql.begin(async (tx) => {
@@ -425,7 +488,7 @@ async function resolvePromises(ambiente: SiacAmbiente, fechaCorte: string, umbra
       await tx`
         INSERT INTO col_activities (client_id, credit_id, tipo, descripcion, promise_id, actor)
         VALUES (${p.client_id}, ${p.credit_id}, 'promesa_resuelta',
-                ${`Promesa de ${peso(Number(p.monto))} al ${p.fecha_compromiso}: ${estado} (según SIAC; sin monto de pago confirmado)`},
+                ${`Promesa de ${peso(promesa.monto)} al ${p.fecha_compromiso}: ${estado} (${base})`},
                 ${p.id}, 'sistema')
       `;
       if (estado !== "cumplida") {
@@ -433,7 +496,7 @@ async function resolvePromises(ambiente: SiacAmbiente, fechaCorte: string, umbra
           tipo: "promesa_incumplida",
           severidad: estado === "incumplida" ? "critica" : "atencion",
           dedupeKey: `promesa_incumplida:${p.id}`,
-          detalle: { promesaId: p.id, monto: Number(p.monto), fechaCompromiso: p.fecha_compromiso, estado, vencidoActual: Number(p.vencido_actual) },
+          detalle: { promesaId: p.id, monto: promesa.monto, fechaCompromiso: p.fecha_compromiso, estado, base: p.pagos_completos ? "pagos" : "aproximada" },
         });
       }
     });

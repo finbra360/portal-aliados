@@ -11,7 +11,8 @@ import {
   fechaMexico,
   normalizePhoneMx,
   photoFreshness,
-  resolvePromise,
+  resolvePromiseAproximada,
+  resolvePromiseConPagos,
   type CreditState,
 } from "./rules.ts";
 
@@ -125,18 +126,31 @@ test("mora por cliente: nueva mensualidad vencida y cambio de bucket", () => {
   assert.equal(deriveClientAlerts(p90, c91, "k1", 1000, "2026-09-29")[0].severidad, "critica");
 });
 
-test("promesas sin montos de pago", () => {
+test("promesas sin montos de pago (respaldo aproximado)", () => {
   const p = { monto: 10_000, creadaEl: "2026-10-01", fechaCompromiso: "2026-10-05", vencidoAlCrear: 25_000 };
   // Pagó el 4 y el vencido bajó 12,000: cumplida.
-  assert.equal(resolvePromise(p, ["2026-10-04"], 13_000, "2026-10-04", 1000), "cumplida");
+  assert.equal(resolvePromiseAproximada(p, ["2026-10-04"], 13_000, "2026-10-04", 1000), "cumplida");
   // Pagó, pero el vencido solo bajó 3,000: parcial, y solo al terminar la gracia.
-  assert.equal(resolvePromise(p, ["2026-10-04"], 22_000, "2026-10-05", 1000), "vigente");
-  assert.equal(resolvePromise(p, ["2026-10-04"], 22_000, "2026-10-06", 1000), "parcial");
+  assert.equal(resolvePromiseAproximada(p, ["2026-10-04"], 22_000, "2026-10-05", 1000), "vigente");
+  assert.equal(resolvePromiseAproximada(p, ["2026-10-04"], 22_000, "2026-10-06", 1000), "parcial");
   // Quedó por debajo del umbral: cumplida aunque la resta no alcance.
-  assert.equal(resolvePromise({ ...p, vencidoAlCrear: 1_200 }, ["2026-10-04"], 300, "2026-10-04", 1000), "cumplida");
+  assert.equal(resolvePromiseAproximada({ ...p, vencidoAlCrear: 1_200 }, ["2026-10-04"], 300, "2026-10-04", 1000), "cumplida");
   // No pagó.
-  assert.equal(resolvePromise(p, [], 25_300, "2026-10-05", 1000), "vigente");
-  assert.equal(resolvePromise(p, [], 25_300, "2026-10-06", 1000), "incumplida");
+  assert.equal(resolvePromiseAproximada(p, [], 25_300, "2026-10-05", 1000), "vigente");
+  assert.equal(resolvePromiseAproximada(p, [], 25_300, "2026-10-06", 1000), "incumplida");
   // Un pago anterior a la promesa no cuenta.
-  assert.equal(resolvePromise(p, ["2026-09-30"], 10_000, "2026-10-06", 1000), "incumplida");
+  assert.equal(resolvePromiseAproximada(p, ["2026-09-30"], 10_000, "2026-10-06", 1000), "incumplida");
+});
+
+test("promesas con los pagos de ConsultarPagos", () => {
+  const p = { monto: 20_000, creadaEl: "2026-10-01", fechaCompromiso: "2026-10-05" };
+  assert.deepEqual(resolvePromiseConPagos(p, [{ fecha: "2026-10-03", monto: 12_000 }, { fecha: "2026-10-04", monto: 8_000 }], "2026-10-04"), { estado: "cumplida", montoPagado: 20_000 });
+  assert.equal(resolvePromiseConPagos(p, [], "2026-10-05").estado, "vigente", "todavía dentro del día de gracia");
+  assert.equal(resolvePromiseConPagos(p, [], "2026-10-06").estado, "incumplida");
+  const pagos = [
+    { fecha: "2026-09-30", monto: 20_000 }, // antes de la promesa: no cuenta
+    { fecha: "2026-10-06", monto: 5_000 }, // día de gracia: cuenta
+    { fecha: "2026-10-07", monto: 20_000 }, // después de la gracia: no cuenta
+  ];
+  assert.deepEqual(resolvePromiseConPagos(p, pagos, "2026-10-07"), { estado: "parcial", montoPagado: 5_000 });
 });
