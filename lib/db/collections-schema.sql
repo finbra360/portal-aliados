@@ -69,6 +69,11 @@ CREATE TABLE IF NOT EXISTS col_sync_runs (
 
 CREATE INDEX IF NOT EXISTS idx_col_sync_runs_fecha ON col_sync_runs(ambiente, fecha_corte, status);
 
+-- Bases creadas con la versión del 29-sep-2026 del esquema: su CHECK de tipo no
+-- incluía 'pagos'. Se vuelve a crear con la lista vigente.
+ALTER TABLE col_sync_runs DROP CONSTRAINT IF EXISTS col_sync_runs_tipo_check;
+ALTER TABLE col_sync_runs ADD CONSTRAINT col_sync_runs_tipo_check CHECK (tipo IN ('diaria', 'consulta', 'pagos'));
+
 -- Respuesta cruda de cada llamada a SIAC, mismo patrón que lead_sources.raw_payload:
 -- permite reprocesar sin volver a llamar a SIAC y auditar qué dijo SIAC en su
 -- momento. `parametros` NUNCA incluye RazonSocial ni la clave.
@@ -184,6 +189,9 @@ CREATE TABLE IF NOT EXISTS col_credits (
   UNIQUE (ambiente, numero_cliente, no_credito)
 );
 
+-- Columna agregada después de la versión del 29-sep-2026.
+ALTER TABLE col_credits ADD COLUMN IF NOT EXISTS pagos_sincronizados_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_col_credits_client ON col_credits(client_id);
 CREATE INDEX IF NOT EXISTS idx_col_credits_listado ON col_credits(ambiente) WHERE en_listado;
 
@@ -278,6 +286,22 @@ CREATE INDEX IF NOT EXISTS idx_col_events_fecha ON col_credit_events(fecha_event
 -- - bajo demanda desde el expediente.
 -- SIAC no da un identificador único por pago (NoPago llega en 1), así que la
 -- llave es una huella de sus campos más un contador para pagos idénticos.
+-- La versión del 29-sep-2026 creó col_payments con otra estructura (fecha_pago,
+-- id_pago_siac) que nunca se llenó. Si existe con esa estructura y está vacía, se
+-- reemplaza; si tuviera datos, el script se detiene para revisarlo a mano.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'col_payments' AND column_name = 'fecha_pago'
+  ) THEN
+    IF EXISTS (SELECT 1 FROM col_payments) THEN
+      RAISE EXCEPTION 'col_payments tiene datos con la estructura anterior; revisar a mano antes de actualizar';
+    END IF;
+    DROP TABLE col_payments;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS col_payments (
   id BIGSERIAL PRIMARY KEY,
   credit_id UUID NOT NULL REFERENCES col_credits(id) ON DELETE CASCADE,
@@ -429,6 +453,18 @@ CREATE TABLE IF NOT EXISTS col_activities (
   ocurrido_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Bases creadas con la versión del 29-sep-2026: su CHECK de tipo no incluía
+-- 'pago_registrado'. Se vuelve a crear con la lista vigente.
+ALTER TABLE col_activities DROP CONSTRAINT IF EXISTS col_activities_tipo_check;
+ALTER TABLE col_activities ADD CONSTRAINT col_activities_tipo_check CHECK (tipo IN (
+  'llamada', 'nota', 'visita', 'correo',
+  'whatsapp_enviado', 'whatsapp_recibido',
+  'promesa_creada', 'promesa_resuelta',
+  'pago_detectado', 'pago_registrado', 'entrada_mora', 'regularizacion', 'nueva_mensualidad_vencida', 'salida_listado',
+  'saldo_consultado', 'cambio_etapa', 'cambio_contacto', 'cambio_asignacion', 'pausa',
+  'alerta'
+));
 
 CREATE INDEX IF NOT EXISTS idx_col_activities_client ON col_activities(client_id, ocurrido_at DESC);
 CREATE INDEX IF NOT EXISTS idx_col_activities_credit ON col_activities(credit_id, ocurrido_at DESC) WHERE credit_id IS NOT NULL;
