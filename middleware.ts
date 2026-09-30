@@ -74,6 +74,7 @@ export const config = {
     "/backoffice/:path*",
     // Alias de URL limpia para backoffice.finbra.com (ver isBackofficeHost arriba)
     "/",
+    "/cobranza/:path*",
     "/leads/:path*",
     "/brokers/:path*",
     "/rankings/:path*",

@@ -22,3 +22,10 @@ export function requireRole(session: AdminSessionPayload | null, allowed: AdminR
   }
   return session;
 }
+
+/** Roles que pueden ver cobranza: saldos y datos personales de deudores. */
+export const COBRANZA_ROLES: AdminRole[] = ["super_admin", "finanzas"];
+
+export function hasRole(session: AdminSessionPayload | null, allowed: AdminRole[]): session is AdminSessionPayload {
+  return !!session && allowed.includes(session.role);
+}

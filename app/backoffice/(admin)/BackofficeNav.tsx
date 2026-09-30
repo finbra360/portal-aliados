@@ -4,9 +4,15 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { AdminRole } from "@/lib/db/admin-users";
+import { COBRANZA_ROLES } from "@/lib/rbac";
 
-type NavLink = { href: string; label: string };
-type NavEntry = { type: "link"; href: string; label: string } | { type: "group"; label: string; items: NavLink[] };
+// exact: solo se marca activo en esa ruta exacta (no en sus subrutas).
+type NavLink = { href: string; label: string; exact?: boolean };
+// roles: si se indica, el grupo solo se muestra a esos roles. Es solo para no
+// mostrar lo que no se puede abrir: el permiso real se revisa en el servidor.
+type NavEntry =
+  | { type: "link"; href: string; label: string }
+  | { type: "group"; label: string; items: NavLink[]; roles?: AdminRole[] };
 
 const NAV: NavEntry[] = [
   { type: "link", href: "/backoffice/dashboard", label: "Dashboard" },
@@ -21,6 +27,15 @@ const NAV: NavEntry[] = [
       { href: "/backoffice/concursos", label: "Concursos" },
       { href: "/backoffice/recursos", label: "Recursos" },
       { href: "/backoffice/comunicaciones", label: "Comunicaciones" },
+    ],
+  },
+  {
+    type: "group",
+    label: "Cobranza",
+    roles: COBRANZA_ROLES,
+    items: [
+      { href: "/backoffice/cobranza", label: "Inicio", exact: true },
+      { href: "/backoffice/cobranza/cola", label: "Cola de trabajo" },
     ],
   },
   {
@@ -63,15 +78,19 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
+const isActive = (pathname: string, item: NavLink) =>
+  item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
+
 export default function BackofficeNav({ nombre, role }: { nombre: string; role: AdminRole }) {
   const pathname = usePathname();
   const router = useRouter();
+  const nav = NAV.filter((entry) => entry.type === "link" || !entry.roles || entry.roles.includes(role));
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const initial: Record<string, boolean> = {};
     for (const entry of NAV) {
       if (entry.type === "group") {
-        initial[entry.label] = entry.items.some((item) => pathname.startsWith(item.href));
+        initial[entry.label] = entry.items.some((item) => isActive(pathname, item));
       }
     }
     return initial;
@@ -98,7 +117,7 @@ export default function BackofficeNav({ nombre, role }: { nombre: string; role: 
       </div>
 
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-2 py-3 text-sm">
-        {NAV.map((entry) => {
+        {nav.map((entry) => {
           if (entry.type === "link") {
             const active = pathname.startsWith(entry.href);
             return (
@@ -115,7 +134,7 @@ export default function BackofficeNav({ nombre, role }: { nombre: string; role: 
           }
 
           const isOpen = !!openGroups[entry.label];
-          const groupActive = entry.items.some((item) => pathname.startsWith(item.href));
+          const groupActive = entry.items.some((item) => isActive(pathname, item));
 
           return (
             <div key={entry.label}>
@@ -132,7 +151,7 @@ export default function BackofficeNav({ nombre, role }: { nombre: string; role: 
               {isOpen && (
                 <div className="ml-1 space-y-0.5 border-l border-black/5 pl-2">
                   {entry.items.map((item) => {
-                    const active = pathname.startsWith(item.href);
+                    const active = isActive(pathname, item);
                     return (
                       <Link
                         key={item.href}
