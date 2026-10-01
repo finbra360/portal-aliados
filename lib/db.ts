@@ -5,7 +5,11 @@ function createClient() {
   if (!url) {
     throw new Error("DATABASE_URL no está configurado");
   }
-  return postgres(url, { ssl: "require", max: 5 });
+  // DATABASE_SSL=disable solo para desarrollo contra un Postgres local sin TLS.
+  return postgres(url, {
+    ssl: process.env.DATABASE_SSL === "disable" ? false : "require",
+    max: Number(process.env.DATABASE_POOL_MAX) || 5,
+  });
 }
 
 // Reused across hot-reloads in dev so we don't exhaust the connection pool.
