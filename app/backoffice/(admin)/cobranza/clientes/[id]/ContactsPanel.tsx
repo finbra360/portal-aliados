@@ -217,7 +217,7 @@ export default function ContactsPanel({
             Los recordatorios de cobranza van a <strong>{formatTelefono(destinatario.valor)}</strong>
             {destinatario.nombre && <> ({destinatario.nombre})</>}.{" "}
             {recipient.origen === "equipo" && elegidoPor.por ? (
-              <span className="text-finbra-gray">Lo eligió {elegidoPor.por}{elegidoPor.at ? ` el ${formatFechaHora(elegidoPor.at)}` : ""}.</span>
+              <span className="text-finbra-gray">Lo eligió {elegidoPor.por}{elegidoPor.at ? ` el ${formatFechaHora(elegidoPor.at)}` : "."}</span>
             ) : (
               <span className="text-finbra-gray">Es el sugerido por SIAC (celular o, si falta, teléfono del cliente).</span>
             )}
