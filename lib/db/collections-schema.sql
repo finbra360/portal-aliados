@@ -128,8 +128,9 @@ CREATE TABLE IF NOT EXISTS col_contacts (
   -- no se le puede mandar WhatsApp y hay que corregirlo en SIAC.
   telefono_whatsapp TEXT,
   nombre_contacto TEXT,
-  -- El número al que se manda WhatsApp: Celular del titular o, si viene
-  -- vacío, TelefonoCliente. Lo decide la sincronización.
+  -- Sugerido por SIAC: Celular del titular o, si viene vacío, TelefonoCliente.
+  -- Lo decide la sincronización cada día. Si el equipo eligió otro contacto
+  -- (col_clients.contacto_cobranza_id), manda el del equipo.
   es_principal BOOLEAN NOT NULL DEFAULT false,
   estatus TEXT NOT NULL DEFAULT 'activo' CHECK (estatus IN ('activo', 'invalido', 'baja')),
   -- Meta exige opt-in. `fuente`: contrato, verbal, el cliente escribió primero.
@@ -145,6 +146,20 @@ CREATE TABLE IF NOT EXISTS col_contacts (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_col_contacts_siac
   ON col_contacts(client_id, campo_siac) WHERE origen = 'siac';
 CREATE INDEX IF NOT EXISTS idx_col_contacts_whatsapp ON col_contacts(telefono_whatsapp) WHERE telefono_whatsapp IS NOT NULL;
+
+-- Agregadas el 2026-10-01 para el perfil del cliente.
+-- rol: para contactos del deudor (relacion = 'titular'), quién es en la
+-- empresa. NULL = sin clasificar. La sincronización nunca cambia rol ni relación.
+ALTER TABLE col_contacts ADD COLUMN IF NOT EXISTS rol TEXT CHECK (rol IN ('dueno', 'pagos', 'contabilidad', 'otro'));
+ALTER TABLE col_contacts ADD COLUMN IF NOT EXISTS notas TEXT;
+ALTER TABLE col_contacts ADD COLUMN IF NOT EXISTS updated_by TEXT;
+
+-- Contacto que eligió el equipo para recibir los recordatorios de cobranza.
+-- NULL = se usa el sugerido por SIAC (col_contacts.es_principal). Solo puede
+-- ser un contacto del deudor; la sincronización nunca lo cambia.
+ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_id UUID REFERENCES col_contacts(id) ON DELETE SET NULL;
+ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_por TEXT;
+ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_at TIMESTAMPTZ;
 
 -- Créditos del listado. NoCredito puede traer sufijos ("1008 R", "1047 2D"),
 -- por eso es TEXT. La llave incluye al cliente porque SIAC no ha confirmado

@@ -178,7 +178,9 @@ export default async function CobranzaInicioPage() {
                     <td className="whitespace-nowrap px-6 py-2">
                       {formatFecha(p.fecha)} <span className="text-xs text-finbra-gray">({p.enDias === 0 ? "hoy" : `en ${p.enDias} d`})</span>
                     </td>
-                    <td className="px-6 py-2">{p.cliente}</td>
+                    <td className="px-6 py-2">
+                      <Link href={`/backoffice/cobranza/clientes/${p.clientId}`} className="hover:text-finbra-purple hover:underline">{p.cliente}</Link>
+                    </td>
                     <td className="px-6 py-2 font-mono text-xs">{p.noCredito}</td>
                   </tr>
                 ))}
@@ -203,7 +205,7 @@ export default async function CobranzaInicioPage() {
               {r.top.map((t) => (
                 <tr key={t.clientId} className="border-b border-black/5 last:border-0">
                   <td className="px-6 py-2">
-                    {t.cliente}
+                    <Link href={`/backoffice/cobranza/clientes/${t.clientId}`} className="hover:text-finbra-purple hover:underline">{t.cliente}</Link>
                     {t.creditos > 1 && <span className="ml-1 text-xs text-finbra-gray">({t.creditos} créditos)</span>}
                   </td>
                   <td className="px-6 py-2 text-right tabular-nums">{formatMoney(t.adeudo)}</td>

@@ -3,7 +3,7 @@
 
 import { cache } from "react";
 import { sql } from "@/lib/db";
-import { getSetting } from "@/lib/collections/store";
+import { getSetting, tieneDestinatarioValido } from "@/lib/collections/store";
 import { UMBRAL_MORA_DEFAULT, fechaMexico } from "@/lib/collections/rules";
 import { summarizeCollected, summarizePortfolio, type PhotoRow } from "@/lib/collections/portfolio";
 import { buildQueue, type QueueClient } from "@/lib/collections/queue";
@@ -138,9 +138,7 @@ export async function getWorkQueue(fechaCorte: string) {
               FROM col_activities t
              WHERE t.client_id = c.id AND t.actor <> 'sistema'
                AND t.tipo IN ('llamada', 'nota', 'visita', 'correo', 'whatsapp_enviado', 'promesa_creada')) AS ultima_gestion,
-           EXISTS (SELECT 1 FROM col_contacts k
-                    WHERE k.client_id = c.id AND k.relacion = 'titular' AND k.es_principal
-                      AND k.telefono_whatsapp IS NOT NULL AND k.estatus = 'activo' AND k.baja_whatsapp_at IS NULL) AS telefono_valido
+           ${tieneDestinatarioValido()} AS telefono_valido
     FROM col_clients c
     JOIN col_credits cr ON cr.client_id = c.id
     JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}

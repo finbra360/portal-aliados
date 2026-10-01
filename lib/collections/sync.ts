@@ -16,7 +16,7 @@ import {
   resolvePromiseConPagos,
   type CreditState,
 } from "./rules";
-import { closeAlerts, getSetting, insertEvent, openAlert, peso, siacCallRecorder, type Tx } from "./store";
+import { closeAlerts, getSetting, insertEvent, openAlert, peso, siacCallRecorder, tieneDestinatarioValido, type Tx } from "./store";
 
 export interface DailySyncResult {
   runId: number | null;
@@ -504,19 +504,24 @@ async function resolvePromises(ambiente: SiacAmbiente, fechaCorte: string, umbra
   return resueltas;
 }
 
-/** Clientes en mora cuyo teléfono principal no sirve para WhatsApp (hay que corregirlo en SIAC). */
+/**
+ * Clientes en mora sin nadie a quién mandarle el recordatorio (ni el contacto
+ * elegido por el equipo ni el sugerido por SIAC sirven). Las alertas de los
+ * que ya tienen a quién se cierran solas.
+ */
 async function alertInvalidPhones(ambiente: SiacAmbiente, fechaCorte: string, umbral: number, result: DailySyncResult) {
+  await sql`
+    UPDATE col_alerts a SET estado = 'atendida', atendida_por = 'sistema', atendida_at = now()
+    FROM col_clients c
+    WHERE a.client_id = c.id AND a.tipo = 'telefono_invalido' AND a.estado = 'abierta'
+      AND c.ambiente = ${ambiente} AND ${tieneDestinatarioValido()}
+  `;
   const sinTelefono = await sql`
     SELECT c.id, sum(s.total_vencido) AS vencido
     FROM col_clients c
     JOIN col_credits cr ON cr.client_id = c.id
     JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}
-    WHERE c.ambiente = ${ambiente}
-      AND NOT EXISTS (
-        SELECT 1 FROM col_contacts k
-        WHERE k.client_id = c.id AND k.relacion = 'titular' AND k.es_principal
-          AND k.telefono_whatsapp IS NOT NULL AND k.estatus = 'activo' AND k.baja_whatsapp_at IS NULL
-      )
+    WHERE c.ambiente = ${ambiente} AND NOT ${tieneDestinatarioValido()}
     GROUP BY c.id
     HAVING sum(s.total_vencido) >= ${umbral}
   `;
