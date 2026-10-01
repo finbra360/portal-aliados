@@ -17,6 +17,22 @@ export async function getSetting<T>(key: string, porDefecto: T): Promise<T> {
   return typeof porDefecto === "number" ? (Number(row.value) as T) : (row.value as T);
 }
 
+/**
+ * Condición SQL: el cliente `c` (alias obligatorio) tiene a quién mandarle el
+ * recordatorio. Es la misma regla que chooseRecipient (contacts.ts): el
+ * contacto elegido por el equipo o, si no sirve, el sugerido por SIAC, siempre
+ * que sea del deudor, con WhatsApp válido, activo y sin baja.
+ */
+export const tieneDestinatarioValido = () => sql`
+  EXISTS (
+    SELECT 1 FROM col_contacts k
+    WHERE k.client_id = c.id
+      AND (k.id = c.contacto_cobranza_id OR k.es_principal)
+      AND k.relacion = 'titular' AND k.tipo = 'telefono' AND k.telefono_whatsapp IS NOT NULL
+      AND k.estatus = 'activo' AND k.baja_whatsapp_at IS NULL
+  )
+`;
+
 /** Registra cada llamada a SIAC en col_siac_raw. El cliente nunca incluye credenciales en `parametros`. */
 export function siacCallRecorder(runId: number) {
   return async (r: { operacion: string; parametros: Record<string, string>; httpStatus: number | null; detalle: string | null; respuesta: unknown }) => {

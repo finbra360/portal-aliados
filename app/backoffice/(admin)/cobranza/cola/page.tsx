@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { getPhotoStatus, getWorkQueue } from "@/lib/db/collections";
@@ -55,7 +56,9 @@ function Tabla({ items, conNivel }: { items: QueueItem[]; conNivel: boolean }) {
                 </td>
               )}
               <td className="px-4 py-3">
-                <p className="font-medium">{i.cliente}</p>
+                <Link href={`/backoffice/cobranza/clientes/${i.clientId}`} className="font-medium text-finbra-purple hover:underline">
+                  {i.cliente}
+                </Link>
                 <p className="font-mono text-xs text-finbra-gray">{i.numeroCliente}</p>
               </td>
               <td className="px-4 py-3">
