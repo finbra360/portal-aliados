@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/siac-sync",
+      "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/cron/siac-sync?reintento=1",
+      "schedule": "0 15 * * *"
+    }
+  ]
+}
