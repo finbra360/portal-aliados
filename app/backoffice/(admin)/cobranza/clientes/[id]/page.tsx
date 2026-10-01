@@ -4,11 +4,14 @@ import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { getClientProfile } from "@/lib/db/collection-clients";
 import { getPhotoStatus } from "@/lib/db/collections";
-import { bucketFor } from "@/lib/collections/rules";
+import { bucketFor, fechaMexico } from "@/lib/collections/rules";
+import { CANALES_PROMESA } from "@/lib/collections/gestiones";
 import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import PhotoBanner from "../../PhotoBanner";
 import ContactsPanel from "./ContactsPanel";
+import GestionesPanel from "./GestionesPanel";
+import { AlertActions, EtapaSelect, PromiseActions, SaldoAlDiaButton } from "./RowActions";
 
 const TIPO_ACTIVIDAD: Record<string, string> = {
   llamada: "Llamada",
@@ -69,6 +72,10 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
   const adeudo = enListado.reduce((s, c) => s + (c.totalAdeudo ?? 0), 0);
   const maxAtraso = enListado.reduce((m, c) => Math.max(m, c.antiguedad ?? 0), 0);
   const juridico = perfil.creditos.some((c) => c.etapaManual === "juridico");
+  const hoy = fechaMexico();
+  const telefonos = perfil.contactos
+    .filter((c) => c.tipo === "telefono" && c.estatus !== "invalido")
+    .map((c) => ({ id: c.id, valor: c.valor, nombre: c.nombre }));
 
   return (
     <div className="space-y-6">
@@ -127,7 +134,7 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
 
           <Card className="overflow-x-auto p-0">
             <h2 className="px-6 pt-5 text-lg font-bold">Créditos</h2>
-            <table className="mt-3 w-full min-w-[640px] text-left text-sm">
+            <table className="mt-3 w-full min-w-[860px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                   <th className="px-6 py-2">Crédito</th>
@@ -136,6 +143,8 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
                   <th className="px-6 py-2">Atraso</th>
                   <th className="px-6 py-2">Próximo venc.</th>
                   <th className="px-6 py-2">Último pago</th>
+                  <th className="px-6 py-2">Saldo al día</th>
+                  <th className="px-6 py-2">Etapa</th>
                 </tr>
               </thead>
               <tbody>
@@ -151,10 +160,19 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
                     <td className="px-6 py-2">{c.antiguedad ? `${c.antiguedad} d · ${bucketFor(c.antiguedad)}` : "Al corriente"}</td>
                     <td className="px-6 py-2">{formatFecha(c.proximoVencimiento)}</td>
                     <td className="px-6 py-2">{formatFecha(c.fechaUltimoPago)}</td>
+                    <td className="px-6 py-2">
+                      {c.enListado ? <SaldoAlDiaButton clientId={perfil.id} creditId={c.id} ultimo={c.saldoAlDia} /> : "—"}
+                    </td>
+                    <td className="px-6 py-2">
+                      <EtapaSelect clientId={perfil.id} creditId={c.id} etapa={c.etapaManual} />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            <p className="px-6 pb-4 pt-2 text-xs text-finbra-gray">
+              "Saldo al día" le pregunta a SIAC el saldo de ese crédito a hoy; se puede consultar una vez cada 10 minutos por crédito.
+            </p>
           </Card>
 
           <Card className="overflow-x-auto p-0">
@@ -185,14 +203,28 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="space-y-6">
+          <Card>
+            <h2 className="mb-3 text-lg font-bold">Gestionar</h2>
+            <GestionesPanel
+              clientId={perfil.id}
+              hoy={hoy}
+              telefonos={telefonos}
+              creditos={enListado.map((c) => ({ id: c.id, noCredito: c.noCredito }))}
+              pausa={{ hasta: perfil.pausaHasta, motivo: perfil.pausaMotivo }}
+            />
+          </Card>
+
           {perfil.alertas.length > 0 && (
             <Card>
               <h2 className="mb-3 text-lg font-bold">Alertas abiertas</h2>
               <ul className="space-y-2 text-sm">
                 {perfil.alertas.map((a) => (
-                  <li key={a.id} className="flex items-baseline justify-between gap-3">
-                    <span className={a.severidad === "critica" ? "font-semibold text-red-700" : ""}>{ALERTA[a.tipo] ?? a.tipo}</span>
-                    <span className="whitespace-nowrap text-xs text-finbra-gray">{formatFechaHora(a.createdAt)}</span>
+                  <li key={a.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      <span className={a.severidad === "critica" ? "font-semibold text-red-700" : ""}>{ALERTA[a.tipo] ?? a.tipo}</span>
+                      <span className="block text-xs text-finbra-gray">{formatFechaHora(a.createdAt)}</span>
+                    </span>
+                    <AlertActions clientId={perfil.id} alertId={a.id} />
                   </li>
                 ))}
               </ul>
@@ -204,9 +236,18 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
               <h2 className="mb-3 text-lg font-bold">Promesas de pago</h2>
               <ul className="space-y-2 text-sm">
                 {perfil.promesas.map((p) => (
-                  <li key={p.id} className="flex items-baseline justify-between gap-3">
-                    <span>{formatMoney(p.monto)} al {formatFecha(p.fechaCompromiso)}</span>
-                    <span className="text-xs text-finbra-gray">{ESTADO_PROMESA[p.estado] ?? p.estado}</span>
+                  <li key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      <span className={p.estado === "vigente" ? "font-semibold" : ""}>{formatMoney(p.monto)} al {formatFecha(p.fechaCompromiso)}</span>
+                      <span className="block text-xs text-finbra-gray">
+                        {ESTADO_PROMESA[p.estado] ?? p.estado}
+                        {p.noCredito && <> · crédito {p.noCredito}</>}
+                        {p.canal && <> · {CANALES_PROMESA[p.canal as keyof typeof CANALES_PROMESA] ?? p.canal}</>}
+                        {" · "}{p.createdBy}
+                      </span>
+                      {p.notas && <span className="block text-xs text-finbra-gray">{p.notas}</span>}
+                    </span>
+                    {p.estado === "vigente" && <PromiseActions clientId={perfil.id} promiseId={p.id} />}
                   </li>
                 ))}
               </ul>

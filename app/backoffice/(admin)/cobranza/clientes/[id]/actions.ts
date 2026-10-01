@@ -11,6 +11,19 @@ import {
   setContactoCobranza,
 } from "@/lib/db/collection-clients";
 import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
+import {
+  GestionError,
+  atenderAlerta,
+  cambiarEtapa,
+  consultarSaldoAlDia,
+  crearPromesa,
+  pausarCobranza,
+  reanudarCobranza,
+  registrarGestion,
+  resolverPromesa,
+  type SaldoAlDia,
+} from "@/lib/db/collection-gestiones";
+import { CANALES_PROMESA, ETAPAS, type CanalPromesa, type Etapa } from "@/lib/collections/gestiones";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -19,8 +32,8 @@ async function run(clientId: string, fn: (actor: string) => Promise<unknown>): P
   try {
     await fn(admin.email);
   } catch (e) {
-    if (e instanceof ContactError) return { ok: false, error: e.message };
-    console.error("Error en acción de contactos:", e);
+    if (e instanceof ContactError || e instanceof GestionError) return { ok: false, error: e.message };
+    console.error("Error en acción de cobranza:", e);
     return { ok: false, error: "No pudimos guardar el cambio. Intenta de nuevo." };
   }
   revalidatePath(`/backoffice/cobranza/clientes/${clientId}`);
@@ -60,4 +73,74 @@ export async function addContactAction(clientId: string, _prev: ActionResult | n
       actor,
     }),
   );
+}
+
+// ---------------------------------------------------------------- gestiones
+
+const canal = (v: FormDataEntryValue | null): CanalPromesa => {
+  const c = String(v ?? "");
+  return c in CANALES_PROMESA ? (c as CanalPromesa) : "llamada";
+};
+const texto = (v: FormDataEntryValue | null) => String(v ?? "").trim();
+
+export async function registrarGestionAction(clientId: string, _prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const resultado = texto(fd.get("resultado")) || null;
+  return run(clientId, (actor) =>
+    registrarGestion({
+      clientId,
+      tipo: texto(fd.get("tipo")),
+      resultado,
+      descripcion: texto(fd.get("descripcion")),
+      contactId: texto(fd.get("contactId")) || null,
+      creditId: texto(fd.get("creditId")) || null,
+      promesa: resultado === "promesa" ? { monto: texto(fd.get("monto")), fecha: texto(fd.get("fecha")), canal: canal(fd.get("canal")) } : null,
+      actor,
+    }),
+  );
+}
+
+export async function crearPromesaAction(clientId: string, _prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return run(clientId, (actor) =>
+    crearPromesa({
+      clientId,
+      creditId: texto(fd.get("creditId")) || null,
+      monto: texto(fd.get("monto")),
+      fecha: texto(fd.get("fecha")),
+      canal: canal(fd.get("canal")),
+      notas: texto(fd.get("notas")) || null,
+      actor,
+    }),
+  );
+}
+
+export async function resolverPromesaAction(clientId: string, promiseId: number, estado: string): Promise<ActionResult> {
+  if (estado !== "cumplida" && estado !== "cancelada") return { ok: false, error: "Estado no válido" };
+  return run(clientId, (actor) => resolverPromesa({ clientId, promiseId, estado, actor }));
+}
+
+export async function pausarAction(clientId: string, _prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  return run(clientId, (actor) => pausarCobranza({ clientId, hasta: texto(fd.get("hasta")), motivo: texto(fd.get("motivo")), actor }));
+}
+
+export async function reanudarAction(clientId: string): Promise<ActionResult> {
+  return run(clientId, (actor) => reanudarCobranza({ clientId, actor }));
+}
+
+export async function atenderAlertaAction(clientId: string, alertId: number, estado: string): Promise<ActionResult> {
+  if (estado !== "atendida" && estado !== "descartada") return { ok: false, error: "Estado no válido" };
+  return run(clientId, (actor) => atenderAlerta({ clientId, alertId, estado, actor }));
+}
+
+export async function cambiarEtapaAction(clientId: string, creditId: string, etapa: string): Promise<ActionResult> {
+  const e: Etapa | null = etapa === "" ? null : etapa in ETAPAS ? (etapa as Etapa) : null;
+  if (etapa !== "" && !e) return { ok: false, error: "Etapa no válida" };
+  return run(clientId, (actor) => cambiarEtapa({ clientId, creditId, etapa: e, actor }));
+}
+
+export async function saldoAlDiaAction(clientId: string, creditId: string): Promise<{ ok: true; saldo: SaldoAlDia } | { ok: false; error: string }> {
+  let saldo: SaldoAlDia | null = null;
+  const r = await run(clientId, async (actor) => {
+    saldo = await consultarSaldoAlDia({ clientId, creditId, actor });
+  });
+  return r.ok && saldo ? { ok: true, saldo } : { ok: false, error: r.ok ? "No se obtuvo el saldo" : r.error };
 }
