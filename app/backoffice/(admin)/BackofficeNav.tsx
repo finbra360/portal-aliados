@@ -36,6 +36,7 @@ const NAV: NavEntry[] = [
     items: [
       { href: "/backoffice/cobranza", label: "Inicio", exact: true },
       { href: "/backoffice/cobranza/cola", label: "Cola de trabajo" },
+      { href: "/backoffice/cobranza/clientes", label: "Clientes" },
     ],
   },
   {

@@ -73,7 +73,10 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
   return (
     <div className="space-y-6">
       <div>
-        <Link href="/backoffice/cobranza/cola" className="text-sm text-finbra-purple hover:underline">← Cola de trabajo</Link>
+        <p className="flex gap-3 text-sm">
+          <Link href="/backoffice/cobranza/clientes" className="text-finbra-purple hover:underline">← Clientes</Link>
+          <Link href="/backoffice/cobranza/cola" className="text-finbra-gray hover:text-finbra-purple hover:underline">Cola de trabajo</Link>
+        </p>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold">{perfil.nombre}</h1>
