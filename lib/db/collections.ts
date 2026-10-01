@@ -7,6 +7,7 @@ import { getSetting, tieneDestinatarioValido } from "@/lib/collections/store";
 import { UMBRAL_MORA_DEFAULT, fechaMexico } from "@/lib/collections/rules";
 import { summarizeCollected, summarizePortfolio, type PhotoRow } from "@/lib/collections/portfolio";
 import { buildQueue, type QueueClient } from "@/lib/collections/queue";
+import { buildClientList, type ClientFilter } from "@/lib/collections/clients-list";
 
 export type Ambiente = "pruebas" | "produccion";
 
@@ -165,4 +166,66 @@ export async function getWorkQueue(fechaCorte: string) {
     etapaManual: r.etapa_manual,
   }));
   return { umbral, items: buildQueue(clientes, umbral, fechaMexico()) };
+}
+
+/**
+ * Todos los clientes del ambiente, con los totales de su última foto completa
+ * (o en cero si todavía no hay foto) y sus contactos, para la lista de clientes.
+ */
+export async function getClientsList(fechaCorte: string | null, opts: { filtro: ClientFilter; q: string }) {
+  const ambiente = ambienteActual();
+  const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
+  const [rows, contactos] = await Promise.all([
+    sql`
+      SELECT c.id, c.nombre, c.numero_cliente, to_char(c.pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta, c.contacto_cobranza_id,
+             count(cr.id) FILTER (WHERE cr.en_listado)::int AS creditos_activos,
+             coalesce(sum(s.total_adeudo) FILTER (WHERE cr.en_listado), 0) AS adeudo,
+             coalesce(sum(s.total_vencido) FILTER (WHERE cr.en_listado), 0) AS vencido,
+             coalesce(max(s.antiguedad) FILTER (WHERE cr.en_listado), 0) AS max_atraso,
+             to_char(max(s.fecha_ultimo_pago), 'YYYY-MM-DD') AS ultimo_pago,
+             coalesce(bool_or(cr.etapa_manual = 'juridico'), false) AS juridico
+      FROM col_clients c
+      LEFT JOIN col_credits cr ON cr.client_id = c.id
+      LEFT JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}::date
+      WHERE c.ambiente = ${ambiente}
+      GROUP BY c.id
+    `,
+    sql`
+      SELECT k.id, k.client_id, k.relacion, k.rol, k.tipo, k.telefono_whatsapp, k.estatus, k.baja_whatsapp_at,
+             k.es_principal, k.valor_original, k.nombre_contacto
+      FROM col_contacts k JOIN col_clients c ON c.id = k.client_id
+      WHERE c.ambiente = ${ambiente}
+    `,
+  ]);
+  const lista = buildClientList(
+    rows.map((r) => ({
+      clientId: r.id,
+      nombre: r.nombre,
+      numeroCliente: r.numero_cliente,
+      creditosActivos: r.creditos_activos,
+      adeudo: Number(r.adeudo),
+      vencido: Number(r.vencido),
+      maxAtraso: Number(r.max_atraso),
+      ultimoPago: r.ultimo_pago,
+      pausaHasta: r.pausa_hasta,
+      juridico: r.juridico,
+      contactoCobranzaId: r.contacto_cobranza_id,
+    })),
+    contactos.map((k) => ({
+      id: k.id,
+      clientId: k.client_id,
+      relacion: k.relacion,
+      rol: k.rol,
+      tipo: k.tipo,
+      telefonoWhatsapp: k.telefono_whatsapp,
+      estatus: k.estatus,
+      bajaWhatsappAt: k.baja_whatsapp_at ? String(k.baja_whatsapp_at) : null,
+      esPrincipal: k.es_principal,
+      valor: k.valor_original,
+      nombre: k.nombre_contacto,
+    })),
+    umbral,
+    opts,
+  );
+  return { umbral, ...lista };
 }
