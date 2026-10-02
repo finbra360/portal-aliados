@@ -52,11 +52,22 @@ export interface ClientProfile {
     interesesMoratorios: number | null;
     proximoVencimiento: string | null;
     fechaUltimoPago: string | null;
+    /** Última consulta de "saldo al día" a SIAC, si la hay. */
+    saldoAlDia: { fechaCorte: string; saldoVencido: number; totalPagar: number; consultadoAt: string; pedidoPor: string } | null;
   }[];
   contactos: ProfileContact[];
   pagos: { id: string; noCredito: string; fecha: string; monto: number; concepto: string | null }[];
   alertas: { id: number; tipo: string; severidad: string; createdAt: string }[];
-  promesas: { id: number; monto: number; fechaCompromiso: string; estado: string; createdBy: string }[];
+  promesas: {
+    id: number;
+    monto: number;
+    fechaCompromiso: string;
+    estado: string;
+    createdBy: string;
+    noCredito: string | null;
+    canal: string | null;
+    notas: string | null;
+  }[];
   timeline: { id: string; tipo: string; descripcion: string | null; actor: string; ocurridoAt: string }[];
 }
 
@@ -92,7 +103,7 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
   `;
   if (!c) return null;
 
-  const [creditos, contactos, pagos, alertas, promesas, timeline] = await Promise.all([
+  const [creditos, contactos, pagos, alertas, promesas, timeline, saldos] = await Promise.all([
     sql`
       SELECT cr.id, cr.no_credito, cr.tipo_credito, cr.monto_credito, cr.en_listado, cr.etapa_manual,
              to_char(s.fecha_corte, 'YYYY-MM-DD') AS fecha_corte, s.antiguedad, s.total_vencido, s.total_adeudo,
@@ -117,14 +128,24 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
     `,
     sql`SELECT id, tipo, severidad, created_at FROM col_alerts WHERE client_id = ${clientId} AND estado = 'abierta' ORDER BY created_at DESC`,
     sql`
-      SELECT id, monto, to_char(fecha_compromiso, 'YYYY-MM-DD') AS fecha_compromiso, estado, created_by
-      FROM col_promises WHERE client_id = ${clientId} ORDER BY created_at DESC LIMIT 10
+      SELECT p.id, p.monto, to_char(p.fecha_compromiso, 'YYYY-MM-DD') AS fecha_compromiso, p.estado, p.created_by,
+             p.canal, p.notas, cr.no_credito
+      FROM col_promises p LEFT JOIN col_credits cr ON cr.id = p.credit_id
+      WHERE p.client_id = ${clientId} ORDER BY (p.estado = 'vigente') DESC, p.created_at DESC LIMIT 10
     `,
     sql`
       SELECT id, tipo, descripcion, actor, ocurrido_at FROM col_activities
       WHERE client_id = ${clientId} ORDER BY ocurrido_at DESC, id DESC LIMIT 60
     `,
+    sql`
+      SELECT DISTINCT ON (q.credit_id) q.credit_id, to_char(q.fecha_corte, 'YYYY-MM-DD') AS fecha_corte,
+             q.saldo_vencido, q.total_pagar, q.created_at, q.pedido_por
+      FROM col_saldo_consultas q JOIN col_credits cr ON cr.id = q.credit_id
+      WHERE cr.client_id = ${clientId}
+      ORDER BY q.credit_id, q.created_at DESC
+    `,
   ]);
+  const saldoPorCredito = new Map(saldos.map((s) => [s.credit_id as string, s]));
 
   const cs: ProfileContact[] = contactos.map((r) => {
     const base = mapContact(r);
@@ -160,11 +181,26 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
       interesesMoratorios: num(r.intereses_moratorios),
       proximoVencimiento: r.proximo_vencimiento,
       fechaUltimoPago: r.fecha_ultimo_pago,
+      saldoAlDia: (() => {
+        const s = saldoPorCredito.get(r.id);
+        return s
+          ? { fechaCorte: s.fecha_corte, saldoVencido: Number(s.saldo_vencido), totalPagar: Number(s.total_pagar), consultadoAt: iso(s.created_at), pedidoPor: s.pedido_por }
+          : null;
+      })(),
     })),
     contactos: cs,
     pagos: pagos.map((p) => ({ id: String(p.id), noCredito: p.no_credito, fecha: p.fecha, monto: Number(p.monto), concepto: p.concepto })),
     alertas: alertas.map((a) => ({ id: a.id, tipo: a.tipo, severidad: a.severidad, createdAt: iso(a.created_at) })),
-    promesas: promesas.map((p) => ({ id: p.id, monto: Number(p.monto), fechaCompromiso: p.fecha_compromiso, estado: p.estado, createdBy: p.created_by })),
+    promesas: promesas.map((p) => ({
+      id: p.id,
+      monto: Number(p.monto),
+      fechaCompromiso: p.fecha_compromiso,
+      estado: p.estado,
+      createdBy: p.created_by,
+      noCredito: p.no_credito,
+      canal: p.canal,
+      notas: p.notas,
+    })),
     timeline: timeline.map((t) => ({ id: String(t.id), tipo: t.tipo, descripcion: t.descripcion, actor: t.actor, ocurridoAt: iso(t.ocurrido_at) })),
   };
 }
