@@ -183,6 +183,7 @@ export type AlertTipo =
   | "promesa_incumplida"
   | "mensaje_fallido"
   | "telefono_invalido"
+  | "sin_cuenta_pago"
   | "sync_fallido"
   | "foto_vieja";
 

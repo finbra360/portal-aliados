@@ -186,6 +186,7 @@ export async function runDailySync(opts: {
       await syncNewPayments(siac, runId, conPagoNuevo, result);
       result.promesasResueltas = await resolvePromises(ambiente, fechaCorte, umbral, result);
       await alertInvalidPhones(ambiente, fechaCorte, umbral, result);
+      await alertMissingPaymentAccount(ambiente, fechaCorte, umbral, result);
     }
   } catch (e) {
     result.status = "error";
@@ -531,6 +532,38 @@ async function alertInvalidPhones(ambiente: SiacAmbiente, fechaCorte: string, um
         tipo: "telefono_invalido",
         severidad: "atencion",
         dedupeKey: `telefono_invalido:${c.id}`,
+        detalle: { totalVencido: Number(c.vencido), fecha: fechaCorte },
+      });
+    });
+  }
+}
+
+/**
+ * Clientes en mora sin cuenta de pago: no pueden recibir recordatorios (no hay
+ * a dónde decirles que paguen). Se cierra sola cuando se les asigna una.
+ */
+async function alertMissingPaymentAccount(ambiente: SiacAmbiente, fechaCorte: string, umbral: number, result: DailySyncResult) {
+  await sql`
+    UPDATE col_alerts a SET estado = 'atendida', atendida_por = 'sistema', atendida_at = now()
+    FROM col_clients c
+    WHERE a.client_id = c.id AND a.tipo = 'sin_cuenta_pago' AND a.estado = 'abierta'
+      AND c.ambiente = ${ambiente} AND c.cuenta_pago_id IS NOT NULL
+  `;
+  const sinCuenta = await sql`
+    SELECT c.id, sum(s.total_vencido) AS vencido
+    FROM col_clients c
+    JOIN col_credits cr ON cr.client_id = c.id
+    JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}
+    WHERE c.ambiente = ${ambiente} AND c.cuenta_pago_id IS NULL
+    GROUP BY c.id
+    HAVING sum(s.total_vencido) >= ${umbral}
+  `;
+  for (const c of sinCuenta) {
+    await sql.begin(async (tx) => {
+      result.alertas += await openAlert(tx, c.id, null, {
+        tipo: "sin_cuenta_pago",
+        severidad: "atencion",
+        dedupeKey: `sin_cuenta_pago:${c.id}`,
         detalle: { totalVencido: Number(c.vencido), fecha: fechaCorte },
       });
     });

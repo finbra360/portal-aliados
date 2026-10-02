@@ -15,6 +15,7 @@ const fila = (over: Partial<ClientListRow>): ClientListRow => ({
   pausaHasta: null,
   juridico: false,
   contactoCobranzaId: null,
+  cuentaPagoId: "cuenta-1",
   ...over,
 });
 
@@ -35,18 +36,19 @@ const tel = (clientId: string, id: string, over: Partial<ContactLike & { valor: 
 
 const ROWS = [
   fila({ clientId: "a", nombre: "LOGÍSTICA DEL BAJÍO", numeroCliente: "000000101", vencido: 50_000, maxAtraso: 40 }),
-  fila({ clientId: "b", nombre: "Transportes Norte", numeroCliente: "000000102", vencido: 600 }),
+  fila({ clientId: "b", nombre: "Transportes Norte", numeroCliente: "000000102", vencido: 600, cuentaPagoId: null }),
   fila({ clientId: "c", nombre: "Agro Occidente", numeroCliente: "000000103", vencido: 0, adeudo: 900_000 }),
-  fila({ clientId: "d", nombre: "Sin créditos", numeroCliente: "000000104", creditosActivos: 0, adeudo: 0 }),
+  fila({ clientId: "d", nombre: "Sin créditos", numeroCliente: "000000104", creditosActivos: 0, adeudo: 0, cuentaPagoId: null }),
 ];
 const CONTACTOS = [tel("a", "a1"), tel("b", "b1", { telefonoWhatsapp: null }), tel("c", "c1"), tel("c", "c2", { esPrincipal: false, valor: "5533334444", nombre: "Contador" })];
 
 test("filtros y conteos", () => {
   const r = buildClientList(ROWS, CONTACTOS, 1000, { filtro: "todos", q: "" });
   assert.equal(r.total, 4);
-  assert.deepEqual(r.conteos, { todos: 4, mora: 1, corriente: 2, sin_whatsapp: 1 });
+  assert.deepEqual(r.conteos, { todos: 4, mora: 1, corriente: 2, sin_whatsapp: 1, sin_cuenta: 1 });
   assert.deepEqual(r.items.map((i) => i.clientId), ["a", "b", "c", "d"], "mayor vencido primero, luego mayor adeudo");
   assert.deepEqual(buildClientList(ROWS, CONTACTOS, 1000, { filtro: "sin_whatsapp", q: "" }).items.map((i) => i.clientId), ["b"]);
+  assert.deepEqual(buildClientList(ROWS, CONTACTOS, 1000, { filtro: "sin_cuenta", q: "" }).items.map((i) => i.clientId), ["b"], "sin créditos activos no cuenta");
 });
 
 test("búsqueda por nombre sin acentos o por número de cliente", () => {

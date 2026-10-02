@@ -5,6 +5,7 @@ import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
 import type { ProfileContact } from "@/lib/db/collection-clients";
 import { formatFechaHora, formatTelefono } from "@/lib/format";
 import { addContactAction, setEstatusAction, setRecipientAction, setTipoAction, type ActionResult } from "./actions";
+import { enviarSinBorrar } from "../../enviarSinBorrar";
 
 const TIPOS = Object.entries(TIPOS_CONTACTO) as [TipoContacto, (typeof TIPOS_CONTACTO)[TipoContacto]][];
 
@@ -147,7 +148,7 @@ function AddContactForm({ clientId }: { clientId: string }) {
   }
 
   return (
-    <form action={action} className="space-y-3 rounded-lg border border-black/10 p-4">
+    <form onSubmit={enviarSinBorrar(action)} className="space-y-3 rounded-lg border border-black/10 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <label className="space-y-1 text-sm">
           <span className="text-finbra-gray">Teléfono o correo</span>
