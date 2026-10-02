@@ -87,6 +87,7 @@ const TITULO_ALERTA: Record<AlertDraft["tipo"], string> = {
   promesa_incumplida: "Promesa de pago incumplida",
   mensaje_fallido: "No se pudo entregar un WhatsApp",
   telefono_invalido: "En mora y sin teléfono válido para WhatsApp",
+  sin_cuenta_pago: "En mora y sin cuenta de pago: no recibe recordatorios",
   sync_fallido: "Falló la sincronización con SIAC",
   foto_vieja: "SIAC no actualizó la foto del día",
 };

@@ -15,9 +15,11 @@ export interface ClientListRow {
   pausaHasta: string | null;
   juridico: boolean;
   contactoCobranzaId: string | null;
+  /** null = sin cuenta de pago: no recibe recordatorios. */
+  cuentaPagoId: string | null;
 }
 
-export type ClientFilter = "todos" | "mora" | "corriente" | "sin_whatsapp";
+export type ClientFilter = "todos" | "mora" | "corriente" | "sin_whatsapp" | "sin_cuenta";
 
 export interface ClientListItem extends ClientListRow {
   enMora: boolean;
@@ -29,6 +31,7 @@ export const FILTROS: { value: ClientFilter; label: string }[] = [
   { value: "mora", label: "En mora" },
   { value: "corriente", label: "Sin mora" },
   { value: "sin_whatsapp", label: "Sin WhatsApp válido" },
+  { value: "sin_cuenta", label: "Sin cuenta de pago" },
 ];
 
 const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -68,6 +71,7 @@ export function buildClientList(
     mora: (c) => c.enMora,
     corriente: (c) => !c.enMora && c.creditosActivos > 0,
     sin_whatsapp: (c) => !c.recordatorios.telefono && c.creditosActivos > 0,
+    sin_cuenta: (c) => !c.cuentaPagoId && c.creditosActivos > 0,
   };
   const conteos = Object.fromEntries(FILTROS.map((f) => [f.value, buscados.filter(pasa[f.value]).length])) as Record<ClientFilter, number>;
 

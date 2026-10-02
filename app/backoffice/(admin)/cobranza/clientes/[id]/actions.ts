@@ -25,6 +25,7 @@ import {
   type SaldoAlDia,
 } from "@/lib/db/collection-gestiones";
 import { CANALES_PROMESA, ETAPAS, type CanalPromesa, type Etapa } from "@/lib/collections/gestiones";
+import { PaymentAccountError, asignarCuenta } from "@/lib/db/payment-accounts";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -33,7 +34,7 @@ async function run(clientId: string, fn: (actor: string) => Promise<unknown>): P
   try {
     await fn(admin.email);
   } catch (e) {
-    if (e instanceof ContactError || e instanceof GestionError) return { ok: false, error: e.message };
+    if (e instanceof ContactError || e instanceof GestionError || e instanceof PaymentAccountError) return { ok: false, error: e.message };
     const c = codigoDeError("acción", e);
     return { ok: false, error: `No pudimos guardar el cambio. Intenta de nuevo. (código ${c})` };
   }
@@ -74,6 +75,11 @@ export async function addContactAction(clientId: string, _prev: ActionResult | n
       actor,
     }),
   );
+}
+
+/** Cuenta a la que paga el cliente; "" la quita. */
+export async function asignarCuentaAction(clientId: string, cuentaId: string): Promise<ActionResult> {
+  return run(clientId, (actor) => asignarCuenta({ clientId, cuentaId: cuentaId || null, actor }));
 }
 
 // ---------------------------------------------------------------- gestiones

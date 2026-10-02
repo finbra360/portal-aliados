@@ -177,7 +177,7 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
   const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
   const [rows, contactos] = await Promise.all([
     sql`
-      SELECT c.id, c.nombre, c.numero_cliente, to_char(c.pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta, c.contacto_cobranza_id,
+      SELECT c.id, c.nombre, c.numero_cliente, to_char(c.pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta, c.contacto_cobranza_id, c.cuenta_pago_id,
              count(cr.id) FILTER (WHERE cr.en_listado)::int AS creditos_activos,
              coalesce(sum(s.total_adeudo) FILTER (WHERE cr.en_listado), 0) AS adeudo,
              coalesce(sum(s.total_vencido) FILTER (WHERE cr.en_listado), 0) AS vencido,
@@ -210,6 +210,7 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
       pausaHasta: r.pausa_hasta,
       juridico: r.juridico,
       contactoCobranzaId: r.contacto_cobranza_id,
+      cuentaPagoId: r.cuenta_pago_id,
     })),
     contactos.map((k) => ({
       id: k.id,

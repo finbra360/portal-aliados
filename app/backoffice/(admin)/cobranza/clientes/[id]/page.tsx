@@ -4,6 +4,7 @@ import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { getClientProfile } from "@/lib/db/collection-clients";
 import { getPhotoStatus } from "@/lib/db/collections";
+import { listCuentasActivas } from "@/lib/db/payment-accounts";
 import { bucketFor, fechaMexico } from "@/lib/collections/rules";
 import { CANALES_PROMESA } from "@/lib/collections/gestiones";
 import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
@@ -11,6 +12,7 @@ import Card from "@/components/ui/Card";
 import PhotoBanner from "../../PhotoBanner";
 import ContactsPanel from "./ContactsPanel";
 import GestionesPanel from "./GestionesPanel";
+import CuentaPagoPanel from "./CuentaPagoPanel";
 import { AlertActions, EtapaSelect, PromiseActions, SaldoAlDiaButton } from "./RowActions";
 import { codigoDeError } from "@/lib/collections/errors";
 
@@ -32,6 +34,7 @@ const TIPO_ACTIVIDAD: Record<string, string> = {
   saldo_consultado: "Saldo",
   cambio_etapa: "Etapa",
   cambio_contacto: "Contactos",
+  cambio_cuenta_pago: "Cuenta de pago",
   cambio_asignacion: "Asignación",
   pausa: "Pausa",
   alerta: "Alerta",
@@ -44,6 +47,7 @@ const ALERTA: Record<string, string> = {
   promesa_incumplida: "Promesa de pago incumplida",
   mensaje_fallido: "No se pudo entregar un WhatsApp",
   telefono_invalido: "Sin teléfono válido para WhatsApp",
+  sin_cuenta_pago: "Sin cuenta de pago: no recibe recordatorios",
 };
 
 const ESTADO_PROMESA: Record<string, string> = {
@@ -61,8 +65,9 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
 
   let perfil: Awaited<ReturnType<typeof getClientProfile>>;
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
+  let cuentas: Awaited<ReturnType<typeof listCuentasActivas>>;
   try {
-    [perfil, status] = await Promise.all([getClientProfile(id), getPhotoStatus()]);
+    [perfil, status, cuentas] = await Promise.all([getClientProfile(id), getPhotoStatus(), listCuentasActivas()]);
   } catch (e) {
     const c = codigoDeError("perfil", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar el perfil del cliente. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -177,6 +182,12 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
               recipient={perfil.recipient}
               elegidoPor={{ por: perfil.contactoCobranza.por, at: perfil.contactoCobranza.at }}
             />
+          </Card>
+
+          <Card>
+            <h2 className="mb-1 text-lg font-bold">Cuenta de pago</h2>
+            <p className="mb-4 text-sm text-finbra-gray">A qué cuenta de Finbra transfiere este cliente. Va en sus recordatorios, con el número de crédito como concepto.</p>
+            <CuentaPagoPanel clientId={perfil.id} actual={perfil.cuentaPago} cuentas={cuentas} creditos={enListado.map((c) => c.noCredito)} />
           </Card>
 
           <Card className="overflow-x-auto p-0">

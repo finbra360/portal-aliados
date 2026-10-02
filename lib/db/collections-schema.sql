@@ -25,7 +25,7 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Configuración de cobranza que cambia sin desplegar código: umbral de mora,
--- datos de depósito, ventana de envío. Cada cambio se registra en audit_log.
+-- ventana de envío. Cada cambio se registra en audit_log.
 CREATE TABLE IF NOT EXISTS col_settings (
   key TEXT PRIMARY KEY,
   value JSONB NOT NULL,
@@ -36,7 +36,6 @@ CREATE TABLE IF NOT EXISTS col_settings (
 
 INSERT INTO col_settings (key, value, descripcion) VALUES
   ('umbral_mora', '1000', 'Saldo vencido mínimo del cliente (MXN) para considerarlo en mora y mandarle recordatorio. Por debajo son residuos.'),
-  ('deposito', '{"clabe": null, "banco": null, "beneficiario": null}', 'Datos de transferencia que se incluyen en los mensajes. No vienen de SIAC.'),
   ('ventana_envio', '{"desde": "09:00", "hasta": "19:00", "zona": "America/Mexico_City"}', 'Horario en que se permiten envíos automáticos de WhatsApp.'),
   ('carga_inicial_pagos', '{"autorizada": false}', 'Carga única de la historia de pagos (ConsultarPagos por crédito). Apagada hasta que SIAC dé el visto bueno.'),
   ('max_consultas_pagos_por_dia', '15', 'Tope de llamadas a ConsultarPagos que hace la foto diaria (solo créditos con un pago nuevo). Evita cargas masivas a SIAC.')
@@ -160,6 +159,34 @@ ALTER TABLE col_contacts ADD COLUMN IF NOT EXISTS updated_by TEXT;
 ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_id UUID REFERENCES col_contacts(id) ON DELETE SET NULL;
 ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_por TEXT;
 ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_at TIMESTAMPTZ;
+
+-- Agregadas el 2026-10-02. Cuentas de Finbra a las que los clientes transfieren
+-- sus pagos; los recordatorios incluyen la cuenta del cliente. No vienen de SIAC
+-- (su campo Referencia llega vacío). La CLABE no se edita: una cuenta distinta
+-- es otra fila, para que cambiar a dónde paga un cliente sea siempre explícito.
+CREATE TABLE IF NOT EXISTS col_payment_accounts (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alias TEXT NOT NULL,
+  banco TEXT NOT NULL,
+  beneficiario TEXT NOT NULL,
+  clabe TEXT NOT NULL UNIQUE CHECK (clabe ~ '^[0-9]{18}$'),
+  activa BOOLEAN NOT NULL DEFAULT true,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Cuenta a la que paga el cliente. NULL = sin cuenta: no recibe recordatorios
+-- y, si está en mora, se le abre la alerta sin_cuenta_pago.
+ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS cuenta_pago_id UUID REFERENCES col_payment_accounts(id);
+ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS cuenta_pago_por TEXT;
+ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS cuenta_pago_at TIMESTAMPTZ;
+
+-- El ajuste único 'deposito' quedó reemplazado por el catálogo. Solo se borra
+-- si nunca se llenó.
+DELETE FROM col_settings
+WHERE key = 'deposito' AND value = '{"clabe": null, "banco": null, "beneficiario": null}'::jsonb;
 
 -- Créditos del listado. NoCredito puede traer sufijos ("1008 R", "1047 2D"),
 -- por eso es TEXT. La llave incluye al cliente porque SIAC no ha confirmado
@@ -423,7 +450,7 @@ CREATE TABLE IF NOT EXISTS col_alerts (
   credit_id UUID REFERENCES col_credits(id) ON DELETE CASCADE,
   tipo TEXT NOT NULL CHECK (tipo IN (
     'entrada_mora', 'nueva_mensualidad_vencida', 'cambio_bucket', 'promesa_incumplida',
-    'mensaje_fallido', 'telefono_invalido', 'sync_fallido', 'foto_vieja'
+    'mensaje_fallido', 'telefono_invalido', 'sin_cuenta_pago', 'sync_fallido', 'foto_vieja'
   )),
   severidad TEXT NOT NULL CHECK (severidad IN ('info', 'atencion', 'critica')),
   estado TEXT NOT NULL DEFAULT 'abierta' CHECK (estado IN ('abierta', 'atendida', 'descartada')),
@@ -435,6 +462,13 @@ CREATE TABLE IF NOT EXISTS col_alerts (
   atendida_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Bases creadas antes del 2026-10-02: su CHECK no incluía 'sin_cuenta_pago'.
+ALTER TABLE col_alerts DROP CONSTRAINT IF EXISTS col_alerts_tipo_check;
+ALTER TABLE col_alerts ADD CONSTRAINT col_alerts_tipo_check CHECK (tipo IN (
+  'entrada_mora', 'nueva_mensualidad_vencida', 'cambio_bucket', 'promesa_incumplida',
+  'mensaje_fallido', 'telefono_invalido', 'sin_cuenta_pago', 'sync_fallido', 'foto_vieja'
+));
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_col_alerts_abiertas ON col_alerts(dedupe_key) WHERE estado = 'abierta';
 CREATE INDEX IF NOT EXISTS idx_col_alerts_client ON col_alerts(client_id);
@@ -452,7 +486,7 @@ CREATE TABLE IF NOT EXISTS col_activities (
     'whatsapp_enviado', 'whatsapp_recibido',
     'promesa_creada', 'promesa_resuelta',
     'pago_detectado', 'pago_registrado', 'entrada_mora', 'regularizacion', 'nueva_mensualidad_vencida', 'salida_listado',
-    'saldo_consultado', 'cambio_etapa', 'cambio_contacto', 'cambio_asignacion', 'pausa',
+    'saldo_consultado', 'cambio_etapa', 'cambio_contacto', 'cambio_cuenta_pago', 'cambio_asignacion', 'pausa',
     'alerta'
   )),
   -- Para llamadas y visitas: qué pasó.
@@ -469,15 +503,15 @@ CREATE TABLE IF NOT EXISTS col_activities (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Bases creadas con la versión del 29-sep-2026: su CHECK de tipo no incluía
--- 'pago_registrado'. Se vuelve a crear con la lista vigente.
+-- Bases creadas antes: su CHECK de tipo no incluía 'pago_registrado' (versión del
+-- 29-sep-2026) ni 'cambio_cuenta_pago' (2026-10-02). Se vuelve a crear con la lista vigente.
 ALTER TABLE col_activities DROP CONSTRAINT IF EXISTS col_activities_tipo_check;
 ALTER TABLE col_activities ADD CONSTRAINT col_activities_tipo_check CHECK (tipo IN (
   'llamada', 'nota', 'visita', 'correo',
   'whatsapp_enviado', 'whatsapp_recibido',
   'promesa_creada', 'promesa_resuelta',
   'pago_detectado', 'pago_registrado', 'entrada_mora', 'regularizacion', 'nueva_mensualidad_vencida', 'salida_listado',
-  'saldo_consultado', 'cambio_etapa', 'cambio_contacto', 'cambio_asignacion', 'pausa',
+  'saldo_consultado', 'cambio_etapa', 'cambio_contacto', 'cambio_cuenta_pago', 'cambio_asignacion', 'pausa',
   'alerta'
 ));
 
@@ -502,3 +536,4 @@ ALTER TABLE col_wa_templates ENABLE ROW LEVEL SECURITY;
 ALTER TABLE col_wa_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE col_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE col_activities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE col_payment_accounts ENABLE ROW LEVEL SECURITY;

@@ -37,6 +37,8 @@ export interface ClientProfile {
   pausaHasta: string | null;
   pausaMotivo: string | null;
   contactoCobranza: { id: string | null; por: string | null; at: string | null };
+  /** Cuenta a la que paga. null = sin cuenta: no recibe recordatorios. */
+  cuentaPago: { id: string; alias: string; banco: string; beneficiario: string; clabe: string; por: string | null; at: string | null } | null;
   recipient: Recipient;
   creditos: {
     id: string;
@@ -98,7 +100,9 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
   const [c] = await sql`
     SELECT id, nombre, numero_cliente, domicilio_particular, domicilio_trabajo,
            to_char(pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta, pausa_motivo,
-           contacto_cobranza_id, contacto_cobranza_por, contacto_cobranza_at
+           contacto_cobranza_id, contacto_cobranza_por, contacto_cobranza_at,
+           cuenta_pago_id, cuenta_pago_por, cuenta_pago_at,
+           (SELECT row_to_json(a) FROM (SELECT alias, banco, beneficiario, clabe FROM col_payment_accounts WHERE id = cuenta_pago_id) a) AS cuenta
     FROM col_clients WHERE id = ${clientId} AND ambiente = ${ambiente}
   `;
   if (!c) return null;
@@ -166,6 +170,10 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
       por: c.contacto_cobranza_por,
       at: c.contacto_cobranza_at ? iso(c.contacto_cobranza_at) : null,
     },
+    cuentaPago:
+      c.cuenta_pago_id && c.cuenta
+        ? { id: c.cuenta_pago_id, ...c.cuenta, por: c.cuenta_pago_por, at: c.cuenta_pago_at ? iso(c.cuenta_pago_at) : null }
+        : null,
     recipient: chooseRecipient(cs, c.contacto_cobranza_id),
     creditos: creditos.map((r) => ({
       id: r.id,
