@@ -9,6 +9,11 @@ function createClient() {
   return postgres(url, {
     ssl: process.env.DATABASE_SSL === "disable" ? false : "require",
     max: Number(process.env.DATABASE_POOL_MAX) || 5,
+    // DATABASE_URL apunta al pooler de Supabase en modo transacción (puerto 6543):
+    // cada consulta puede caer en una conexión distinta de Postgres, así que una
+    // sentencia preparada en una no existe en la otra (error 26000). postgres.js
+    // recomienda desactivarlas con PgBouncer/Supavisor en modo transacción.
+    prepare: false,
   });
 }
 
