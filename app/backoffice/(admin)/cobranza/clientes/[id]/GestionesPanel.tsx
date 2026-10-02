@@ -5,6 +5,7 @@ import { CANALES_PROMESA, MAX_DIAS_PAUSA, MAX_DIAS_PROMESA, RESULTADOS, TIPOS_GE
 import { addDays } from "@/lib/collections/rules";
 import { formatFecha, formatTelefono } from "@/lib/format";
 import { crearPromesaAction, pausarAction, reanudarAction, registrarGestionAction, type ActionResult } from "./actions";
+import { enviarSinBorrar } from "../../enviarSinBorrar";
 
 type Pestana = "gestion" | "promesa" | "pausa";
 
@@ -104,7 +105,7 @@ export default function GestionesPanel({
       </div>
 
       {pestana === "gestion" && (
-        <form key={`g${form}`} action={accionGestion} className="space-y-3">
+        <form key={`g${form}`} onSubmit={enviarSinBorrar(accionGestion)} className="space-y-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1 text-sm">
               <span className="text-finbra-gray">Qué fue</span>
@@ -166,7 +167,7 @@ export default function GestionesPanel({
       )}
 
       {pestana === "promesa" && (
-        <form key={`p${form}`} action={accionPromesa} className="space-y-3">
+        <form key={`p${form}`} onSubmit={enviarSinBorrar(accionPromesa)} className="space-y-3">
           <CamposPromesa hoy={hoy} />
           <div className="grid gap-3 sm:grid-cols-2">
             {creditos.length > 1 && (
@@ -218,7 +219,7 @@ export default function GestionesPanel({
             {errorReanudar && <p className="text-red-700" role="alert">{errorReanudar}</p>}
           </div>
         ) : (
-          <form action={accionPausa} className="space-y-3">
+          <form onSubmit={enviarSinBorrar(accionPausa)} className="space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-1 text-sm">
                 <span className="text-finbra-gray">Pausar hasta</span>
