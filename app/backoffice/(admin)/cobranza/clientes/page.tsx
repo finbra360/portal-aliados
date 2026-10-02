@@ -8,6 +8,7 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import { IconListChecks } from "@/components/ui/icons";
 import PhotoBanner from "../PhotoBanner";
+import { codigoDeError } from "@/lib/collections/errors";
 
 const BASE = "/backoffice/cobranza/clientes";
 const esFiltro = (f: string | undefined): f is ClientFilter => FILTROS.some((x) => x.value === f);
@@ -31,8 +32,9 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
   try {
     status = await getPhotoStatus();
     data = await getClientsList(status.fechaCorte, { filtro, q });
-  } catch {
-    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar la lista de clientes en este momento.</div>;
+  } catch (e) {
+    const c = codigoDeError("clientes", e);
+    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar la lista de clientes en este momento. <span className="text-sm opacity-70">(código {c})</span></div>;
   }
 
   return (

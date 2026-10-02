@@ -12,6 +12,7 @@ import PhotoBanner from "../../PhotoBanner";
 import ContactsPanel from "./ContactsPanel";
 import GestionesPanel from "./GestionesPanel";
 import { AlertActions, EtapaSelect, PromiseActions, SaldoAlDiaButton } from "./RowActions";
+import { codigoDeError } from "@/lib/collections/errors";
 
 const TIPO_ACTIVIDAD: Record<string, string> = {
   llamada: "Llamada",
@@ -62,8 +63,9 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   try {
     [perfil, status] = await Promise.all([getClientProfile(id), getPhotoStatus()]);
-  } catch {
-    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar el perfil del cliente.</div>;
+  } catch (e) {
+    const c = codigoDeError("perfil", e);
+    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar el perfil del cliente. <span className="text-sm opacity-70">(código {c})</span></div>;
   }
   if (!perfil) notFound();
 
@@ -117,6 +119,51 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
         </Card>
       </div>
 
+      <Card className="p-0">
+        <h2 className="px-6 pt-5 text-lg font-bold">Créditos</h2>
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full min-w-[760px] text-left text-sm">
+            <thead>
+              <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
+                <th className="px-4 py-2">Crédito</th>
+                <th className="px-4 py-2 text-right">Vencido</th>
+                <th className="px-4 py-2 text-right">Adeudo</th>
+                <th className="px-4 py-2">Atraso</th>
+                <th className="px-4 py-2">Próximo venc.</th>
+                <th className="px-4 py-2">Último pago</th>
+                <th className="px-4 py-2">Saldo al día</th>
+                <th className="px-4 py-2">Etapa</th>
+              </tr>
+            </thead>
+            <tbody>
+              {perfil.creditos.map((c) => (
+                <tr key={c.id} className={`border-b border-black/5 last:border-0 ${c.enListado ? "" : "text-finbra-gray"}`}>
+                  <td className="px-4 py-2">
+                    <span className="font-mono">{c.noCredito}</span>
+                    {!c.enListado && <span className="ml-2 text-xs">(ya no está en el listado)</span>}
+                    {c.tipoCredito && <span className="block text-xs text-finbra-gray">{c.tipoCredito}</span>}
+                  </td>
+                  <td className={`px-4 py-2 text-right tabular-nums ${(c.totalVencido ?? 0) > 0 ? "font-semibold text-red-700" : ""}`}>{formatMoney(c.totalVencido ?? 0)}</td>
+                  <td className="px-4 py-2 text-right tabular-nums">{formatMoney(c.totalAdeudo ?? 0)}</td>
+                  <td className="px-4 py-2">{c.antiguedad ? `${c.antiguedad} d · ${bucketFor(c.antiguedad)}` : "Al corriente"}</td>
+                  <td className="px-4 py-2">{formatFecha(c.proximoVencimiento)}</td>
+                  <td className="px-4 py-2">{formatFecha(c.fechaUltimoPago)}</td>
+                  <td className="px-4 py-2">
+                    {c.enListado ? <SaldoAlDiaButton clientId={perfil.id} creditId={c.id} ultimo={c.saldoAlDia} /> : "—"}
+                  </td>
+                  <td className="px-4 py-2">
+                    <EtapaSelect clientId={perfil.id} creditId={c.id} etapa={c.etapaManual} />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="px-6 pb-4 pt-2 text-xs text-finbra-gray">
+          "Saldo al día" le pregunta a SIAC el saldo de ese crédito a hoy; se puede consultar una vez cada 10 minutos por crédito.
+        </p>
+      </Card>
+
       <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
         <div className="space-y-6">
           <Card>
@@ -130,49 +177,6 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
               recipient={perfil.recipient}
               elegidoPor={{ por: perfil.contactoCobranza.por, at: perfil.contactoCobranza.at }}
             />
-          </Card>
-
-          <Card className="overflow-x-auto p-0">
-            <h2 className="px-6 pt-5 text-lg font-bold">Créditos</h2>
-            <table className="mt-3 w-full min-w-[860px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-6 py-2">Crédito</th>
-                  <th className="px-6 py-2 text-right">Vencido</th>
-                  <th className="px-6 py-2 text-right">Adeudo</th>
-                  <th className="px-6 py-2">Atraso</th>
-                  <th className="px-6 py-2">Próximo venc.</th>
-                  <th className="px-6 py-2">Último pago</th>
-                  <th className="px-6 py-2">Saldo al día</th>
-                  <th className="px-6 py-2">Etapa</th>
-                </tr>
-              </thead>
-              <tbody>
-                {perfil.creditos.map((c) => (
-                  <tr key={c.id} className={`border-b border-black/5 last:border-0 ${c.enListado ? "" : "text-finbra-gray"}`}>
-                    <td className="px-6 py-2">
-                      <span className="font-mono">{c.noCredito}</span>
-                      {!c.enListado && <span className="ml-2 text-xs">(ya no está en el listado)</span>}
-                      {c.tipoCredito && <span className="block text-xs text-finbra-gray">{c.tipoCredito}</span>}
-                    </td>
-                    <td className={`px-6 py-2 text-right tabular-nums ${(c.totalVencido ?? 0) > 0 ? "font-semibold text-red-700" : ""}`}>{formatMoney(c.totalVencido ?? 0)}</td>
-                    <td className="px-6 py-2 text-right tabular-nums">{formatMoney(c.totalAdeudo ?? 0)}</td>
-                    <td className="px-6 py-2">{c.antiguedad ? `${c.antiguedad} d · ${bucketFor(c.antiguedad)}` : "Al corriente"}</td>
-                    <td className="px-6 py-2">{formatFecha(c.proximoVencimiento)}</td>
-                    <td className="px-6 py-2">{formatFecha(c.fechaUltimoPago)}</td>
-                    <td className="px-6 py-2">
-                      {c.enListado ? <SaldoAlDiaButton clientId={perfil.id} creditId={c.id} ultimo={c.saldoAlDia} /> : "—"}
-                    </td>
-                    <td className="px-6 py-2">
-                      <EtapaSelect clientId={perfil.id} creditId={c.id} etapa={c.etapaManual} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <p className="px-6 pb-4 pt-2 text-xs text-finbra-gray">
-              "Saldo al día" le pregunta a SIAC el saldo de ese crédito a hoy; se puede consultar una vez cada 10 minutos por crédito.
-            </p>
           </Card>
 
           <Card className="overflow-x-auto p-0">

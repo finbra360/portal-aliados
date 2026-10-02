@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
+import { codigoDeError } from "@/lib/collections/errors";
 import { COBRANZA_ROLES, requireRole } from "@/lib/rbac";
 import {
   ContactError,
@@ -33,8 +34,8 @@ async function run(clientId: string, fn: (actor: string) => Promise<unknown>): P
     await fn(admin.email);
   } catch (e) {
     if (e instanceof ContactError || e instanceof GestionError) return { ok: false, error: e.message };
-    console.error("Error en acción de cobranza:", e);
-    return { ok: false, error: "No pudimos guardar el cambio. Intenta de nuevo." };
+    const c = codigoDeError("acción", e);
+    return { ok: false, error: `No pudimos guardar el cambio. Intenta de nuevo. (código ${c})` };
   }
   revalidatePath(`/backoffice/cobranza/clientes/${clientId}`);
   revalidatePath("/backoffice/cobranza/cola");
