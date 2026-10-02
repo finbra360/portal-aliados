@@ -8,6 +8,7 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import { IconListChecks } from "@/components/ui/icons";
 import PhotoBanner from "../PhotoBanner";
+import { codigoDeError } from "@/lib/collections/errors";
 
 const NIVEL_ESTILO: Record<number, string> = {
   1: "bg-red-100 text-red-700",
@@ -95,8 +96,9 @@ export default async function CobranzaColaPage() {
   try {
     status = await getPhotoStatus();
     if (status.fechaCorte) items = (await getWorkQueue(status.fechaCorte)).items;
-  } catch {
-    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar la cola de trabajo en este momento.</div>;
+  } catch (e) {
+    const c = codigoDeError("cola", e);
+    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar la cola de trabajo en este momento. <span className="text-sm opacity-70">(código {c})</span></div>;
   }
 
   const cola = items.filter((i) => i.lugar === "cola");

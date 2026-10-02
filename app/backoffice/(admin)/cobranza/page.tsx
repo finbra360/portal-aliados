@@ -9,6 +9,7 @@ import StatCard from "@/components/ui/StatCard";
 import EmptyState from "@/components/ui/EmptyState";
 import { IconCoins, IconListChecks, IconWallet, IconTrendingUp } from "@/components/ui/icons";
 import PhotoBanner from "./PhotoBanner";
+import { codigoDeError } from "@/lib/collections/errors";
 
 const BUCKET_LABEL: Record<Bucket, string> = {
   al_corriente: "Al corriente",
@@ -38,8 +39,9 @@ export default async function CobranzaInicioPage() {
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   try {
     status = await getPhotoStatus();
-  } catch {
-    return <ErrorBox>No pudimos leer el estado de la sincronización con SIAC.</ErrorBox>;
+  } catch (e) {
+    const c = codigoDeError("inicio", e);
+    return <ErrorBox>No pudimos leer el estado de la sincronización con SIAC. <span className="text-sm opacity-70">(código {c})</span></ErrorBox>;
   }
 
   if (!status.fechaCorte) {
@@ -59,8 +61,9 @@ export default async function CobranzaInicioPage() {
   let data: Awaited<ReturnType<typeof getCollectionsOverview>>;
   try {
     data = await getCollectionsOverview(status.fechaCorte);
-  } catch {
-    return <ErrorBox>No pudimos cargar la cartera en este momento.</ErrorBox>;
+  } catch (e) {
+    const c = codigoDeError("cartera", e);
+    return <ErrorBox>No pudimos cargar la cartera en este momento. <span className="text-sm opacity-70">(código {c})</span></ErrorBox>;
   }
   const { resumen: r, cobrado, umbral } = data;
   const maxAdeudoBucket = Math.max(1, ...r.aging.map((a) => a.adeudo));
