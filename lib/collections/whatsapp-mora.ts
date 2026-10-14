@@ -94,6 +94,57 @@ export function decidirMora(c: MoraCandidate, p: { umbral: number; hoy: string; 
   };
 }
 
+/** Cuántas variables distintas ({{1}}, {{2}}…) tiene el texto de una plantilla. */
+export function contarVariables(cuerpo: string): number {
+  return new Set([...cuerpo.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1])).size;
+}
+
+/** El mensaje tal como le llega al cliente: el texto de Meta con los valores puestos. */
+export function renderPlantilla(cuerpo: string, parametros: string[]): string {
+  return cuerpo.replace(/\{\{(\d+)\}\}/g, (todo, n) => parametros[Number(n) - 1] ?? todo);
+}
+
+export type EstadoMeta = "pendiente" | "aprobada" | "rechazada" | "pausada";
+
+/** Estado de una plantilla en Meta (APPROVED, REJECTED, PAUSED…) en los términos de col_wa_templates. */
+export function estadoDesdeMeta(status: string | null | undefined): EstadoMeta {
+  switch ((status ?? "").toUpperCase()) {
+    case "APPROVED":
+      return "aprobada";
+    case "REJECTED":
+      return "rechazada";
+    case "PAUSED":
+    case "DISABLED":
+      return "pausada";
+    default:
+      return "pendiente"; // PENDING, IN_APPEAL, PENDING_DELETION, o no existe
+  }
+}
+
+/** Por qué una plantilla no se puede activar, o null si sí se puede. */
+export function motivoNoActivable(t: { estadoMeta: string; cuerpo: string | null }): string | null {
+  if (t.estadoMeta === "rechazada") return "Meta la rechazó.";
+  if (t.estadoMeta === "pausada") return "Meta la pausó.";
+  if (t.estadoMeta !== "aprobada") return "Meta todavía no la aprueba. Usa \"Revisar con Meta\" para actualizar su estado.";
+  if (!t.cuerpo) return "Falta su texto. Usa \"Revisar con Meta\".";
+  const n = contarVariables(t.cuerpo);
+  if (n !== VARIABLES_MORA.length) return `En Meta tiene ${n} variables y se necesitan ${VARIABLES_MORA.length}.`;
+  return null;
+}
+
+/** Valores de ejemplo para un envío de prueba: nunca datos de un cliente. */
+export function parametrosDePrueba(cuenta: { banco: string; beneficiario: string; clabe: string }): string[] {
+  const valores: Record<(typeof VARIABLES_MORA)[number], string> = {
+    nombre: "Prueba Finbra",
+    total_vencido: "1,234.56",
+    creditos: "crédito 0000",
+    banco: cuenta.banco,
+    beneficiario: cuenta.beneficiario,
+    clabe: cuenta.clabe,
+  };
+  return VARIABLES_MORA.map((v) => limpiarParametro(valores[v]));
+}
+
 /**
  * Por qué hoy no sale ningún recordatorio, aunque haya clientes que lo
  * recibirían. Lista vacía = se puede enviar.
