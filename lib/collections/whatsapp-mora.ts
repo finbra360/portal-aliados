@@ -119,7 +119,7 @@ export const PLANTILLAS_MORA: { nombre: string; cuerpo: string }[] = [
 ];
 
 /** Ejemplos de las 6 variables que Meta pide al revisar una plantilla. Ficticios. */
-export const EJEMPLO_MORA = ["Juan Pérez", "41,325.00", "crédito 2001", "BBVA", "Litore Avances SAPI de CV SOFOM", "032180000118359719"];
+export const EJEMPLO_MORA = ["Juan Pérez", "41,325.00", "crédito 2001", "BBVA", "Litore Avances SAPI de CV SOFOM ENR", "032180000118359719"];
 
 /** Cuántas variables distintas ({{1}}, {{2}}…) tiene el texto de una plantilla. */
 export function contarVariables(cuerpo: string): number {
