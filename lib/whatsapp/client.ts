@@ -189,3 +189,27 @@ export async function consultarPlantillas(config: WhatsAppConfig, cuentaId: stri
       motivoRechazo: t.rejected_reason && t.rejected_reason !== "NONE" ? t.rejected_reason : null,
     }));
 }
+
+/**
+ * Da de alta una plantilla y la manda a revisión de Meta. Meta puede cambiarle
+ * la categoría (por ejemplo, de UTILITY a MARKETING): se regresa la que quedó.
+ */
+export async function crearPlantilla(
+  config: WhatsAppConfig,
+  cuentaId: string,
+  p: { nombre: string; idioma: string; categoria: string; cuerpo: string; ejemplo: string[] },
+): Promise<{ id: string; estado: string; categoria: string | null }> {
+  const r = await llamarMeta<{ id?: string; status?: string; category?: string }>(config, {
+    metodo: "POST",
+    ruta: `${cuentaId}/message_templates`,
+    queHacia: `la plantilla ${p.nombre}`,
+    body: {
+      name: p.nombre,
+      language: p.idioma,
+      category: p.categoria,
+      components: [{ type: "BODY", text: p.cuerpo, example: { body_text: [p.ejemplo] } }],
+    },
+  });
+  if (!r.id) throw new WhatsAppError(`Meta no regresó el ID de la plantilla ${p.nombre}`, null, {});
+  return { id: r.id, estado: r.status ?? "PENDING", categoria: r.category ?? null };
+}

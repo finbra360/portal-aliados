@@ -5,7 +5,7 @@ import { getAdminSession } from "@/lib/get-admin-session";
 import { requireRole } from "@/lib/rbac";
 import { codigoDeError } from "@/lib/collections/errors";
 import { WhatsAppError } from "@/lib/whatsapp/client";
-import { WhatsAppMoraError, enviarPrueba, revisarConMeta, runMoraReminders, setEnvioMoraActivo, setPlantillaActiva } from "@/lib/db/whatsapp-mora";
+import { WhatsAppMoraError, crearPlantillasEnMeta, enviarPrueba, revisarConMeta, runMoraReminders, setEnvioMoraActivo, setPlantillaActiva } from "@/lib/db/whatsapp-mora";
 
 export type WhatsAppActionResult = { ok: true; mensaje?: string } | { ok: false; error: string };
 
@@ -56,5 +56,17 @@ export async function enviarPruebaAction(_prev: WhatsAppActionResult | null, fd:
   return run(async (actor) => {
     const r = await enviarPrueba({ telefono: String(fd.get("telefono") ?? ""), plantillaId: Number(fd.get("plantillaId")), actor });
     return r.texto ? `Enviado. Debe llegarte: "${r.texto}"` : "Enviado.";
+  });
+}
+
+export async function crearPlantillasAction(): Promise<WhatsAppActionResult> {
+  return run(async (actor) => {
+    const r = await crearPlantillasEnMeta({ actor });
+    const partes = [
+      r.creadas.length ? `Enviadas a revisión de Meta: ${r.creadas.join(", ")}.` : "No se creó ninguna plantilla nueva.",
+      r.yaExistian.length ? `Ya existían: ${r.yaExistian.join(", ")}.` : "",
+      ...r.avisos,
+    ];
+    return partes.filter(Boolean).join(" ");
   });
 }

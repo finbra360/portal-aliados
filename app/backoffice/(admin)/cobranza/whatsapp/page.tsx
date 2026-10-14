@@ -2,11 +2,11 @@ import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { previewMora } from "@/lib/db/whatsapp-mora";
-import { VARIABLES_MORA, motivoNoActivable, renderPlantilla } from "@/lib/collections/whatsapp-mora";
+import { EJEMPLO_MORA, PLANTILLAS_MORA, VARIABLES_MORA, motivoNoActivable, renderPlantilla } from "@/lib/collections/whatsapp-mora";
 import { codigoDeError } from "@/lib/collections/errors";
 import { formatFecha, formatFechaHora, formatMoney, formatTelefono } from "@/lib/format";
 import Card from "@/components/ui/Card";
-import { EnviarAhora, EnviarPrueba, EnvioToggle, PlantillaToggle, RevisarConMeta } from "./WhatsAppControls";
+import { CrearPlantillas, EnviarAhora, EnviarPrueba, EnvioToggle, PlantillaToggle, RevisarConMeta } from "./WhatsAppControls";
 
 const ESTADO: Record<string, { label: string; clase: string }> = {
   pendiente: { label: "Pendiente", clase: "bg-black/5 text-finbra-gray" },
@@ -49,6 +49,8 @@ export default async function WhatsAppMoraPage() {
 
   const cuerpoDe = new Map(p.plantillas.map((t) => [t.nombre, t.cuerpo]));
   const aprobadas = p.plantillas.filter((t) => motivoNoActivable(t) === null);
+  // Revisadas con Meta y sin texto = no existen allá todavía.
+  const faltanEnMeta = p.revisionMeta ? p.plantillas.filter((t) => t.revisadaAt && !t.cuerpo).map((t) => t.nombre) : [];
   const salen = p.filas.filter((f) => f.decision.enviar);
   const noSalen = p.filas.filter((f) => !f.decision.enviar);
 
@@ -138,6 +140,24 @@ export default async function WhatsAppMoraPage() {
             </li>
           ))}
         </ul>
+        {esSuperAdmin && faltanEnMeta.length > 0 && (
+          <div className="mt-4 space-y-3 border-t border-black/5 pt-4">
+            <p className="text-sm">
+              {faltanEnMeta.length === 1 ? "Esta plantilla no existe" : "Estas plantillas no existen"} en Meta todavía. Se pueden dar de alta desde aquí, con estos textos, y
+              quedan en revisión de Meta (de minutos a 24 horas):
+            </p>
+            {PLANTILLAS_MORA.filter((t) => faltanEnMeta.includes(t.nombre)).map((t) => (
+              <div key={t.nombre} className="text-sm">
+                <p className="font-mono text-xs text-finbra-gray">{t.nombre}</p>
+                <p className="rounded-lg bg-black/[0.03] p-2">{t.cuerpo}</p>
+              </div>
+            ))}
+            <p className="text-xs text-finbra-gray">
+              Ejemplos que se mandan a Meta para revisarlas: {EJEMPLO_MORA.map((e, i) => `{{${i + 1}}} ${e}`).join(", ")}.
+            </p>
+            <CrearPlantillas faltan={faltanEnMeta} />
+          </div>
+        )}
       </Card>
 
       <Card className="p-0">

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   bloqueosDeEnvio,
   contarVariables,
+  EJEMPLO_MORA,
+  PLANTILLAS_MORA,
   decidirMora,
   estadoDesdeMeta,
   limpiarParametro,
@@ -113,6 +115,18 @@ test("plantillas: variables, texto final y estado de Meta", () => {
   assert.match(motivoNoActivable({ estadoMeta: "pausada", cuerpo })!, /pausó/);
   assert.match(motivoNoActivable({ estadoMeta: "aprobada", cuerpo: "Hola {{1}}, debes {{2}}" })!, /2 variables/);
   assert.deepEqual(parametrosDePrueba({ banco: "BBVA", beneficiario: "Finbra", clabe: CLABE }), ["Prueba Finbra", "1,234.56", "crédito 0000", "BBVA", "Finbra", CLABE]);
+});
+
+test("plantillas que se dan de alta en Meta: 6 variables en orden, sin empezar ni terminar en variable", () => {
+  assert.deepEqual(PLANTILLAS_MORA.map((p) => p.nombre), ["finbra_mora_v1", "finbra_mora_v2", "finbra_mora_v3"]);
+  for (const p of PLANTILLAS_MORA) {
+    assert.equal(contarVariables(p.cuerpo), 6, p.nombre);
+    const orden = [...p.cuerpo.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
+    assert.deepEqual(orden, [1, 2, 3, 4, 5, 6], `${p.nombre}: aparecen en orden`);
+    assert.doesNotMatch(p.cuerpo, /^\{\{|\}\}$/, `${p.nombre}: Meta rechaza plantillas que empiezan o terminan en variable`);
+    assert.ok(p.cuerpo.length <= 1024, `${p.nombre}: máximo 1024 caracteres`);
+  }
+  assert.equal(EJEMPLO_MORA.length, 6);
 });
 
 test("mora: bloqueos antes de enviar", () => {

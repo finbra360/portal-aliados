@@ -3,6 +3,7 @@
 import { useActionState, useState, useTransition } from "react";
 import { enviarSinBorrar } from "../enviarSinBorrar";
 import {
+  crearPlantillasAction,
   enviarAhoraAction,
   enviarPruebaAction,
   revisarConMetaAction,
@@ -143,6 +144,25 @@ export function EnviarAhora({ disponible, cuantos }: { disponible: boolean; cuan
         className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-40"
       >
         {pending ? "Enviando…" : "Enviar ahora"}
+      </button>
+      {aviso}
+    </div>
+  );
+}
+
+export function CrearPlantillas({ faltan }: { faltan: string[] }) {
+  const { pending, correr, aviso } = useAccion();
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          if (window.confirm(`¿Dar de alta en Meta y mandar a revisión: ${faltan.join(", ")}? Se crean como Utilidad, en español de México, con los textos de abajo.`)) correr(crearPlantillasAction);
+        }}
+        className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50"
+      >
+        {pending ? "Creando…" : "Crear plantillas en Meta"}
       </button>
       {aviso}
     </div>
