@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { requireRole } from "@/lib/rbac";
 import { codigoDeError } from "@/lib/collections/errors";
-import { WhatsAppMoraError, runMoraReminders, setEnvioMoraActivo, setPlantillaActiva } from "@/lib/db/whatsapp-mora";
+import { WhatsAppError } from "@/lib/whatsapp/client";
+import { WhatsAppMoraError, enviarPrueba, revisarConMeta, runMoraReminders, setEnvioMoraActivo, setPlantillaActiva } from "@/lib/db/whatsapp-mora";
 
 export type WhatsAppActionResult = { ok: true; mensaje?: string } | { ok: false; error: string };
 
@@ -16,7 +17,7 @@ async function run(fn: (actor: string) => Promise<string | void>): Promise<Whats
   try {
     mensaje = await fn(admin.email);
   } catch (e) {
-    if (e instanceof WhatsAppMoraError) return { ok: false, error: e.message };
+    if (e instanceof WhatsAppMoraError || e instanceof WhatsAppError) return { ok: false, error: e.message };
     const c = codigoDeError("whatsapp", e);
     return { ok: false, error: `No pudimos completar la acción. (código ${c})` };
   }
@@ -38,5 +39,22 @@ export async function enviarAhoraAction(): Promise<WhatsAppActionResult> {
     if (r.bloqueos.length) throw new WhatsAppMoraError(`No se envió nada: ${r.bloqueos.join("; ")}`);
     const n = (k: number, uno: string, varios: string) => `${k} ${k === 1 ? uno : varios}`;
     return `${n(r.enviados, "enviado", "enviados")}, ${n(r.fallidos, "fallido", "fallidos")}, ${n(r.omitidos, "sin enviar", "sin enviar")}.${r.detenido ? ` ${r.detenido}` : ""}`;
+  });
+}
+
+export async function revisarConMetaAction(): Promise<WhatsAppActionResult> {
+  return run(async (actor) => {
+    const r = await revisarConMeta({ actor });
+    const n = r.numero;
+    const calidad: Record<string, string> = { GREEN: "alta", YELLOW: "media", RED: "baja", UNKNOWN: "sin calificar" };
+    const base = `Conexión correcta: ${n.nombreVerificado ?? "número"} ${n.numero ?? ""}${n.calidad ? `, calidad ${calidad[n.calidad] ?? n.calidad}` : ""}.`;
+    return r.avisos.length ? `${base} ${r.avisos.join(" ")}` : `${base} Plantillas actualizadas.`;
+  });
+}
+
+export async function enviarPruebaAction(_prev: WhatsAppActionResult | null, fd: FormData): Promise<WhatsAppActionResult> {
+  return run(async (actor) => {
+    const r = await enviarPrueba({ telefono: String(fd.get("telefono") ?? ""), plantillaId: Number(fd.get("plantillaId")), actor });
+    return r.texto ? `Enviado. Debe llegarte: "${r.texto}"` : "Enviado.";
   });
 }

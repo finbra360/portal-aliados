@@ -1,6 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bloqueosDeEnvio, decidirMora, limpiarParametro, siguientePlantilla, textoCreditos, type MoraCandidate } from "./whatsapp-mora.ts";
+import {
+  bloqueosDeEnvio,
+  contarVariables,
+  decidirMora,
+  estadoDesdeMeta,
+  limpiarParametro,
+  motivoNoActivable,
+  parametrosDePrueba,
+  renderPlantilla,
+  siguientePlantilla,
+  textoCreditos,
+  type MoraCandidate,
+} from "./whatsapp-mora.ts";
 
 const HOY = "2026-10-14";
 const PLANTILLAS = ["finbra_mora_v1", "finbra_mora_v2", "finbra_mora_v3"];
@@ -80,6 +92,27 @@ test("mora: créditos y parámetros que Meta acepta", () => {
   assert.equal(textoCreditos([{ noCredito: "2001", totalVencido: 5 }, { noCredito: "2002 R", totalVencido: 7 }, { noCredito: "2003", totalVencido: 0 }]), "créditos 2001 y 2002 R");
   assert.equal(textoCreditos([{ noCredito: "1", totalVencido: 1 }, { noCredito: "2", totalVencido: 1 }, { noCredito: "3", totalVencido: 1 }]), "créditos 1, 2 y 3");
   assert.equal(limpiarParametro(" EMPRESA\nFICTICIA   S.A.\t"), "EMPRESA FICTICIA S.A.");
+});
+
+test("plantillas: variables, texto final y estado de Meta", () => {
+  const cuerpo = "Hola {{1}}, debes ${{2}} ({{3}}). Transfiere a {{4}}, a nombre de {{5}}, CLABE {{6}}. Gracias {{1}}.";
+  assert.equal(contarVariables(cuerpo), 6, "{{1}} repetida cuenta una vez");
+  assert.equal(
+    renderPlantilla(cuerpo, ["Ana", "1,000.00", "crédito 1", "BBVA", "Finbra", CLABE]),
+    `Hola Ana, debes $1,000.00 (crédito 1). Transfiere a BBVA, a nombre de Finbra, CLABE ${CLABE}. Gracias Ana.`,
+  );
+  assert.equal(renderPlantilla("Hola {{1}} {{7}}", ["Ana"]), "Hola Ana {{7}}", "una variable sin valor se queda visible");
+  assert.equal(estadoDesdeMeta("APPROVED"), "aprobada");
+  assert.equal(estadoDesdeMeta("REJECTED"), "rechazada");
+  assert.equal(estadoDesdeMeta("PAUSED"), "pausada");
+  assert.equal(estadoDesdeMeta("PENDING"), "pendiente");
+  assert.equal(estadoDesdeMeta(undefined), "pendiente");
+  assert.equal(motivoNoActivable({ estadoMeta: "aprobada", cuerpo }), null);
+  assert.match(motivoNoActivable({ estadoMeta: "pendiente", cuerpo })!, /no la aprueba/);
+  assert.match(motivoNoActivable({ estadoMeta: "rechazada", cuerpo })!, /rechazó/);
+  assert.match(motivoNoActivable({ estadoMeta: "pausada", cuerpo })!, /pausó/);
+  assert.match(motivoNoActivable({ estadoMeta: "aprobada", cuerpo: "Hola {{1}}, debes {{2}}" })!, /2 variables/);
+  assert.deepEqual(parametrosDePrueba({ banco: "BBVA", beneficiario: "Finbra", clabe: CLABE }), ["Prueba Finbra", "1,234.56", "crédito 0000", "BBVA", "Finbra", CLABE]);
 });
 
 test("mora: bloqueos antes de enviar", () => {

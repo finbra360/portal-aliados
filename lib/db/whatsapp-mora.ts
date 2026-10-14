@@ -7,9 +7,27 @@ import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getSetting, openAlert, peso } from "@/lib/collections/store";
-import { UMBRAL_MORA_DEFAULT, fechaMexico } from "@/lib/collections/rules";
-import { bloqueosDeEnvio, decidirMora, type MoraCandidate, type MoraDecision } from "@/lib/collections/whatsapp-mora";
-import { WhatsAppError, enviarPlantilla, esErrorGeneral, getWhatsAppConfig } from "@/lib/whatsapp/client";
+import { UMBRAL_MORA_DEFAULT, fechaMexico, normalizePhoneMx } from "@/lib/collections/rules";
+import {
+  bloqueosDeEnvio,
+  decidirMora,
+  estadoDesdeMeta,
+  motivoNoActivable,
+  parametrosDePrueba,
+  renderPlantilla,
+  type MoraCandidate,
+  type MoraDecision,
+} from "@/lib/collections/whatsapp-mora";
+import {
+  WhatsAppError,
+  consultarNumero,
+  consultarPlantillas,
+  enviarPlantilla,
+  esErrorGeneral,
+  getWhatsAppConfig,
+  obtenerCuentaWhatsApp,
+  type NumeroMeta,
+} from "@/lib/whatsapp/client";
 
 export class WhatsAppMoraError extends Error {}
 
@@ -26,11 +44,29 @@ export interface PlantillaMora {
   idioma: string;
   activa: boolean;
   orden: number;
+  /** Lo último que dijo Meta ("Revisar con Meta"). */
+  estadoMeta: string;
+  cuerpo: string | null;
+  motivoRechazo: string | null;
+  revisadaAt: string | null;
 }
 
 async function plantillasMora(): Promise<PlantillaMora[]> {
-  const rows = await sql`SELECT id, nombre, idioma, activa, orden FROM col_wa_templates WHERE uso = 'mora' ORDER BY orden, nombre`;
-  return rows.map((r) => ({ id: r.id, nombre: r.nombre, idioma: r.idioma, activa: r.activa, orden: r.orden }));
+  const rows = await sql`
+    SELECT id, nombre, idioma, activa, orden, estado_meta, cuerpo, motivo_rechazo, meta_revisada_at
+    FROM col_wa_templates WHERE uso = 'mora' ORDER BY orden, nombre
+  `;
+  return rows.map((r) => ({
+    id: r.id,
+    nombre: r.nombre,
+    idioma: r.idioma,
+    activa: r.activa,
+    orden: r.orden,
+    estadoMeta: r.estado_meta,
+    cuerpo: r.cuerpo,
+    motivoRechazo: r.motivo_rechazo,
+    revisadaAt: r.meta_revisada_at ? (r.meta_revisada_at as Date).toISOString() : null,
+  }));
 }
 
 /** Clientes con saldo vencido en la foto, con todo lo que decide si reciben recordatorio. */
@@ -107,17 +143,20 @@ export interface MoraPreview {
   plantillas: PlantillaMora[];
   filas: { clientId: string; nombre: string; totalVencido: number; decision: MoraDecision }[];
   ultimos: { id: number; clientId: string | null; cliente: string | null; telefono: string; plantilla: string | null; estado: string; error: string | null; at: string }[];
+  /** Resultado de la última "Revisar con Meta", o null si nunca se ha hecho. */
+  revisionMeta: (NumeroMeta & { at: string; por: string }) | null;
 }
 
 /** Lo que pasaría si el envío corriera ahora, sin mandar nada. */
 export async function previewMora(): Promise<MoraPreview> {
   const hoy = fechaMexico();
-  const [status, umbral, ajuste, ventana, plantillas] = await Promise.all([
+  const [status, umbral, ajuste, ventana, plantillas, revisionMeta] = await Promise.all([
     getPhotoStatus(),
     getSetting("umbral_mora", UMBRAL_MORA_DEFAULT),
     getSetting<{ activo?: boolean }>("whatsapp_mora", {}),
     getSetting("ventana_envio", VENTANA_DEFAULT),
     plantillasMora(),
+    getSetting<MoraPreview["revisionMeta"]>("whatsapp_revision_meta", null),
   ]);
   const activas = plantillas.filter((p) => p.activa).map((p) => p.nombre);
   const fotoDeHoy = status.fechaCorte === hoy;
@@ -145,7 +184,7 @@ export async function previewMora(): Promise<MoraPreview> {
     FROM col_wa_messages m
     LEFT JOIN col_clients c ON c.id = m.client_id
     LEFT JOIN col_wa_templates t ON t.id = m.template_id
-    WHERE m.origen = 'recordatorio_mora'
+    WHERE m.origen IN ('recordatorio_mora', 'backoffice_manual')
     ORDER BY m.created_at DESC LIMIT 50
   `;
   return {
@@ -162,13 +201,14 @@ export async function previewMora(): Promise<MoraPreview> {
     ultimos: ultimos.map((m) => ({
       id: Number(m.id),
       clientId: m.client_id,
-      cliente: m.nombre,
+      cliente: m.client_id ? m.nombre : "Envío de prueba",
       telefono: m.telefono,
       plantilla: m.plantilla,
       estado: m.estado,
       error: m.error,
       at: (m.created_at as Date).toISOString(),
     })),
+    revisionMeta,
   };
 }
 
@@ -262,13 +302,114 @@ export async function setEnvioMoraActivo(p: { activo: boolean; actor: string }) 
   await logAudit({ actorEmail: p.actor, action: p.activo ? "cobranza_whatsapp_mora_encendido" : "cobranza_whatsapp_mora_apagado", entityType: "col_settings", entityId: "whatsapp_mora" });
 }
 
-/** Activa una plantilla cuando Meta ya la aprobó, o la saca de la rotación. */
+/** Mete una plantilla a la rotación (solo si Meta la aprobó y tiene las 6 variables) o la saca. */
 export async function setPlantillaActiva(p: { id: number; activa: boolean; actor: string }) {
-  const r = await sql`
-    UPDATE col_wa_templates SET activa = ${p.activa}, estado_meta = CASE WHEN ${p.activa} THEN 'aprobada' ELSE estado_meta END,
-           updated_by = ${p.actor}, updated_at = now()
-    WHERE id = ${p.id} AND uso = 'mora'
-  `;
-  if (r.count === 0) throw new WhatsAppMoraError("No encontramos esa plantilla");
+  const [t] = await sql`SELECT estado_meta, cuerpo FROM col_wa_templates WHERE id = ${p.id} AND uso = 'mora'`;
+  if (!t) throw new WhatsAppMoraError("No encontramos esa plantilla");
+  if (p.activa) {
+    const motivo = motivoNoActivable({ estadoMeta: t.estado_meta, cuerpo: t.cuerpo });
+    if (motivo) throw new WhatsAppMoraError(motivo);
+  }
+  await sql`UPDATE col_wa_templates SET activa = ${p.activa}, updated_by = ${p.actor}, updated_at = now() WHERE id = ${p.id}`;
   await logAudit({ actorEmail: p.actor, action: p.activa ? "cobranza_plantilla_activada" : "cobranza_plantilla_desactivada", entityType: "col_wa_templates", entityId: String(p.id) });
+}
+
+export interface RevisionMeta {
+  numero: NumeroMeta;
+  avisos: string[];
+}
+
+/**
+ * Comprueba el token y el número, y trae de Meta el estado y el texto de las
+ * plantillas de mora. No envía nada. Una plantilla activa que Meta ya no tiene
+ * aprobada (o que cambió de número de variables) sale de la rotación.
+ */
+export async function revisarConMeta(p: { actor: string }): Promise<RevisionMeta> {
+  const config = getWhatsAppConfig();
+  if (!config) throw new WhatsAppMoraError("Faltan las variables de WhatsApp en Vercel (WHATSAPP_TOKEN y WHATSAPP_PHONE_NUMBER_ID)");
+
+  const numero = await consultarNumero(config);
+  const cuentaId = await obtenerCuentaWhatsApp(config);
+  const locales = await plantillasMora();
+  const enMeta = await consultarPlantillas(config, cuentaId, locales.map((t) => t.nombre));
+
+  const avisos: string[] = [];
+  for (const t of locales) {
+    const versiones = enMeta.filter((m) => m.nombre === t.nombre);
+    const m = versiones.find((v) => v.idioma === t.idioma) ?? versiones.find((v) => v.idioma.startsWith("es")) ?? versiones[0];
+    if (!m) {
+      avisos.push(`${t.nombre}: no existe en Meta${t.activa ? "; se sacó de la rotación" : ""}`);
+      await sql`
+        UPDATE col_wa_templates SET estado_meta = 'pendiente', cuerpo = NULL, motivo_rechazo = NULL, activa = false, meta_revisada_at = now()
+        WHERE id = ${t.id}
+      `;
+      continue;
+    }
+    const estado = estadoDesdeMeta(m.estado);
+    const motivo = motivoNoActivable({ estadoMeta: estado, cuerpo: m.cuerpo });
+    const sigueActiva = t.activa && !motivo;
+    // Un aviso por plantilla: lo que impide usarla, con el motivo de Meta si lo dio.
+    const conMotivoMeta = motivo && m.motivoRechazo ? `${motivo.replace(/.$/, "")} (${m.motivoRechazo}).` : motivo;
+    if (t.activa && motivo) avisos.push(`${t.nombre}: ${conMotivoMeta} Se sacó de la rotación.`);
+    else if (motivo && estado !== "pendiente") avisos.push(`${t.nombre}: ${conMotivoMeta}`);
+    await sql`
+      UPDATE col_wa_templates SET estado_meta = ${estado}, idioma = ${m.idioma}, categoria = coalesce(${m.categoria}, categoria),
+             cuerpo = ${m.cuerpo}, motivo_rechazo = ${m.motivoRechazo}, activa = ${sigueActiva}, meta_revisada_at = now()
+      WHERE id = ${t.id}
+    `;
+  }
+
+  const revision = { ...numero, at: new Date().toISOString(), por: p.actor };
+  await sql`
+    INSERT INTO col_settings (key, value, descripcion, updated_by, updated_at)
+    VALUES ('whatsapp_revision_meta', ${JSON.stringify(revision)}::text::jsonb, 'Última revisión de la conexión con Meta (número y plantillas).', ${p.actor}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()
+  `;
+  await logAudit({ actorEmail: p.actor, action: "cobranza_whatsapp_revision_meta", entityType: "col_wa_templates", metadata: { avisos } });
+  return { numero, avisos };
+}
+
+const MAX_PRUEBAS_POR_DIA = 10;
+
+/**
+ * Manda una plantilla de mora aprobada a un número que escribe un Super Admin,
+ * con valores de ejemplo (nunca datos de un cliente) y la primera cuenta de
+ * pago activa. No pasa por los bloqueos del envío diario: es para probar.
+ */
+export async function enviarPrueba(p: { telefono: string; plantillaId: number; actor: string }): Promise<{ texto: string | null }> {
+  const config = getWhatsAppConfig();
+  if (!config) throw new WhatsAppMoraError("Faltan las variables de WhatsApp en Vercel");
+  const telefono = normalizePhoneMx(p.telefono);
+  if (!telefono) throw new WhatsAppMoraError("El teléfono debe tener 10 dígitos");
+
+  const [t] = await sql`SELECT id, nombre, idioma, estado_meta, cuerpo FROM col_wa_templates WHERE id = ${p.plantillaId} AND uso = 'mora'`;
+  if (!t) throw new WhatsAppMoraError("No encontramos esa plantilla");
+  const motivo = motivoNoActivable({ estadoMeta: t.estado_meta, cuerpo: t.cuerpo });
+  if (motivo) throw new WhatsAppMoraError(motivo);
+
+  const [cuenta] = await sql`SELECT banco, beneficiario, clabe FROM col_payment_accounts WHERE activa ORDER BY created_at LIMIT 1`;
+  if (!cuenta) throw new WhatsAppMoraError("Da de alta una cuenta de pago primero: la prueba usa sus datos");
+  const [{ n }] = await sql`
+    SELECT count(*)::int AS n FROM col_wa_messages
+    WHERE origen = 'backoffice_manual' AND (created_at AT TIME ZONE 'America/Mexico_City')::date = ${fechaMexico()}::date
+  `;
+  if (n >= MAX_PRUEBAS_POR_DIA) throw new WhatsAppMoraError(`Ya se hicieron ${MAX_PRUEBAS_POR_DIA} envíos de prueba hoy`);
+
+  const parametros = parametrosDePrueba({ banco: cuenta.banco, beneficiario: cuenta.beneficiario, clabe: cuenta.clabe });
+  const [msg] = await sql`
+    INSERT INTO col_wa_messages (direccion, telefono, tipo, template_id, parametros, estado, origen, enviado_por)
+    VALUES ('saliente', ${telefono}, 'plantilla', ${t.id}, ${JSON.stringify(parametros)}::text::jsonb, 'pendiente', 'backoffice_manual', ${p.actor})
+    RETURNING id
+  `;
+  try {
+    const { wamid } = await enviarPlantilla(config, { telefono, plantilla: t.nombre, idioma: t.idioma, parametros });
+    await sql`UPDATE col_wa_messages SET estado = 'enviado', wamid = ${wamid}, estado_actualizado_at = now() WHERE id = ${msg.id}`;
+  } catch (e) {
+    const err = e instanceof WhatsAppError ? e : new WhatsAppError((e as Error).message, null, {});
+    await sql`UPDATE col_wa_messages SET estado = 'fallido', error = ${JSON.stringify(err.detalle)}::text::jsonb, estado_actualizado_at = now() WHERE id = ${msg.id}`;
+    throw new WhatsAppMoraError(err.message);
+  } finally {
+    await logAudit({ actorEmail: p.actor, action: "cobranza_whatsapp_prueba", entityType: "col_wa_messages", entityId: String(msg.id), metadata: { plantilla: t.nombre } });
+  }
+  return { texto: t.cuerpo ? renderPlantilla(t.cuerpo, parametros) : null };
 }

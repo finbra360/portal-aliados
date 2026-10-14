@@ -415,6 +415,12 @@ INSERT INTO col_wa_templates (nombre, uso, variables, orden) VALUES
   ('finbra_mora_v3', 'mora', '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]', 3)
 ON CONFLICT (nombre) DO NOTHING;
 
+-- 2026-10-14: lo que dice Meta de cada plantilla, guardado por "Revisar con Meta"
+-- en la pantalla de WhatsApp. Una plantilla solo se activa si Meta la aprobó.
+ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS cuerpo TEXT;
+ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT;
+ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS meta_revisada_at TIMESTAMPTZ;
+
 -- 2026-10-14: las plantillas de mora llevan la cuenta de pago del cliente.
 -- Solo se actualizan las que nunca se activaron.
 UPDATE col_wa_templates SET variables = '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]'
