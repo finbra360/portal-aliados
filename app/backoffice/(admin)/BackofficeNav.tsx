@@ -38,6 +38,7 @@ const NAV: NavEntry[] = [
       { href: "/backoffice/cobranza/cola", label: "Cola de trabajo" },
       { href: "/backoffice/cobranza/clientes", label: "Clientes" },
       { href: "/backoffice/cobranza/cuentas", label: "Cuentas de pago" },
+      { href: "/backoffice/cobranza/whatsapp", label: "WhatsApp" },
     ],
   },
   {

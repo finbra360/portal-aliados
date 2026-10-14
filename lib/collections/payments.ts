@@ -44,7 +44,7 @@ export async function fetchAndStorePayments(siac: SiacClient, runId: number, cr:
       const [row] = await tx`
         INSERT INTO col_payments (credit_id, fecha_aplicacion, fecha_captura, monto, no_pago, concepto, comentario, huella, ocurrencia, sync_run_id, raw)
         VALUES (${cr.id}, ${p.fechaAplicacion}, ${p.fechaCaptura}, ${p.monto}, ${p.noPago}, ${p.concepto}, ${p.comentario},
-                ${p.huella}, ${p.ocurrencia}, ${runId}, ${JSON.stringify(p.raw)}::jsonb)
+                ${p.huella}, ${p.ocurrencia}, ${runId}, ${JSON.stringify(p.raw)}::text::jsonb)
         ON CONFLICT (credit_id, huella, ocurrencia) DO NOTHING
         RETURNING id
       `;
@@ -54,7 +54,7 @@ export async function fetchAndStorePayments(siac: SiacClient, runId: number, cr:
         INSERT INTO col_activities (client_id, credit_id, tipo, descripcion, metadata, actor, ocurrido_at)
         VALUES (${cr.clientId}, ${cr.id}, 'pago_registrado',
                 ${`Pago de ${peso(p.monto)} aplicado al crédito ${cr.noCredito}${p.concepto ? ` (${p.concepto.toLowerCase()})` : ""}`},
-                ${JSON.stringify({ paymentId: row.id, fechaCaptura: p.fechaCaptura })}::jsonb, 'sistema',
+                ${JSON.stringify({ paymentId: row.id, fechaCaptura: p.fechaCaptura })}::text::jsonb, 'sistema',
                 (${p.fechaAplicacion}::date + time '12:00') AT TIME ZONE 'America/Mexico_City')
       `;
     }

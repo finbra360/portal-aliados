@@ -56,7 +56,7 @@ async function activity(
   const [row] = await tx`
     INSERT INTO col_activities (client_id, credit_id, tipo, resultado, descripcion, promise_id, alert_id, metadata, actor)
     VALUES (${p.clientId}, ${p.creditId ?? null}, ${p.tipo}, ${p.resultado ?? null}, ${p.descripcion}, ${p.promiseId ?? null},
-            ${p.alertId ?? null}, ${p.metadata ? JSON.stringify(p.metadata) : null}::jsonb, ${p.actor})
+            ${p.alertId ?? null}, ${p.metadata ? JSON.stringify(p.metadata) : null}::text::jsonb, ${p.actor})
     RETURNING id
   `;
   return row.id as string;
@@ -333,7 +333,7 @@ export async function consultarSaldoAlDia(p: { clientId: string; creditId: strin
     const [row] = await tx`
       INSERT INTO col_saldo_consultas (credit_id, fecha_corte, saldo_vigente, saldo_vencido, total_pagar, saldo_actual, detalle, pedido_por, sync_run_id)
       VALUES (${p.creditId}, ${hoy}, ${saldo.saldoVigente}, ${saldo.saldoVencido}, ${saldo.totalPagar}, ${saldo.saldoActual},
-              ${JSON.stringify(r)}::jsonb, ${p.actor}, ${run.id})
+              ${JSON.stringify(r)}::text::jsonb, ${p.actor}, ${run.id})
       RETURNING created_at
     `;
     consultadoAt = (row.created_at as Date).toISOString();

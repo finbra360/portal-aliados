@@ -38,8 +38,8 @@ export function siacCallRecorder(runId: number) {
   return async (r: { operacion: string; parametros: Record<string, string>; httpStatus: number | null; detalle: string | null; respuesta: unknown }) => {
     await sql`
       INSERT INTO col_siac_raw (sync_run_id, operacion, parametros, http_status, detalle, respuesta)
-      VALUES (${runId}, ${r.operacion}, ${JSON.stringify(r.parametros)}::jsonb, ${r.httpStatus}, ${r.detalle},
-              ${JSON.stringify(r.respuesta ?? null)}::jsonb)
+      VALUES (${runId}, ${r.operacion}, ${JSON.stringify(r.parametros)}::text::jsonb, ${r.httpStatus}, ${r.detalle},
+              ${JSON.stringify(r.respuesta ?? null)}::text::jsonb)
     `;
   };
 }
@@ -96,7 +96,7 @@ const TITULO_ALERTA: Record<AlertDraft["tipo"], string> = {
 export async function openAlert(tx: Tx, clientId: string | null, creditId: string | null, al: AlertDraft): Promise<number> {
   const [row] = await tx`
     INSERT INTO col_alerts (client_id, credit_id, tipo, severidad, dedupe_key, detalle)
-    VALUES (${clientId}, ${creditId}, ${al.tipo}, ${al.severidad}, ${al.dedupeKey}, ${JSON.stringify(al.detalle)}::jsonb)
+    VALUES (${clientId}, ${creditId}, ${al.tipo}, ${al.severidad}, ${al.dedupeKey}, ${JSON.stringify(al.detalle)}::text::jsonb)
     ON CONFLICT (dedupe_key) WHERE estado = 'abierta' DO NOTHING
     RETURNING id
   `;
@@ -105,7 +105,7 @@ export async function openAlert(tx: Tx, clientId: string | null, creditId: strin
     await tx`
       INSERT INTO col_activities (client_id, credit_id, tipo, descripcion, alert_id, metadata, actor)
       VALUES (${clientId}, ${creditId}, 'alerta', ${TITULO_ALERTA[al.tipo]}, ${row.id},
-              ${JSON.stringify(al.detalle)}::jsonb, 'sistema')
+              ${JSON.stringify(al.detalle)}::text::jsonb, 'sistema')
     `;
   }
   return 1;

@@ -14,7 +14,7 @@ export async function logAudit(params: {
       ${params.action},
       ${params.entityType},
       ${params.entityId ?? null},
-      ${params.metadata ? JSON.stringify(params.metadata) : null}::jsonb
+      ${params.metadata ? JSON.stringify(params.metadata) : null}::text::jsonb
     )
   `;
 }
