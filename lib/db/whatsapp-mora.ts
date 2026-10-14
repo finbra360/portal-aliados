@@ -22,6 +22,7 @@ import {
   WhatsAppError,
   consultarNumero,
   consultarPlantillas,
+  diagnosticoToken,
   enviarPlantilla,
   esErrorGeneral,
   getWhatsAppConfig,
@@ -346,6 +347,8 @@ export async function revisarConMeta(p: { actor: string }): Promise<RevisionMeta
   } catch (e) {
     if (!(e instanceof WhatsAppError)) throw e;
     const avisos = [`No se pudieron revisar las plantillas: ${e.message}`];
+    // Qué ve Meta del token, para saber si falta un permiso o una cuenta.
+    avisos.push(await diagnosticoToken(config).catch((d: Error) => `No se pudo leer el diagnóstico del token: ${d.message}`));
     await logAudit({ actorEmail: p.actor, action: "cobranza_whatsapp_revision_meta", entityType: "col_wa_templates", metadata: { avisos } });
     return { numero, avisos };
   }
