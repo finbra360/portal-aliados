@@ -235,7 +235,7 @@ async function loadContact(tx: Tx, contactId: string) {
 async function activity(tx: Tx, clientId: string, descripcion: string, actor: string, metadata: Record<string, unknown>) {
   await tx`
     INSERT INTO col_activities (client_id, tipo, descripcion, metadata, actor)
-    VALUES (${clientId}, 'cambio_contacto', ${descripcion}, ${JSON.stringify(metadata)}::jsonb, ${actor})
+    VALUES (${clientId}, 'cambio_contacto', ${descripcion}, ${JSON.stringify(metadata)}::text::jsonb, ${actor})
   `;
 }
 

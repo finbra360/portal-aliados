@@ -111,7 +111,7 @@ async function cambiarCuentaTx(tx: Tx, clientId: string, cuenta: CuentaPago | nu
     : "Se quitó la cuenta de pago: no recibirá recordatorios hasta que se le asigne una";
   await tx`
     INSERT INTO col_activities (client_id, tipo, descripcion, metadata, actor)
-    VALUES (${clientId}, 'cambio_cuenta_pago', ${descripcion}, ${JSON.stringify({ cuentaAnterior: anterior, cuentaNueva: cuenta?.id ?? null })}::jsonb, ${actor})
+    VALUES (${clientId}, 'cambio_cuenta_pago', ${descripcion}, ${JSON.stringify({ cuentaAnterior: anterior, cuentaNueva: cuenta?.id ?? null })}::text::jsonb, ${actor})
   `;
   if (cuenta) {
     await tx`

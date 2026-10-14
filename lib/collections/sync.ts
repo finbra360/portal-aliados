@@ -304,7 +304,7 @@ async function writeDailyPhoto(
         ${ambiente}, ${clientId}, ${c.numeroCliente}, ${c.noCredito}, ${cr.tipoCredito}, ${cr.tipoProducto}, ${cr.referencia},
         ${cr.sucursal}, ${cr.municipio}, ${cr.idCobrador}, ${cr.nombrePromotor}, ${cr.programaEspecial}, ${cr.tasa},
         ${cr.montoCredito}, ${cr.fechaMinistracion}, ${cr.fechaTerminoContrato}, ${cr.vencimientos}, ${cr.plazoMeses},
-        ${cr.frecuenciaPagos}, true, ${fechaCorte}, ${JSON.stringify(c.raw)}::jsonb
+        ${cr.frecuenciaPagos}, true, ${fechaCorte}, ${JSON.stringify(c.raw)}::text::jsonb
       )
       ON CONFLICT (ambiente, numero_cliente, no_credito) DO UPDATE SET
         client_id = EXCLUDED.client_id,
