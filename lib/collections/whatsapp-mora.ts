@@ -94,6 +94,33 @@ export function decidirMora(c: MoraCandidate, p: { umbral: number; hoy: string; 
   };
 }
 
+/**
+ * Textos de las plantillas de mora que el backoffice da de alta en Meta
+ * ("Crear plantillas en Meta"). Categoría Utilidad, español de México. Si legal
+ * cambia un texto, se edita aquí o directo en WhatsApp Manager: "Revisar con
+ * Meta" trae siempre el texto vigente.
+ */
+export const PLANTILLAS_MORA: { nombre: string; cuerpo: string }[] = [
+  {
+    nombre: "finbra_mora_v1",
+    cuerpo:
+      "Hola {{1}}, te escribimos de Finbra. Tu cuenta presenta un saldo vencido de ${{2}} ({{3}}). Para ponerte al corriente, transfiere a {{4}}, a nombre de {{5}}, CLABE {{6}}, y anota tu número de crédito en el concepto. Si ya realizaste tu pago, no tomes en cuenta este mensaje. Si tienes dudas, responde aquí.",
+  },
+  {
+    nombre: "finbra_mora_v2",
+    cuerpo:
+      "Hola {{1}}, te recordamos que tienes un pago vencido con Finbra por ${{2}} ({{3}}). Puedes cubrirlo por transferencia a {{4}}, a nombre de {{5}}, CLABE {{6}}; en el concepto escribe tu número de crédito. Si ya pagaste, gracias y omite este aviso. ¿Necesitas apoyo o acordar una fecha? Responde este mensaje.",
+  },
+  {
+    nombre: "finbra_mora_v3",
+    cuerpo:
+      "Hola {{1}}. En Finbra registramos un saldo vencido de ${{2}} ({{3}}). Te pedimos realizar tu pago a la brevedad mediante transferencia a {{4}} a nombre de {{5}}, CLABE {{6}}, indicando tu número de crédito en el concepto. Si ya lo cubriste, ignora este aviso. Para aclaraciones, responde este mensaje.",
+  },
+];
+
+/** Ejemplos de las 6 variables que Meta pide al revisar una plantilla. Ficticios. */
+export const EJEMPLO_MORA = ["Juan Pérez", "41,325.00", "crédito 2001", "BBVA", "Litore Avances SAPI de CV SOFOM", "032180000118359719"];
+
 /** Cuántas variables distintas ({{1}}, {{2}}…) tiene el texto de una plantilla. */
 export function contarVariables(cuerpo: string): number {
   return new Set([...cuerpo.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1])).size;

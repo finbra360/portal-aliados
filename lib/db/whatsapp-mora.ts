@@ -11,7 +11,9 @@ import { UMBRAL_MORA_DEFAULT, fechaMexico, normalizePhoneMx } from "@/lib/collec
 import {
   bloqueosDeEnvio,
   decidirMora,
+  EJEMPLO_MORA,
   estadoDesdeMeta,
+  PLANTILLAS_MORA,
   motivoNoActivable,
   parametrosDePrueba,
   renderPlantilla,
@@ -22,6 +24,7 @@ import {
   WhatsAppError,
   consultarNumero,
   consultarPlantillas,
+  crearPlantilla,
   diagnosticoToken,
   enviarPlantilla,
   esErrorGeneral,
@@ -426,4 +429,37 @@ export async function enviarPrueba(p: { telefono: string; plantillaId: number; a
     await logAudit({ actorEmail: p.actor, action: "cobranza_whatsapp_prueba", entityType: "col_wa_messages", entityId: String(msg.id), metadata: { plantilla: t.nombre } });
   }
   return { texto: t.cuerpo ? renderPlantilla(t.cuerpo, parametros) : null };
+}
+
+/**
+ * Da de alta en Meta las plantillas de mora que todavía no existen allá (con los
+ * textos de PLANTILLAS_MORA) y las manda a revisión. Las que ya existen no se
+ * tocan. Después actualiza su estado con revisarConMeta.
+ */
+export async function crearPlantillasEnMeta(p: { actor: string }): Promise<{ creadas: string[]; yaExistian: string[]; avisos: string[] }> {
+  const config = getWhatsAppConfig();
+  if (!config) throw new WhatsAppMoraError("Faltan las variables de WhatsApp en Vercel");
+  const cuentaId = await obtenerCuentaWhatsApp(config);
+  const enMeta = await consultarPlantillas(config, cuentaId, PLANTILLAS_MORA.map((t) => t.nombre));
+
+  const creadas: string[] = [];
+  const yaExistian: string[] = [];
+  const avisos: string[] = [];
+  for (const t of PLANTILLAS_MORA) {
+    if (enMeta.some((m) => m.nombre === t.nombre)) {
+      yaExistian.push(t.nombre);
+      continue;
+    }
+    try {
+      const r = await crearPlantilla(config, cuentaId, { nombre: t.nombre, idioma: "es_MX", categoria: "UTILITY", cuerpo: t.cuerpo, ejemplo: EJEMPLO_MORA });
+      creadas.push(t.nombre);
+      if (r.categoria && r.categoria !== "UTILITY") avisos.push(`${t.nombre}: Meta la clasificó como ${r.categoria}, no como Utilidad`);
+    } catch (e) {
+      if (!(e instanceof WhatsAppError)) throw e;
+      avisos.push(`${t.nombre}: ${e.message}`);
+    }
+  }
+  await logAudit({ actorEmail: p.actor, action: "cobranza_whatsapp_crear_plantillas", entityType: "col_wa_templates", metadata: { creadas, yaExistian, avisos } });
+  const rev = await revisarConMeta({ actor: p.actor });
+  return { creadas, yaExistian, avisos: [...avisos, ...rev.avisos.filter((a) => !/no existe en Meta/.test(a))] };
 }
