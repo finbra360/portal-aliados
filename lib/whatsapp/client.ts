@@ -129,7 +129,7 @@ export async function obtenerCuentaWhatsApp(config: WhatsAppConfig): Promise<str
   if (ids.length !== 1) {
     throw new WhatsAppError(
       ids.length === 0
-        ? "El token no tiene el permiso whatsapp_business_management sobre ninguna cuenta de WhatsApp"
+        ? "Meta no dijo a qué cuenta de WhatsApp Business pertenece el token: agrega WHATSAPP_BUSINESS_ACCOUNT_ID en Vercel"
         : "El token tiene acceso a varias cuentas de WhatsApp: agrega WHATSAPP_BUSINESS_ACCOUNT_ID en Vercel",
       null,
       { cuentas: ids.length },

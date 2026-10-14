@@ -328,10 +328,27 @@ export async function revisarConMeta(p: { actor: string }): Promise<RevisionMeta
   const config = getWhatsAppConfig();
   if (!config) throw new WhatsAppMoraError("Faltan las variables de WhatsApp en Vercel (WHATSAPP_TOKEN y WHATSAPP_PHONE_NUMBER_ID)");
 
+  // El número se guarda en cuanto responde: aunque las plantillas fallen,
+  // queda comprobado que el token y el número funcionan.
   const numero = await consultarNumero(config);
-  const cuentaId = await obtenerCuentaWhatsApp(config);
+  const revision = { ...numero, at: new Date().toISOString(), por: p.actor };
+  await sql`
+    INSERT INTO col_settings (key, value, descripcion, updated_by, updated_at)
+    VALUES ('whatsapp_revision_meta', ${JSON.stringify(revision)}::text::jsonb, 'Última revisión de la conexión con Meta (número y plantillas).', ${p.actor}, now())
+    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()
+  `;
+
   const locales = await plantillasMora();
-  const enMeta = await consultarPlantillas(config, cuentaId, locales.map((t) => t.nombre));
+  let enMeta;
+  try {
+    const cuentaId = await obtenerCuentaWhatsApp(config);
+    enMeta = await consultarPlantillas(config, cuentaId, locales.map((t) => t.nombre));
+  } catch (e) {
+    if (!(e instanceof WhatsAppError)) throw e;
+    const avisos = [`No se pudieron revisar las plantillas: ${e.message}`];
+    await logAudit({ actorEmail: p.actor, action: "cobranza_whatsapp_revision_meta", entityType: "col_wa_templates", metadata: { avisos } });
+    return { numero, avisos };
+  }
 
   const avisos: string[] = [];
   for (const t of locales) {
@@ -359,12 +376,6 @@ export async function revisarConMeta(p: { actor: string }): Promise<RevisionMeta
     `;
   }
 
-  const revision = { ...numero, at: new Date().toISOString(), por: p.actor };
-  await sql`
-    INSERT INTO col_settings (key, value, descripcion, updated_by, updated_at)
-    VALUES ('whatsapp_revision_meta', ${JSON.stringify(revision)}::text::jsonb, 'Última revisión de la conexión con Meta (número y plantillas).', ${p.actor}, now())
-    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()
-  `;
   await logAudit({ actorEmail: p.actor, action: "cobranza_whatsapp_revision_meta", entityType: "col_wa_templates", metadata: { avisos } });
   return { numero, avisos };
 }
