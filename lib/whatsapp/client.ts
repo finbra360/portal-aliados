@@ -138,6 +138,26 @@ export async function obtenerCuentaWhatsApp(config: WhatsAppConfig): Promise<str
   return ids[0];
 }
 
+/**
+ * Qué permisos tiene el token y sobre qué cuentas, en una línea legible. Sirve
+ * para diagnosticar un rechazo de Meta. No incluye el token.
+ */
+export async function diagnosticoToken(config: WhatsAppConfig): Promise<string> {
+  const r = await llamarMeta<{
+    data?: { is_valid?: boolean; app_id?: string; expires_at?: number; scopes?: string[]; granular_scopes?: { scope: string; target_ids?: string[] }[] };
+  }>(config, { metodo: "GET", ruta: "debug_token", query: { input_token: config.token }, queHacia: "la consulta de permisos del token" });
+  const d = r.data ?? {};
+  const permisos = (d.scopes ?? [])
+    .filter((s) => s.startsWith("whatsapp") || s === "business_management")
+    .map((s) => {
+      const g = d.granular_scopes?.find((x) => x.scope === s);
+      const cuentas = g?.target_ids?.length ? g.target_ids.join(", ") : "todas las asignadas";
+      return `${s} (cuentas: ${cuentas})`;
+    });
+  const vence = d.expires_at ? new Date(d.expires_at * 1000).toISOString().slice(0, 10) : "nunca";
+  return `Token ${d.is_valid ? "válido" : "NO válido"} de la app ${d.app_id ?? "?"}, vence ${vence}. Permisos: ${permisos.length ? permisos.join("; ") : "ninguno de WhatsApp"}.`;
+}
+
 export interface PlantillaMeta {
   nombre: string;
   idioma: string;
