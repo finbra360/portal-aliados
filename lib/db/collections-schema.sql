@@ -38,7 +38,9 @@ INSERT INTO col_settings (key, value, descripcion) VALUES
   ('umbral_mora', '1000', 'Saldo vencido mínimo del cliente (MXN) para considerarlo en mora y mandarle recordatorio. Por debajo son residuos.'),
   ('ventana_envio', '{"desde": "09:00", "hasta": "19:00", "zona": "America/Mexico_City"}', 'Horario en que se permiten envíos automáticos de WhatsApp.'),
   ('carga_inicial_pagos', '{"autorizada": false}', 'Carga única de la historia de pagos (ConsultarPagos por crédito). Apagada hasta que SIAC dé el visto bueno.'),
-  ('max_consultas_pagos_por_dia', '15', 'Tope de llamadas a ConsultarPagos que hace la foto diaria (solo créditos con un pago nuevo). Evita cargas masivas a SIAC.')
+  ('max_consultas_pagos_por_dia', '15', 'Tope de llamadas a ConsultarPagos que hace la foto diaria (solo créditos con un pago nuevo). Evita cargas masivas a SIAC.'),
+  ('whatsapp_mora', '{"activo": false}', 'Envío automático de recordatorios de mora por WhatsApp. Solo Super Admin lo prende; nunca envía en el ambiente de pruebas.'),
+  ('max_envios_mora_por_dia', '100', 'Tope de recordatorios de mora por WhatsApp por corrida, para que quepa en el tiempo máximo de la función (~0.75 s por mensaje).')
 ON CONFLICT (key) DO NOTHING;
 
 -- Una fila por corrida. `ambiente` existe porque se desarrolla contra la copia
@@ -398,7 +400,7 @@ CREATE TABLE IF NOT EXISTS col_wa_templates (
   idioma TEXT NOT NULL DEFAULT 'es_MX',
   categoria TEXT NOT NULL DEFAULT 'UTILITY',
   uso TEXT NOT NULL CHECK (uso IN ('mora', 'preventiva', 'otro')),
-  -- Qué va en cada variable, en orden: ["nombre", "creditos", "total_vencido"].
+  -- Qué va en cada variable, en orden ({{1}}, {{2}}…). Ver VARIABLES_MORA en lib/collections/whatsapp-mora.ts.
   variables JSONB NOT NULL,
   estado_meta TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado_meta IN ('pendiente', 'aprobada', 'rechazada', 'pausada')),
   activa BOOLEAN NOT NULL DEFAULT false,
@@ -408,10 +410,16 @@ CREATE TABLE IF NOT EXISTS col_wa_templates (
 );
 
 INSERT INTO col_wa_templates (nombre, uso, variables, orden) VALUES
-  ('finbra_mora_v1', 'mora', '["nombre", "creditos", "total_vencido"]', 1),
-  ('finbra_mora_v2', 'mora', '["nombre", "creditos", "total_vencido"]', 2),
-  ('finbra_mora_v3', 'mora', '["nombre", "creditos", "total_vencido"]', 3)
+  ('finbra_mora_v1', 'mora', '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]', 1),
+  ('finbra_mora_v2', 'mora', '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]', 2),
+  ('finbra_mora_v3', 'mora', '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]', 3)
 ON CONFLICT (nombre) DO NOTHING;
+
+-- 2026-10-14: las plantillas de mora llevan la cuenta de pago del cliente.
+-- Solo se actualizan las que nunca se activaron.
+UPDATE col_wa_templates SET variables = '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]'
+WHERE uso = 'mora' AND estado_meta = 'pendiente' AND NOT activa
+  AND variables = '["nombre", "creditos", "total_vencido"]'::jsonb;
 
 -- Todos los mensajes de WhatsApp de cobranza, de entrada y salida, lo mande
 -- quien lo mande (backoffice o n8n). Es el registro único contra duplicados:
