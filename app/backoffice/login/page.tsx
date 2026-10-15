@@ -63,7 +63,9 @@ export default function BackofficeLoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#f7f7fb] px-4">
       <div className="w-full max-w-sm rounded-xl border border-finbra-purple/10 bg-white p-8 shadow-[0_2px_12px_rgba(93,91,219,0.12)]">
-        <h1 className="mb-1 text-2xl font-bold text-finbra-purple">Backoffice Finbra</h1>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/finbra-logo.svg" alt="Finbra" className="mb-6 h-9 w-auto" />
+        <h1 className="mb-1 text-xl font-bold">Backoffice</h1>
         <p className="mb-6 text-sm text-finbra-gray">Acceso interno — solo usuarios autorizados</p>
 
         {step === "email" ? (
