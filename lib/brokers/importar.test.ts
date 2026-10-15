@@ -58,7 +58,7 @@ test("columna de ID opcional: respeta los del Sheet y valida choques", () => {
       "otro@x.mx,Choca,B001", // ID de otro correo
       "b001@finbra.test,Otro ID,B009", // correo existente con ID distinto
       "sin@x.mx,Sin ID,",
-      "mal@x.mx,ID raro,X-1",
+      "mal@x.mx,ID raro,FAP BR/44",
       "dup@x.mx,ID repetido,B002",
     ].join("\n"),
     existentes,
@@ -72,7 +72,7 @@ test("columna de ID opcional: respeta los del Sheet y valida choques", () => {
       "error:B001:El ID B001 ya es de b001@finbra.test",
       "error:B009:Ese correo ya está dado de alta como B001",
       "nuevo::",
-      "error:X-1:El ID debe tener la forma B001",
+      "error:FAP BR/44:El ID solo puede llevar letras, números y guiones (por ejemplo FAPBR044)",
       "error:B002:ID repetido en el archivo (fila 3)",
     ],
   );
@@ -82,5 +82,15 @@ test("asignar IDs: los del archivo se respetan y los demás siguen la numeració
   const ids = asignarIds([{ id: null }, { id: "B005" }, { id: null }], ["B001", "B002"]).map((b) => b.id);
   assert.deepEqual(ids, ["B006", "B005", "B007"]);
   assert.equal(normalizarId(" b7 "), "B007");
+  assert.equal(normalizarId(" fapbr044 "), "FAPBR044", "código de Lendia");
+  assert.equal(normalizarId("FAP BR44"), "error");
   assert.equal(normalizarId(""), null);
+});
+
+test("códigos de Lendia como ID, mezclados con B### generados", () => {
+  const r = revisarImportacion("Correo,Nombre,Telefono,ID\nana@x.mx,Ana,6563229475,FAPBR044\nbeto@x.mx,Beto,,FAPBR044\ncarla@x.mx,Carla,,\n", new Map());
+  assert.ok("filas" in r);
+  assert.deepEqual(r.filas.map((f) => `${f.estado}:${f.id ?? ""}`), ["nuevo:FAPBR044", "error:FAPBR044", "nuevo:"]);
+  const nuevos = r.filas.filter((f) => f.estado === "nuevo");
+  assert.deepEqual(asignarIds(nuevos, ["B001", "B002"]).map((b) => b.id), ["FAPBR044", "B003"], "los FAPBR no cuentan para la numeración B###");
 });

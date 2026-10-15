@@ -10,8 +10,9 @@
 -- Idempotente: se puede correr más de una vez.
 
 CREATE TABLE IF NOT EXISTS brokers (
-  -- B001, B002…: el mismo ID que usa el historial de colocación.
-  id TEXT PRIMARY KEY CHECK (id ~ '^B[0-9]{3,}$'),
+  -- El código de Lendia (FAPBR044) o, si no tiene, el B### que genera el
+  -- backoffice. Es el ID que usa el historial de colocación.
+  id TEXT PRIMARY KEY,
   -- Con este correo entra al portal de aliados (código por email). En minúsculas.
   email TEXT NOT NULL UNIQUE CHECK (email = lower(email) AND email ~ '^[^@\s]+@[^@\s]+\.[^@\s]+$'),
   nombre TEXT NOT NULL CHECK (length(trim(nombre)) > 0),
@@ -21,6 +22,12 @@ CREATE TABLE IF NOT EXISTS brokers (
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Forma del ID (igual que ID_BROKER en lib/brokers/importar.ts). La primera
+-- versión (2026-10-15) solo aceptaba B###; esto la reemplaza para aceptar los
+-- códigos de Lendia.
+ALTER TABLE brokers DROP CONSTRAINT IF EXISTS brokers_id_check;
+ALTER TABLE brokers ADD CONSTRAINT brokers_id_check CHECK (id ~ '^[A-Z0-9][A-Z0-9-]{1,29}$');
 
 -- Datos personales de los aliados: sin acceso por la API pública de Supabase.
 -- (security.sql ya les quita a anon y authenticated los privilegios sobre

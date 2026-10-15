@@ -63,8 +63,9 @@ export default async function BackofficeBrokersPage() {
 
       {faltantes.length > 0 && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          {faltantes.length === 1 ? "1 broker tiene" : `${faltantes.length} brokers tienen`} colocación en el Sheet pero no {faltantes.length === 1 ? "está dado" : "están dados"} de alta aquí:{" "}
-          {faltantes.map(([id, b]) => `${b.nombre} (${id})`).join(", ")}. {faltantes.length === 1 ? "Dalo" : "Dalos"} de alta con la carga masiva usando su mismo ID.
+          El historial de colocación del Sheet tiene {faltantes.length === 1 ? "un ID" : "IDs"} que no {faltantes.length === 1 ? "es" : "son"} de ningún broker de aquí:{" "}
+          {faltantes.map(([id, b]) => `${b.nombre} (${id})`).join(", ")}. Si ya {faltantes.length === 1 ? "está dado" : "están dados"} de alta con su código de Lendia, su colocación
+          aparecerá cuando el historial use ese código (se cambia junto con el login del portal). Si no, da de alta {faltantes.length === 1 ? "al broker" : "a cada uno"} con ese mismo ID.
         </div>
       )}
 

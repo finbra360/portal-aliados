@@ -5,7 +5,7 @@
 import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { getLeaderboard } from "@/lib/n8n";
-import { asignarIds, revisarImportacion, validarBroker, type FilaImportacion } from "@/lib/brokers/importar";
+import { asignarIds, normalizarId, revisarImportacion, validarBroker, type FilaImportacion } from "@/lib/brokers/importar";
 
 export class BrokerError extends Error {}
 
@@ -47,15 +47,23 @@ async function correosExistentes(): Promise<Map<string, string>> {
   return new Map(rows.map((r) => [r.email as string, r.id as string]));
 }
 
-/** Alta individual. El ID se genera (B###). Regresa el ID asignado. */
-export async function crearBroker(p: { email: string; nombre: string; telefono?: string | null; actor: string }): Promise<string> {
+/**
+ * Alta individual. El ID es el código de Lendia si se captura; si no, se
+ * genera (B###). Regresa el ID asignado.
+ */
+export async function crearBroker(p: { email: string; nombre: string; telefono?: string | null; id?: string | null; actor: string }): Promise<string> {
   const v = validarBroker(p);
   if (!v.ok) throw new BrokerError(v.error);
-  const [creado] = await guardarNuevos([{ email: v.email, nombre: v.nombre, telefono: v.telefono, id: null }], p.actor);
-  if (!creado) {
-    const [existe] = await sql`SELECT id FROM brokers WHERE email = ${v.email}`;
-    throw new BrokerError(`Ese correo ya está dado de alta como ${existe?.id ?? "otro broker"}`);
+  const id = normalizarId(p.id);
+  if (id === "error") throw new BrokerError("El ID solo puede llevar letras, números y guiones (por ejemplo FAPBR044)");
+  const [existe] = await sql`SELECT id FROM brokers WHERE email = ${v.email}`;
+  if (existe) throw new BrokerError(`Ese correo ya está dado de alta como ${existe.id}`);
+  if (id) {
+    const [otro] = await sql`SELECT email FROM brokers WHERE id = ${id}`;
+    if (otro) throw new BrokerError(`El ID ${id} ya es de ${otro.email}`);
   }
+  const [creado] = await guardarNuevos([{ email: v.email, nombre: v.nombre, telefono: v.telefono, id }], p.actor);
+  if (!creado) throw new BrokerError("Ese correo o ese ID se acaban de dar de alta. Revisa la lista.");
   await logAudit({ actorEmail: p.actor, action: "crear_broker", entityType: "broker", entityId: creado });
   return creado;
 }

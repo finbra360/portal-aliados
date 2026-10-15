@@ -37,7 +37,7 @@ const texto = (v: FormDataEntryValue | null) => String(v ?? "");
 
 export async function crearBrokerAction(_prev: BrokerActionResult | null, fd: FormData): Promise<BrokerActionResult> {
   return run(async (actor) => {
-    const id = await crearBroker({ email: texto(fd.get("email")), nombre: texto(fd.get("nombre")), telefono: texto(fd.get("telefono")), actor });
+    const id = await crearBroker({ email: texto(fd.get("email")), nombre: texto(fd.get("nombre")), telefono: texto(fd.get("telefono")), id: texto(fd.get("id")), actor });
     return { id, mensaje: `Broker dado de alta como ${id}.` };
   });
 }

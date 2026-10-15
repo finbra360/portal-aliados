@@ -13,7 +13,7 @@ export default async function ImportarBrokersPage() {
         <h1 className="text-2xl font-bold">Carga masiva de brokers</h1>
         <p className="mt-1 max-w-3xl text-sm text-finbra-gray">
           La primera fila deben ser los encabezados. Se necesitan <strong>Email</strong> y <strong>Nombre</strong>; <strong>Teléfono</strong> e{" "}
-          <strong>ID Broker</strong> son opcionales. Si traes el ID (por ejemplo los B001, B002 del Sheet) se respeta; si no, se asigna el siguiente.
+          <strong>ID Broker</strong> son opcionales. El ID es el código de Lendia (por ejemplo FAPBR044) y se respeta tal cual; a quien no traiga ID se le asigna el siguiente B###.
           Primero se revisa y te mostramos qué va a pasar con cada fila; nada se guarda hasta que confirmes.
         </p>
       </div>
