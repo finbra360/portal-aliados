@@ -12,6 +12,7 @@ import { bloqueosDeEnvio } from "@/lib/collections/whatsapp-mora";
 import {
   ETAPAS,
   UMBRALES_SEMAFORO_DEFAULT,
+  MOTIVO_FALTA_MONTO,
   decidirPreventivo,
   semaforo,
   type PreventivoCandidate,
@@ -21,6 +22,7 @@ import {
 } from "@/lib/collections/preventivos";
 import { getWhatsAppConfig } from "@/lib/whatsapp/client";
 import { enviarLote, plantillasDe, type MoraRunResult, type PlantillaMora } from "@/lib/db/whatsapp-mora";
+import { consultarSaldoAlDia } from "@/lib/db/collection-gestiones";
 
 const VENTANA_DEFAULT = { desde: "09:00", hasta: "19:00" };
 
@@ -28,15 +30,33 @@ const horaMexico = (d = new Date()) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "America/Mexico_City", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
 
 /**
- * Monto de la próxima mensualidad según SIAC. Hoy SIAC no lo da en
- * ListadoCobranzaJSON ni en ConsultarSaldoCredito; está pendiente el "Listado
- * Cobranza Personalizado" (o permiso para ConsultarSaldoCredito a la fecha de
- * vencimiento). Mientras tanto regresa null y el preventivo no sale.
+ * Monto de la próxima mensualidad según SIAC: el saldo vencido que da
+ * ConsultarSaldoCredito con FechaCorte = ProximoVencimiento (probado con el
+ * crédito 1109 el 2026-10-15: $172,665.64 = capital + intereses de la cuota,
+ * igual que la cuota anterior que pagó). Aquí solo se LEEN las consultas ya
+ * guardadas; quien pregunta a SIAC es obtenerMontosPreventivos.
+ *
+ * Una consulta deja de servir si el cliente pagó algo después de hacerla (el
+ * monto pudo cambiar): entonces se vuelve a preguntar.
  */
-const MONTO_DISPONIBLE = false;
-
-async function montosDeSiac(_creditIds: string[]): Promise<Map<string, number>> {
-  return new Map();
+async function montosGuardados(creditos: { id: string; proximo_vencimiento: string; fecha_ultimo_pago: string | null }[]): Promise<Map<string, number>> {
+  if (creditos.length === 0) return new Map();
+  const rows = await sql`
+    SELECT DISTINCT ON (q.credit_id) q.credit_id, to_char(q.fecha_corte, 'YYYY-MM-DD') AS fecha_corte, q.saldo_vencido,
+           to_char(q.created_at AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS consultado
+    FROM col_saldo_consultas q
+    WHERE q.credit_id = ANY(${creditos.map((c) => c.id)}::uuid[])
+    ORDER BY q.credit_id, q.created_at DESC
+  `;
+  const porId = new Map(creditos.map((c) => [c.id, c]));
+  const montos = new Map<string, number>();
+  for (const r of rows) {
+    const c = porId.get(r.credit_id as string);
+    if (!c || r.fecha_corte !== c.proximo_vencimiento) continue;
+    if (c.fecha_ultimo_pago && c.fecha_ultimo_pago >= (r.consultado as string)) continue;
+    montos.set(c.id, Number(r.saldo_vencido));
+  }
+  return montos;
 }
 
 async function umbralesSemaforo(): Promise<UmbralesSemaforo> {
@@ -82,7 +102,7 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
       await sql`SELECT dedupe_key FROM col_wa_messages WHERE origen = 'recordatorio_preventivo' AND created_at > now() - interval '40 days'`
     ).map((r) => r.dedupe_key as string),
   );
-  const montos = await montosDeSiac(creditos.map((c) => c.id));
+  const montos = await montosGuardados(creditos.map((c) => ({ id: c.id, proximo_vencimiento: c.proximo_vencimiento, fecha_ultimo_pago: c.fecha_ultimo_pago })));
   const porCliente = new Map<string, PreventivoCandidate["contactos"]>();
   for (const k of contactos) {
     const lista = porCliente.get(k.client_id) ?? [];
@@ -159,7 +179,6 @@ export async function previewPreventivos(): Promise<PreventivosPreview> {
     ventana,
     queRecordatorio: "preventivas",
   };
-  const sinMonto = MONTO_DISPONIBLE ? [] : ["Falta el monto de la mensualidad: SIAC todavía no lo da (Listado Personalizado pendiente)"];
 
   const filas: PreventivosPreview["filas"] = [];
   const proximos: PreventivosPreview["proximos"] = [];
@@ -176,13 +195,41 @@ export async function previewPreventivos(): Promise<PreventivosPreview> {
     activado: ajuste.activo === true,
     hoy,
     fechaCorte: status.fechaCorte,
-    bloqueos: [...sinMonto, ...bloqueosDeEnvio(condiciones)],
-    bloqueosManual: [...sinMonto, ...bloqueosDeEnvio({ ...condiciones, activado: true })],
+    bloqueos: bloqueosDeEnvio(condiciones),
+    bloqueosManual: bloqueosDeEnvio({ ...condiciones, activado: true }),
     umbrales,
     plantillas,
     filas: filas.sort((a, b) => Number(b.decision.enviar) - Number(a.decision.enviar) || a.proximoVencimiento.localeCompare(b.proximoVencimiento)),
     proximos,
   };
+}
+
+/** Máximo de consultas a SIAC por corrida para obtener montos (SIAC pidió no hacer cargas masivas). */
+export const MAX_CONSULTAS_MONTO = 15;
+
+/**
+ * Pregunta a SIAC el monto de la mensualidad de los créditos a los que hoy les
+ * toca recordatorio y solo les falta eso: UNA consulta por crédito y
+ * vencimiento (ConsultarSaldoCredito a la fecha de vencimiento), en serie y
+ * con tope. Las consultas quedan en el expediente de cada cliente.
+ * soloSiSeEnvia: el cron solo consulta si hoy de verdad se van a mandar.
+ */
+export async function obtenerMontosPreventivos(p: { actor: string; soloSiSeEnvia: boolean }): Promise<{ consultados: number; fallidos: number; pendientes: number; omitido: string | null }> {
+  const preview = await previewPreventivos();
+  if (p.soloSiSeEnvia && preview.bloqueos.length > 0) return { consultados: 0, fallidos: 0, pendientes: 0, omitido: preview.bloqueos.join("; ") };
+  const faltan = preview.filas.filter((f) => !f.decision.enviar && f.decision.motivo === MOTIVO_FALTA_MONTO);
+  let consultados = 0;
+  let fallidos = 0;
+  for (const f of faltan.slice(0, MAX_CONSULTAS_MONTO)) {
+    try {
+      await consultarSaldoAlDia({ clientId: f.clientId, creditId: f.creditId, fechaCorte: f.proximoVencimiento, actor: p.actor });
+      consultados++;
+    } catch (e) {
+      fallidos++;
+      console.error(`Preventivos: no se obtuvo el monto del crédito ${f.noCredito}: ${(e as Error).message}`);
+    }
+  }
+  return { consultados, fallidos, pendientes: Math.max(0, faltan.length - MAX_CONSULTAS_MONTO), omitido: null };
 }
 
 /** Manda los preventivos de hoy. Mismos bloqueos que mora (pruebas, apagado, horario…). */

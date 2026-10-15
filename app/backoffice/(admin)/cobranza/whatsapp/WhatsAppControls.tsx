@@ -11,7 +11,7 @@ import {
   setPlantillaActivaAction,
   type WhatsAppActionResult,
 } from "./actions";
-import { enviarPreventivosAhoraAction, setPreventivoActivoAction } from "../preventivos/actions";
+import { enviarPreventivosAhoraAction, obtenerMontosAction, setPreventivoActivoAction } from "../preventivos/actions";
 
 type Tipo = "mora" | "preventivo";
 
@@ -177,6 +177,26 @@ export function CrearPlantillas({ faltan }: { faltan: string[] }) {
         className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50"
       >
         {pending ? "Creando…" : "Crear plantillas en Meta"}
+      </button>
+      {aviso}
+    </div>
+  );
+}
+
+/** Preventivos: pregunta a SIAC el monto de la mensualidad de los que hoy reciben recordatorio. */
+export function ConsultarMontos({ cuantos }: { cuantos: number }) {
+  const { pending, correr, aviso } = useAccion();
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        disabled={pending || cuantos === 0}
+        onClick={() => {
+          if (window.confirm(`¿Consultar a SIAC el monto de ${cuantos === 1 ? "1 crédito" : `${cuantos} créditos`}? Es una consulta por crédito (ConsultarSaldoCredito a su fecha de vencimiento).`)) correr(obtenerMontosAction);
+        }}
+        className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-40"
+      >
+        {pending ? "Consultando…" : cuantos === 1 ? "Consultar 1 monto a SIAC" : `Consultar ${cuantos} montos a SIAC`}
       </button>
       {aviso}
     </div>

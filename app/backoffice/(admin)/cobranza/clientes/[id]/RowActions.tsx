@@ -97,8 +97,11 @@ export function SaldoAlDiaButton({
   return (
     <span className="flex flex-col items-start gap-1">
       {saldo && (
+        // Lo exigible es el saldo vencido a esa fecha (a una fecha de vencimiento, la mensualidad).
+        // El "total a pagar" de SIAC es lo que haría falta para liquidar el crédito completo.
         <span className="text-xs">
-          A pagar{saldo.fechaCorte !== diaConsulta && <> al <strong>{formatFecha(saldo.fechaCorte)}</strong></>} <strong>{formatMoney(saldo.totalPagar)}</strong>
+          {saldo.fechaCorte !== diaConsulta ? <>A pagar el {formatFecha(saldo.fechaCorte)}</> : "Vencido hoy"} <strong>{formatMoney(saldo.saldoVencido)}</strong>
+          <span className="block text-finbra-gray">Para liquidar: {formatMoney(saldo.totalPagar)}</span>
           <span className="block text-finbra-gray">{formatFechaHora(saldo.consultadoAt)}</span>
         </span>
       )}

@@ -346,7 +346,7 @@ export async function consultarSaldoAlDia(p: { clientId: string; creditId: strin
       clientId: p.clientId,
       creditId: p.creditId,
       tipo: "saldo_consultado",
-      descripcion: `${corte === hoy ? "Saldo al día" : `Saldo al ${corte}`} del crédito ${cr.no_credito}: vencido ${peso(saldo.saldoVencido)}, total a pagar ${peso(saldo.totalPagar)}`,
+      descripcion: `${corte === hoy ? "Saldo al día" : `Saldo al ${corte}`} del crédito ${cr.no_credito}: vencido ${peso(saldo.saldoVencido)}, para liquidar ${peso(saldo.totalPagar)}`,
       actor: p.actor,
     });
     await tx`UPDATE col_sync_runs SET status = 'completado', creditos_leidos = 1, llamadas_siac = ${siac.llamadas}, duracion_siac_ms = ${siac.duracionMs}, finished_at = now() WHERE id = ${run.id}`;

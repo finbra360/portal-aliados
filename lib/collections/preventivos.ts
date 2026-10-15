@@ -122,6 +122,12 @@ export type PreventivoDecision = { etapa: Etapa; semaforo: Semaforo; aviso: stri
 
 const montoTexto = (n: number) => n.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/**
+ * Todo lo demás está listo y solo falta preguntar a SIAC el monto: es el
+ * motivo con el que se eligen los créditos a consultar (whatsapp-preventivo).
+ */
+export const MOTIVO_FALTA_MONTO = "Falta consultar a SIAC el monto de la mensualidad";
+
 /** Días entre el último pago y el vencimiento para avisar que tal vez ya pagó por adelantado. */
 export const DIAS_PAGO_RECIENTE = 20;
 
@@ -157,7 +163,8 @@ export function decidirPreventivo(
   if (c.yaSeIntento) return no("Ya se le envió este recordatorio");
   const plantilla = ETAPAS[etapa].plantilla;
   if (!p.plantillasActivas.includes(plantilla)) return no(`La plantilla ${plantilla} no está activa`);
-  if (c.monto === null) return no("Falta el monto de la mensualidad (pendiente de SIAC)");
+  if (c.monto === null) return no(MOTIVO_FALTA_MONTO);
+  if (c.monto <= 0) return no("SIAC no reporta nada por pagar en esa fecha (¿ya pagó?)");
 
   return {
     etapa,

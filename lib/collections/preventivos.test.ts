@@ -93,7 +93,8 @@ test("preventivo: a quién no se le escribe", () => {
   assert.match(motivo(cand({ cuenta: null }))!, /cuenta de pago/);
   assert.match(motivo(cand({ contactos: [] }))!, /WhatsApp/);
   assert.match(motivo(cand({ yaSeIntento: true }))!, /Ya se le envió/);
-  assert.match(motivo(cand({ monto: null }))!, /pendiente de SIAC/);
+  assert.match(motivo(cand({ monto: null }))!, /consultar a SIAC el monto/);
+  assert.match(motivo(cand({ monto: 0 }))!, /nada por pagar/, "SIAC dice que no debe nada a esa fecha: no se manda");
   const sinPlantilla = decidirPreventivo(cand(), { hoy: HOY, plantillasActivas: [] });
   assert.match(sinPlantilla && !sinPlantilla.enviar ? sinPlantilla.motivo : "", /no está activa/);
 });

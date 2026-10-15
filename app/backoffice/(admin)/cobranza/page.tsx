@@ -196,7 +196,7 @@ export default async function CobranzaInicioPage() {
               </tbody>
             </table>
           )}
-          <p className="px-6 pb-4 pt-2 text-xs text-finbra-gray">El monto de cada mensualidad llegará con el Listado Cobranza Personalizado de SIAC.</p>
+          <p className="px-6 pb-4 pt-2 text-xs text-finbra-gray">El monto de cada mensualidad se le pregunta a SIAC al momento del recordatorio (su saldo vencido a la fecha de vencimiento).</p>
         </Card>
 
         <Card className="overflow-x-auto p-0">
