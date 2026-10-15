@@ -31,3 +31,31 @@ export const sql = globalForDb.__sql ?? createClient();
 if (process.env.NODE_ENV !== "production") {
   globalForDb.__sql = sql;
 }
+
+/** Conexión dentro de una transacción (ver `transaccion`). */
+export type Tx = postgres.Sql;
+
+/**
+ * Corre `fn` en una transacción: todo se guarda o nada. Reemplaza a
+ * `sql.begin`, que con `max_pipeline: 0` falla siempre ("Cannot set properties
+ * of undefined (setting 'onclose')"): postgres.js aparta la conexión de la
+ * transacción solo cuando el pipeline admite otra consulta, y con 0 nunca
+ * ocurre. `sql.reserve()` aparta la conexión sin pasar por ahí.
+ */
+export async function transaccion<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+  const tx = await sql.reserve();
+  try {
+    await tx`BEGIN`;
+    let resultado: T;
+    try {
+      resultado = await fn(tx);
+    } catch (e) {
+      await tx`ROLLBACK`.catch(() => {});
+      throw e;
+    }
+    await tx`COMMIT`;
+    return resultado;
+  } finally {
+    tx.release();
+  }
+}

@@ -1,4 +1,4 @@
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { SiacClient, SiacError, getSiacConfig, type SiacAmbiente } from "@/lib/siac/client";
 import { parsePagos } from "@/lib/siac/parse";
 import { getSetting, peso, siacCallRecorder } from "./store";
@@ -39,7 +39,7 @@ export async function fetchAndStorePayments(siac: SiacClient, runId: number, cr:
   }
 
   let nuevos = 0;
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     for (const p of pagos) {
       const [row] = await tx`
         INSERT INTO col_payments (credit_id, fecha_aplicacion, fecha_captura, monto, no_pago, concepto, comentario, huella, ocurrencia, sync_run_id, raw)
