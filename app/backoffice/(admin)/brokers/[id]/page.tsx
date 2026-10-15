@@ -1,13 +1,14 @@
-import { getStats } from "@/lib/n8n";
-import { getLeaderboard } from "@/lib/leaderboard";
 import { getTierProgress } from "@/lib/tiers";
-import { summarizeCommissions } from "@/lib/commissions";
+import { getLeaderboard, listColocaciones } from "@/lib/db/colocacion";
+import { calcularStats } from "@/lib/brokers/colocacion";
+import { calcCommissionLine, summarizeCommissions } from "@/lib/commissions";
 import { listOperations } from "@/lib/db/operations";
 import { getBrokerStatusMap } from "@/lib/db/broker-status";
-import { getBroker, type Broker } from "@/lib/db/brokers";
+import { getBroker } from "@/lib/db/brokers";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { hasRole } from "@/lib/rbac";
 import { codigoDeError } from "@/lib/collections/errors";
+import { fechaMexico } from "@/lib/collections/rules";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import StatCard from "@/components/ui/StatCard";
@@ -15,15 +16,25 @@ import StatusPill from "@/components/ui/StatusPill";
 import Badge from "@/components/ui/Badge";
 import { updateBrokerStatusAction } from "../actions";
 import { DatosBroker } from "../BrokerForms";
-import { BROKERS_EDITAN } from "../roles";
+import { BROKERS_EDITAN, COLOCACION_EDITAN } from "../roles";
+import ColocacionPanel, { type LineaColocacion } from "./ColocacionPanel";
 
 export default async function BrokerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: brokerId } = await params;
-  const puedeEditar = hasRole(await getAdminSession(), BROKERS_EDITAN);
+  const session = await getAdminSession();
+  const puedeEditar = hasRole(session, BROKERS_EDITAN);
+  const puedeCapturar = hasRole(session, COLOCACION_EDITAN);
 
-  let broker: Broker | null;
+  let datos;
   try {
-    broker = await getBroker(brokerId);
+    const [broker, colocaciones, leaderboard, operations, statusMap] = await Promise.all([
+      getBroker(brokerId),
+      listColocaciones(brokerId),
+      getLeaderboard(),
+      listOperations({ brokerId }),
+      getBrokerStatusMap(),
+    ]);
+    datos = { broker, colocaciones, leaderboard, operations, estatus: statusMap[brokerId] ?? "activo" };
   } catch (e) {
     const c = codigoDeError("brokers: perfil", e);
     return (
@@ -33,53 +44,25 @@ export default async function BrokerDetailPage({ params }: { params: Promise<{ i
     );
   }
 
-  let loadError = false;
-  let stats: Awaited<ReturnType<typeof getStats>> | null = null;
-  let leaderboard: Awaited<ReturnType<typeof getLeaderboard>> | null = null;
-  let operations: Awaited<ReturnType<typeof listOperations>> = [];
-  let estatus: "activo" | "suspendido" = "activo";
-
-  try {
-    [stats, leaderboard, operations] = await Promise.all([
-      getStats(brokerId),
-      getLeaderboard(),
-      listOperations({ brokerId }),
-    ]);
-    const statusMap = await getBrokerStatusMap();
-    estatus = statusMap[brokerId] ?? "activo";
-  } catch {
-    loadError = true;
+  const { broker, colocaciones, leaderboard, operations, estatus } = datos;
+  if (!broker) {
+    return <div className="rounded-xl border border-black/5 bg-white p-6 text-finbra-gray">No encontramos el broker {brokerId}.</div>;
   }
 
-  if (loadError || !stats || !leaderboard) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold">{broker?.nombre ?? brokerId}</h1>
-          <p className="text-sm text-finbra-gray">ID Broker: {brokerId}</p>
-        </div>
-        {broker && (
-          <Card>
-            <DatosBroker broker={broker} puedeEditar={puedeEditar} />
-          </Card>
-        )}
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
-          {broker ? "No pudimos traer la colocación de este broker en este momento (n8n no respondió)." : "No encontramos este broker."}
-        </div>
-      </div>
-    );
-  }
-
-  const entry = leaderboard.ranking.find((b) => b.brokerId === brokerId);
+  const stats = calcularStats(colocaciones);
   const position = leaderboard.ranking.findIndex((b) => b.brokerId === brokerId) + 1;
   const tier = getTierProgress(stats.totalHistorico);
   const commissions = summarizeCommissions(stats.operaciones);
+  const lineas: LineaColocacion[] = colocaciones.map((c) => {
+    const l = calcCommissionLine({ fecha: c.fecha, monto: c.monto, comisionAperturaPct: c.comisionAperturaPct ?? undefined, pagadoTotalidad: c.pagadoTotalidad });
+    return { ...c, comisionBroker: l.brokerPct === null ? null : l.montoTotal };
+  });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold">{broker?.nombre ?? entry?.nombre ?? brokerId}</h1>
+          <h1 className="text-2xl font-bold">{broker.nombre}</h1>
           <p className="text-sm text-finbra-gray">ID Broker: {brokerId}</p>
         </div>
         <div className="flex items-center gap-2">
@@ -94,15 +77,9 @@ export default async function BrokerDetailPage({ params }: { params: Promise<{ i
         </div>
       </div>
 
-      {broker ? (
-        <Card>
-          <DatosBroker broker={broker} puedeEditar={puedeEditar} />
-        </Card>
-      ) : (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Este broker tiene colocación en el Sheet pero no está dado de alta en el backoffice. Dalo de alta con la carga masiva usando su ID {brokerId}.
-        </div>
-      )}
+      <Card>
+        <DatosBroker broker={broker} puedeEditar={puedeEditar} />
+      </Card>
 
       {estatus === "suspendido" && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
@@ -123,6 +100,11 @@ export default async function BrokerDetailPage({ params }: { params: Promise<{ i
         <p className="text-xl font-bold" style={{ color: tier.actual.color }}>
           {tier.actual.nombre}
         </p>
+      </Card>
+
+      <Card className="p-0">
+        <p className="px-6 pt-4 pb-2 text-sm font-medium text-finbra-gray">Colocación (créditos fondeados)</p>
+        <ColocacionPanel brokerId={brokerId} lineas={lineas} puedeEditar={puedeCapturar} hoy={fechaMexico()} />
       </Card>
 
       <Card className="overflow-x-auto p-0">

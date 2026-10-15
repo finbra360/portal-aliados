@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
+import { getLeaderboard } from "@/lib/db/colocacion";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { listActiveContests, getContestExclusions } from "@/lib/db/contests";
-import { getLeaderboard } from "@/lib/leaderboard";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";

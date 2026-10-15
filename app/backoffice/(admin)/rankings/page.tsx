@@ -1,5 +1,5 @@
-import { getLeaderboard } from "@/lib/leaderboard";
 import { formatCurrency } from "@/lib/format";
+import { getLeaderboard } from "@/lib/db/colocacion";
 import Card from "@/components/ui/Card";
 
 export default async function BackofficeRankingsPage() {

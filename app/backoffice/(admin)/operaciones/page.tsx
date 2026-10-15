@@ -1,5 +1,5 @@
-import { getLeaderboard } from "@/lib/leaderboard";
 import { listOperations } from "@/lib/db/operations";
+import { getLeaderboard } from "@/lib/db/colocacion";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
