@@ -213,3 +213,33 @@ export async function crearPlantilla(
   if (!r.id) throw new WhatsAppError(`Meta no regresó el ID de la plantilla ${p.nombre}`, null, {});
   return { id: r.id, estado: r.status ?? "PENDING", categoria: r.category ?? null };
 }
+
+/** Texto libre. Meta solo lo acepta dentro de las 24 h siguientes al último mensaje del cliente. */
+export async function enviarTexto(config: WhatsAppConfig, p: { telefono: string; texto: string }): Promise<{ wamid: string }> {
+  const r = await llamarMeta<{ messages?: { id: string }[] }>(config, {
+    metodo: "POST",
+    ruta: `${config.phoneNumberId}/messages`,
+    queHacia: "el mensaje",
+    body: { messaging_product: "whatsapp", to: p.telefono, type: "text", text: { body: p.texto, preview_url: false } },
+  });
+  const wamid = r.messages?.[0]?.id;
+  if (!wamid) throw new WhatsAppError("Meta no regresó el ID del mensaje", null, {});
+  return { wamid };
+}
+
+/**
+ * Descarga un archivo que mandó el cliente (foto, PDF…). Primero se pide a
+ * Meta la URL temporal del archivo y luego se descarga con el mismo token.
+ */
+export async function descargarMedia(config: WhatsAppConfig, mediaId: string): Promise<{ mime: string; datos: ArrayBuffer }> {
+  const info = await llamarMeta<{ url?: string; mime_type?: string }>(config, { metodo: "GET", ruta: mediaId, queHacia: "la consulta del archivo" });
+  if (!info.url) throw new WhatsAppError("Meta no regresó la dirección del archivo", null, {});
+  let res: Response;
+  try {
+    res = await fetch(info.url, { headers: { Authorization: `Bearer ${config.token}` }, signal: AbortSignal.timeout(30_000) });
+  } catch (e) {
+    throw new WhatsAppError(`Meta no respondió: ${(e as Error).name}`, null, {});
+  }
+  if (!res.ok) throw new WhatsAppError(`Meta no entregó el archivo (HTTP ${res.status})`, null, { status: res.status });
+  return { mime: info.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream", datos: await res.arrayBuffer() };
+}

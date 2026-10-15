@@ -5,6 +5,7 @@
 
 import { sql } from "@/lib/db";
 import { EJEMPLO_PREVENTIVA, PLANTILLAS_PREVENTIVAS } from "@/lib/collections/preventivos";
+import { EJEMPLO_CONTACTO, PLANTILLA_CONTACTO } from "@/lib/collections/chat";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getSetting, openAlert, peso } from "@/lib/collections/store";
@@ -494,6 +495,7 @@ export async function crearPlantillasEnMeta(p: { actor: string }): Promise<{ cre
   const definidas = [
     ...PLANTILLAS_MORA.map((t) => ({ ...t, ejemplo: EJEMPLO_MORA })),
     ...PLANTILLAS_PREVENTIVAS.map((t) => ({ ...t, ejemplo: EJEMPLO_PREVENTIVA })),
+    { ...PLANTILLA_CONTACTO, ejemplo: EJEMPLO_CONTACTO },
   ];
   const enMeta = await consultarPlantillas(config, cuentaId, definidas.map((t) => t.nombre));
 
