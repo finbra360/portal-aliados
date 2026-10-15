@@ -3,10 +3,11 @@ import { getSiacConfig } from "@/lib/siac/client";
 import { runDailySync } from "@/lib/collections/sync";
 import { notifySlack } from "@/lib/collections/notify";
 import { runMoraReminders, type MoraRunResult } from "@/lib/db/whatsapp-mora";
-import { runPreventivos } from "@/lib/db/whatsapp-preventivo";
+import { obtenerMontosPreventivos, runPreventivos } from "@/lib/db/whatsapp-preventivo";
 import { enviarReporteDiario } from "@/lib/db/reporte";
 
-// Una sola llamada a SIAC y, a las 9:00, hasta max_envios_mora_por_dia mensajes de WhatsApp (~0.75 s cada uno).
+// Una sola llamada a SIAC para la foto y, a las 9:00, hasta MAX_CONSULTAS_MONTO consultas de saldo (montos de
+// preventivos) y max_envios_mora_por_dia mensajes de WhatsApp (~0.75 s cada uno).
 export const maxDuration = 120;
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,19 @@ export async function GET(req: NextRequest) {
     if (reintento && result.status !== "error") {
       const tandas = [
         { clave: "mora", nombre: "de mora", correr: () => runMoraReminders({ disparadoPor: "cron" }) },
-        { clave: "preventivos", nombre: "preventivos", correr: () => runPreventivos({ disparadoPor: "cron" }) },
+        {
+          clave: "preventivos",
+          nombre: "preventivos",
+          // Antes de mandar, pregunta a SIAC el monto de la mensualidad de los que hoy reciben recordatorio
+          // (una consulta por crédito y vencimiento, con tope). Solo si hoy de verdad se van a mandar.
+          correr: async () => {
+            const m = await obtenerMontosPreventivos({ actor: "cron", soloSiSeEnvia: true });
+            if (m.fallidos > 0 || m.pendientes > 0) {
+              await notifySlack(`:warning: Montos de preventivos: ${m.consultados} consultados a SIAC, ${m.fallidos} fallidos, ${m.pendientes} pendientes por el tope.`);
+            }
+            return runPreventivos({ disparadoPor: "cron" });
+          },
+        },
       ];
       for (const t of tandas) {
         try {

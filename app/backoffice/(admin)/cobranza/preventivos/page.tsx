@@ -2,12 +2,12 @@ import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { previewPreventivos } from "@/lib/db/whatsapp-preventivo";
-import { ETAPAS, EJEMPLO_PREVENTIVA, PLANTILLAS_PREVENTIVAS, type Semaforo } from "@/lib/collections/preventivos";
+import { ETAPAS, EJEMPLO_PREVENTIVA, MOTIVO_FALTA_MONTO, PLANTILLAS_PREVENTIVAS, type Semaforo } from "@/lib/collections/preventivos";
 import { motivoNoActivable, renderPlantilla } from "@/lib/collections/whatsapp-mora";
 import { codigoDeError } from "@/lib/collections/errors";
 import { formatFecha, formatTelefono } from "@/lib/format";
 import Card from "@/components/ui/Card";
-import { CrearPlantillas, EnviarAhora, EnvioToggle, PlantillaToggle } from "../whatsapp/WhatsAppControls";
+import { ConsultarMontos, CrearPlantillas, EnviarAhora, EnvioToggle, PlantillaToggle } from "../whatsapp/WhatsAppControls";
 
 /** "Sin WhatsApp válido" → "sin WhatsApp válido": solo la primera letra, para no perder siglas (SIAC, CLABE). */
 const minusculaInicial = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
@@ -39,6 +39,7 @@ export default async function PreventivosPage() {
   }
 
   const salen = p.filas.filter((f) => f.decision.enviar);
+  const faltaMonto = p.filas.filter((f) => !f.decision.enviar && f.decision.motivo === MOTIVO_FALTA_MONTO).length;
   const cuerpoDe = new Map(p.plantillas.map((t) => [t.nombre, t.cuerpo]));
   // Revisadas con Meta y sin texto = no existen allá todavía.
   const faltanEnMeta = p.plantillas.filter((t) => t.revisadaAt && !t.cuerpo).map((t) => t.nombre);
@@ -65,6 +66,15 @@ export default async function PreventivosPage() {
           </div>
         ) : (
           <p className="text-sm text-emerald-700">Todo listo: la próxima corrida enviará {salen.length === 1 ? "1 recordatorio" : `${salen.length} recordatorios`}.</p>
+        )}
+        {faltaMonto > 0 && (
+          <div className="space-y-2 rounded-lg bg-finbra-purple/5 p-3 text-sm">
+            <p>
+              {faltaMonto === 1 ? "A 1 crédito solo le falta" : `A ${faltaMonto} créditos solo les falta`} el monto de la mensualidad. Se le pregunta a SIAC (su saldo
+              vencido a la fecha de vencimiento): la corrida de las 9:00 lo hace sola antes de enviar.
+            </p>
+            {esSuperAdmin && <ConsultarMontos cuantos={faltaMonto} />}
+          </div>
         )}
         {esSuperAdmin && <EnviarAhora disponible={p.bloqueosManual.length === 0} cuantos={salen.length} tipo="preventivo" />}
         <p className="text-xs text-finbra-gray">

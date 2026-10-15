@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { requireRole } from "@/lib/rbac";
 import { codigoDeError } from "@/lib/collections/errors";
-import { runPreventivos, setEnvioPreventivoActivo } from "@/lib/db/whatsapp-preventivo";
+import { obtenerMontosPreventivos, runPreventivos, setEnvioPreventivoActivo } from "@/lib/db/whatsapp-preventivo";
 import type { WhatsAppActionResult } from "../whatsapp/actions";
 
 // Prender el envío o mandar a mano le escribe a clientes reales: solo Super Admin.
@@ -31,5 +31,17 @@ export async function enviarPreventivosAhoraAction(): Promise<WhatsAppActionResu
     if (r.bloqueos.length) return `No se envió nada: ${r.bloqueos.join("; ")}`;
     const n = (k: number, uno: string, varios: string) => `${k} ${k === 1 ? uno : varios}`;
     return `${n(r.enviados, "enviado", "enviados")}, ${n(r.fallidos, "fallido", "fallidos")}, ${r.omitidos} sin enviar.${r.detenido ? ` ${r.detenido}` : ""}`;
+  });
+}
+
+/** Pregunta a SIAC el monto de los que hoy reciben recordatorio y aún no lo tienen (aunque el envío esté apagado, para revisarlo). */
+export async function obtenerMontosAction(): Promise<WhatsAppActionResult> {
+  return run(async (actor) => {
+    const r = await obtenerMontosPreventivos({ actor, soloSiSeEnvia: false });
+    if (r.consultados === 0 && r.fallidos === 0) return "No faltaba ningún monto por consultar.";
+    const partes = [r.consultados === 1 ? "1 monto consultado a SIAC" : `${r.consultados} montos consultados a SIAC`];
+    if (r.fallidos) partes.push(r.fallidos === 1 ? "1 falló" : `${r.fallidos} fallaron`);
+    if (r.pendientes) partes.push(`${r.pendientes} quedan para la siguiente vez (tope por corrida)`);
+    return `${partes.join("; ")}.`;
   });
 }
