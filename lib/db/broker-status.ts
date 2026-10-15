@@ -4,8 +4,8 @@ import { logAudit } from "./audit";
 export type BrokerEstatus = "activo" | "suspendido";
 
 /**
- * Overlay sobre el roster del Sheet. No se aplica todavía en el login del
- * portal (broker-portal-request-code) -- ver Fase 2 del plan del backoffice.
+ * Suspensión de brokers (tabla brokers). El login del portal la aplica:
+ * ver brokerQuePuedeEntrar en lib/db/brokers.ts.
  */
 export async function getBrokerStatusMap(): Promise<Record<string, BrokerEstatus>> {
   const rows = await sql`SELECT broker_id, estatus FROM broker_status`;

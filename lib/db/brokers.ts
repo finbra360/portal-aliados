@@ -42,6 +42,25 @@ export async function getBroker(id: string): Promise<Broker | null> {
   return row ? mapBroker(row) : null;
 }
 
+/**
+ * Para el login del portal: el broker con ese correo, si existe y no está
+ * suspendido (broker_status). null en cualquier otro caso.
+ */
+export async function brokerQuePuedeEntrar(email: string): Promise<{ id: string; nombre: string } | null> {
+  const [row] = await sql`
+    SELECT b.id, b.nombre FROM brokers b
+    LEFT JOIN broker_status s ON s.broker_id = b.id
+    WHERE b.email = ${email.trim().toLowerCase()} AND coalesce(s.estatus, 'activo') <> 'suspendido'
+  `;
+  return row ? { id: row.id as string, nombre: row.nombre as string } : null;
+}
+
+/** ID → nombre de todos los brokers (para mostrar nombres en rankings). */
+export async function nombresDeBrokers(): Promise<Map<string, string>> {
+  const rows = await sql`SELECT id, nombre FROM brokers`;
+  return new Map(rows.map((r) => [r.id as string, r.nombre as string]));
+}
+
 async function correosExistentes(): Promise<Map<string, string>> {
   const rows = await sql`SELECT id, email FROM brokers`;
   return new Map(rows.map((r) => [r.email as string, r.id as string]));

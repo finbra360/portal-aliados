@@ -7,9 +7,15 @@ async function callWebhook<T>(
     throw new Error("N8N_BASE_URL no está configurado");
   }
 
+  // Clave compartida con los webhooks del portal en n8n (credencial Header
+  // Auth "x-finbra-portal"). Sin ella, n8n responde 403.
+  const headers: Record<string, string> = {};
+  if (options.body) headers["Content-Type"] = "application/json";
+  if (process.env.N8N_PORTAL_SECRET) headers["x-finbra-portal"] = process.env.N8N_PORTAL_SECRET;
+
   const res = await fetch(`${baseUrl}${path}`, {
     method: options.method ?? "POST",
-    headers: options.body ? { "Content-Type": "application/json" } : undefined,
+    headers,
     body: options.body ? JSON.stringify(options.body) : undefined,
     cache: "no-store",
   });
@@ -25,10 +31,9 @@ export interface RequestCodeResponse {
   sent: boolean;
 }
 
+/** Solo dice si el código es válido; quién es el broker sale de la tabla brokers. */
 export interface VerifyCodeResponse {
   valid: boolean;
-  brokerId?: string;
-  nombre?: string;
 }
 
 export interface PorMes {
@@ -93,9 +98,10 @@ export interface Contest {
   standings: LeaderboardEntry[];
 }
 
-export function requestCode(email: string) {
+/** Manda el código por correo. El portal ya validó que el broker existe y está activo. */
+export function requestCode(email: string, nombre: string) {
   return callWebhook<RequestCodeResponse>("/webhook/broker-portal-request-code", {
-    body: { email },
+    body: { email, nombre },
   });
 }
 
