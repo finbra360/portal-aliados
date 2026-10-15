@@ -149,13 +149,14 @@ export function estadoDesdeMeta(status: string | null | undefined): EstadoMeta {
 }
 
 /** Por qué una plantilla no se puede activar, o null si sí se puede. */
-export function motivoNoActivable(t: { estadoMeta: string; cuerpo: string | null }): string | null {
+export function motivoNoActivable(t: { estadoMeta: string; cuerpo: string | null; variables?: number }): string | null {
+  const esperadas = t.variables ?? VARIABLES_MORA.length;
   if (t.estadoMeta === "rechazada") return "Meta la rechazó.";
   if (t.estadoMeta === "pausada") return "Meta la pausó.";
   if (t.estadoMeta !== "aprobada") return "Meta todavía no la aprueba. Usa \"Revisar con Meta\" para actualizar su estado.";
   if (!t.cuerpo) return "Falta su texto. Usa \"Revisar con Meta\".";
   const n = contarVariables(t.cuerpo);
-  if (n !== VARIABLES_MORA.length) return `En Meta tiene ${n} variables y se necesitan ${VARIABLES_MORA.length}.`;
+  if (n !== esperadas) return `En Meta tiene ${n} variables y se necesitan ${esperadas}.`;
   return null;
 }
 
@@ -184,12 +185,14 @@ export function bloqueosDeEnvio(p: {
   fotoDeHoy: boolean;
   hora: string;
   ventana: { desde: string; hasta: string };
+  /** "de mora" o "preventivas", para el texto del bloqueo de plantillas. */
+  queRecordatorio?: string;
 }): string[] {
   const b: string[] = [];
   if (p.ambiente !== "produccion") b.push("Conectado al ambiente de pruebas de SIAC: sus datos no son reales y no se le escribe a nadie");
   if (!p.activado) b.push("El envío automático está apagado");
   if (!p.configurado) b.push("Faltan las variables de WhatsApp en Vercel (WHATSAPP_TOKEN y WHATSAPP_PHONE_NUMBER_ID)");
-  if (p.plantillasActivas === 0) b.push("No hay plantillas de mora activas");
+  if (p.plantillasActivas === 0) b.push(`No hay plantillas ${p.queRecordatorio ?? "de mora"} activas`);
   if (!p.fotoDeHoy) b.push("Todavía no hay foto de SIAC de hoy");
   if (p.hora < p.ventana.desde || p.hora >= p.ventana.hasta) b.push(`Fuera del horario de envío (${p.ventana.desde} a ${p.ventana.hasta})`);
   return b;

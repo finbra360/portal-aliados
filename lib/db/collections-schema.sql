@@ -40,6 +40,8 @@ INSERT INTO col_settings (key, value, descripcion) VALUES
   ('carga_inicial_pagos', '{"autorizada": false}', 'Carga única de la historia de pagos (ConsultarPagos por crédito). Apagada hasta que SIAC dé el visto bueno.'),
   ('max_consultas_pagos_por_dia', '15', 'Tope de llamadas a ConsultarPagos que hace la foto diaria (solo créditos con un pago nuevo). Evita cargas masivas a SIAC.'),
   ('whatsapp_mora', '{"activo": false}', 'Envío automático de recordatorios de mora por WhatsApp. Solo Super Admin lo prende; nunca envía en el ambiente de pruebas.'),
+  ('whatsapp_preventivo', '{"activo": false}', 'Envío automático de recordatorios preventivos (5 días, 1 día y el día del pago). Reemplaza al flujo de n8n con Google Sheets.'),
+  ('semaforo', '{"rojo_veces": 3, "rojo_atraso": 30}', 'Semáforo del cliente con su historial de SIAC: rojo con rojo_veces o más veces en mora o un atraso máximo mayor a rojo_atraso días; amarillo si alguna vez se atrasó; verde si nunca.'),
   ('max_envios_mora_por_dia', '100', 'Tope de recordatorios de mora por WhatsApp por corrida, para que quepa en el tiempo máximo de la función (~0.75 s por mensaje).')
 ON CONFLICT (key) DO NOTHING;
 
@@ -421,6 +423,14 @@ ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS cuerpo TEXT;
 ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT;
 ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS meta_revisada_at TIMESTAMPTZ;
 
+-- 2026-10-15: plantillas preventivas que ya usa el flujo de n8n. Se activan
+-- desde el backoffice después de "Revisar con Meta".
+INSERT INTO col_wa_templates (nombre, uso, variables, orden) VALUES
+  ('recordatorio_pago_5d', 'preventiva', '["nombre", "monto", "fecha"]', 11),
+  ('recordatorio_pago_1d', 'preventiva', '["nombre", "monto", "fecha"]', 12),
+  ('recordatorio_pago_dia', 'preventiva', '["nombre", "monto", "fecha"]', 13)
+ON CONFLICT (nombre) DO NOTHING;
+
 -- 2026-10-14: las plantillas de mora llevan la cuenta de pago del cliente.
 -- Solo se actualizan las que nunca se activaron.
 UPDATE col_wa_templates SET variables = '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]'
@@ -447,13 +457,19 @@ CREATE TABLE IF NOT EXISTS col_wa_messages (
   estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'enviado', 'entregado', 'leido', 'fallido', 'recibido')),
   error JSONB,
   origen TEXT NOT NULL CHECK (origen IN (
-    'backoffice_manual', 'recordatorio_mora', 'n8n_preventiva', 'n8n_slack', 'cliente'
+    'backoffice_manual', 'recordatorio_mora', 'recordatorio_preventivo', 'n8n_preventiva', 'n8n_slack', 'cliente'
   )),
   dedupe_key TEXT UNIQUE,
   enviado_por TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   estado_actualizado_at TIMESTAMPTZ
 );
+
+-- Bases creadas antes del 2026-10-15: su CHECK de origen no incluía 'recordatorio_preventivo'.
+ALTER TABLE col_wa_messages DROP CONSTRAINT IF EXISTS col_wa_messages_origen_check;
+ALTER TABLE col_wa_messages ADD CONSTRAINT col_wa_messages_origen_check CHECK (origen IN (
+  'backoffice_manual', 'recordatorio_mora', 'recordatorio_preventivo', 'n8n_preventiva', 'n8n_slack', 'cliente'
+));
 
 CREATE INDEX IF NOT EXISTS idx_col_wa_client ON col_wa_messages(client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_col_wa_telefono ON col_wa_messages(telefono, created_at DESC);

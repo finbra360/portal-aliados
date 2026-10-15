@@ -11,6 +11,20 @@ import {
   setPlantillaActivaAction,
   type WhatsAppActionResult,
 } from "./actions";
+import { enviarPreventivosAhoraAction, setPreventivoActivoAction } from "../preventivos/actions";
+
+type Tipo = "mora" | "preventivo";
+
+const TEXTO: Record<Tipo, { prender: string; enviar: (n: number) => string }> = {
+  mora: {
+    prender: "¿Prender el envío automático? A partir de la siguiente corrida de las 9:00, los clientes en mora recibirán un WhatsApp al día.",
+    enviar: (n) => `¿Enviar ahora ${n === 1 ? "1 recordatorio" : `${n} recordatorios`} de mora por WhatsApp?`,
+  },
+  preventivo: {
+    prender: "¿Prender el envío automático de preventivos? A partir de la siguiente corrida de las 9:00, los clientes recibirán sus recordatorios 5 días antes, 1 día antes y el día del pago.",
+    enviar: (n) => `¿Enviar ahora ${n === 1 ? "1 recordatorio preventivo" : `${n} recordatorios preventivos`} por WhatsApp?`,
+  },
+};
 
 function useAccion() {
   const [pending, start] = useTransition();
@@ -30,7 +44,7 @@ function useAccion() {
   return { pending, correr, aviso };
 }
 
-export function EnvioToggle({ activo, puedeEditar }: { activo: boolean; puedeEditar: boolean }) {
+export function EnvioToggle({ activo, puedeEditar, tipo = "mora" }: { activo: boolean; puedeEditar: boolean; tipo?: Tipo }) {
   const { pending, correr, aviso } = useAccion();
   return (
     <div className="space-y-2">
@@ -43,8 +57,8 @@ export function EnvioToggle({ activo, puedeEditar }: { activo: boolean; puedeEdi
             type="button"
             disabled={pending}
             onClick={() => {
-              if (activo || window.confirm("¿Prender el envío automático? A partir de la siguiente corrida de las 9:00, los clientes en mora recibirán un WhatsApp al día.")) {
-                correr(() => setEnvioActivoAction(!activo));
+              if (activo || window.confirm(TEXTO[tipo].prender)) {
+                correr(() => (tipo === "mora" ? setEnvioActivoAction(!activo) : setPreventivoActivoAction(!activo)));
               }
             }}
             className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50"
@@ -131,7 +145,7 @@ export function EnviarPrueba({ plantillas }: { plantillas: { id: number; nombre:
   );
 }
 
-export function EnviarAhora({ disponible, cuantos }: { disponible: boolean; cuantos: number }) {
+export function EnviarAhora({ disponible, cuantos, tipo = "mora" }: { disponible: boolean; cuantos: number; tipo?: Tipo }) {
   const { pending, correr, aviso } = useAccion();
   return (
     <div className="space-y-2">
@@ -139,7 +153,7 @@ export function EnviarAhora({ disponible, cuantos }: { disponible: boolean; cuan
         type="button"
         disabled={pending || !disponible || cuantos === 0}
         onClick={() => {
-          if (window.confirm(`¿Enviar ahora ${cuantos === 1 ? "1 recordatorio" : `${cuantos} recordatorios`} de mora por WhatsApp?`)) correr(enviarAhoraAction);
+          if (window.confirm(TEXTO[tipo].enviar(cuantos))) correr(tipo === "mora" ? enviarAhoraAction : enviarPreventivosAhoraAction);
         }}
         className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-40"
       >

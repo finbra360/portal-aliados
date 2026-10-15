@@ -45,6 +45,9 @@ const horaMexico = (d = new Date()) =>
 export interface PlantillaMora {
   id: number;
   nombre: string;
+  uso: string;
+  /** Cuántas variables lleva ({{1}}…): 6 en mora, 3 en preventivas. */
+  variables: number;
   idioma: string;
   activa: boolean;
   orden: number;
@@ -55,14 +58,17 @@ export interface PlantillaMora {
   revisadaAt: string | null;
 }
 
-async function plantillasMora(): Promise<PlantillaMora[]> {
+/** Plantillas de un uso (mora o preventiva), o todas. */
+export async function plantillasDe(uso: "mora" | "preventiva" | null): Promise<PlantillaMora[]> {
   const rows = await sql`
-    SELECT id, nombre, idioma, activa, orden, estado_meta, cuerpo, motivo_rechazo, meta_revisada_at
-    FROM col_wa_templates WHERE uso = 'mora' ORDER BY orden, nombre
+    SELECT id, nombre, uso, jsonb_array_length(variables) AS variables, idioma, activa, orden, estado_meta, cuerpo, motivo_rechazo, meta_revisada_at
+    FROM col_wa_templates WHERE ${uso}::text IS NULL OR uso = ${uso} ORDER BY orden, nombre
   `;
   return rows.map((r) => ({
     id: r.id,
     nombre: r.nombre,
+    uso: r.uso,
+    variables: r.variables,
     idioma: r.idioma,
     activa: r.activa,
     orden: r.orden,
@@ -159,7 +165,7 @@ export async function previewMora(): Promise<MoraPreview> {
     getSetting("umbral_mora", UMBRAL_MORA_DEFAULT),
     getSetting<{ activo?: boolean }>("whatsapp_mora", {}),
     getSetting("ventana_envio", VENTANA_DEFAULT),
-    plantillasMora(),
+    plantillasDe("mora"),
     getSetting<MoraPreview["revisionMeta"]>("whatsapp_revision_meta", null),
   ]);
   const activas = plantillas.filter((p) => p.activa).map((p) => p.nombre);
@@ -233,57 +239,101 @@ export interface MoraRunResult {
 export async function runMoraReminders(p: { disparadoPor: string; manual?: boolean }): Promise<MoraRunResult> {
   const preview = await previewMora();
   const bloqueos = p.manual ? preview.bloqueosManual : preview.bloqueos;
-  const result: MoraRunResult = { bloqueos, enviados: 0, fallidos: 0, omitidos: 0, detenido: null };
-  if (bloqueos.length > 0) return result;
-
-  const config = getWhatsAppConfig()!;
-  const maxEnvios = await getSetting("max_envios_mora_por_dia", MAX_ENVIOS_DEFAULT);
+  if (bloqueos.length > 0) return { bloqueos, enviados: 0, fallidos: 0, omitidos: 0, detenido: null };
   const porNombre = new Map(preview.plantillas.map((t) => [t.nombre, t]));
+  return enviarLote({
+    disparadoPor: p.disparadoPor,
+    hoy: preview.hoy,
+    origen: "recordatorio_mora",
+    envios: preview.filas.map((fila) =>
+      fila.decision.enviar
+        ? {
+            clientId: fila.clientId,
+            creditId: null,
+            contactId: fila.decision.contactId,
+            telefono: fila.decision.telefono,
+            plantilla: porNombre.get(fila.decision.plantilla)!,
+            parametros: fila.decision.parametros,
+            dedupeKey: `mora:${fila.clientId}:${preview.hoy}`,
+            descripcion: `Recordatorio de mora por WhatsApp (${fila.decision.plantilla}): vencido ${peso(fila.totalVencido)}`,
+          }
+        : null,
+    ),
+  });
+}
 
-  for (const fila of preview.filas) {
-    const d = fila.decision;
-    if (!d.enviar) {
+export interface EnvioPlantilla {
+  clientId: string;
+  creditId: string | null;
+  contactId: string;
+  telefono: string;
+  plantilla: PlantillaMora;
+  parametros: string[];
+  /** Única por recordatorio: un segundo intento falla en la base antes de llegar a Meta. */
+  dedupeKey: string;
+  /** Lo que queda en el historial del cliente. */
+  descripcion: string;
+}
+
+/**
+ * Manda un lote de plantillas (null = no se envía, cuenta como omitido). Cada
+ * mensaje se registra antes de llamar a Meta. Un rechazo abre la alerta
+ * mensaje_fallido; un error de plantilla o de token detiene el lote. Respeta
+ * max_envios_mora_por_dia como tope por corrida.
+ */
+export async function enviarLote(p: {
+  disparadoPor: string;
+  hoy: string;
+  origen: "recordatorio_mora" | "recordatorio_preventivo";
+  envios: (EnvioPlantilla | null)[];
+}): Promise<MoraRunResult> {
+  const result: MoraRunResult = { bloqueos: [], enviados: 0, fallidos: 0, omitidos: 0, detenido: null };
+  const config = getWhatsAppConfig();
+  if (!config) return { ...result, bloqueos: ["Faltan las variables de WhatsApp en Vercel"] };
+  const maxEnvios = await getSetting("max_envios_mora_por_dia", MAX_ENVIOS_DEFAULT);
+
+  for (const e of p.envios) {
+    if (!e) {
       result.omitidos++;
       continue;
     }
     if (result.enviados + result.fallidos >= maxEnvios) {
-      result.detenido = `Se alcanzó el tope de ${maxEnvios} envíos por día`;
+      result.detenido = `Se alcanzó el tope de ${maxEnvios} envíos por corrida`;
       break;
     }
-    const plantilla = porNombre.get(d.plantilla)!;
     const [msg] = await sql`
       INSERT INTO col_wa_messages (client_id, contact_id, direccion, telefono, tipo, template_id, parametros, estado, origen, dedupe_key, enviado_por)
-      VALUES (${fila.clientId}, ${d.contactId}, 'saliente', ${d.telefono}, 'plantilla', ${plantilla.id}, ${JSON.stringify(d.parametros)}::text::jsonb,
-              'pendiente', 'recordatorio_mora', ${`mora:${fila.clientId}:${preview.hoy}`}, ${p.disparadoPor})
+      VALUES (${e.clientId}, ${e.contactId}, 'saliente', ${e.telefono}, 'plantilla', ${e.plantilla.id}, ${JSON.stringify(e.parametros)}::text::jsonb,
+              'pendiente', ${p.origen}, ${e.dedupeKey}, ${p.disparadoPor})
       ON CONFLICT (dedupe_key) DO NOTHING
       RETURNING id
     `;
     if (!msg) {
-      result.omitidos++; // otra corrida ya lo registró hoy
+      result.omitidos++; // otra corrida ya lo registró
       continue;
     }
 
     try {
-      const { wamid } = await enviarPlantilla(config, { telefono: d.telefono, plantilla: plantilla.nombre, idioma: plantilla.idioma, parametros: d.parametros });
+      const { wamid } = await enviarPlantilla(config, { telefono: e.telefono, plantilla: e.plantilla.nombre, idioma: e.plantilla.idioma, parametros: e.parametros });
       await sql.begin(async (tx) => {
         await tx`UPDATE col_wa_messages SET estado = 'enviado', wamid = ${wamid}, estado_actualizado_at = now() WHERE id = ${msg.id}`;
         await tx`
-          INSERT INTO col_activities (client_id, tipo, descripcion, wa_message_id, metadata, actor)
-          VALUES (${fila.clientId}, 'whatsapp_enviado', ${`Recordatorio de mora por WhatsApp (${plantilla.nombre}): vencido ${peso(fila.totalVencido)}`},
-                  ${msg.id}, ${JSON.stringify({ plantilla: plantilla.nombre })}::text::jsonb, 'sistema')
+          INSERT INTO col_activities (client_id, credit_id, tipo, descripcion, wa_message_id, metadata, actor)
+          VALUES (${e.clientId}, ${e.creditId}, 'whatsapp_enviado', ${e.descripcion}, ${msg.id},
+                  ${JSON.stringify({ plantilla: e.plantilla.nombre })}::text::jsonb, 'sistema')
         `;
       });
       result.enviados++;
-    } catch (e) {
-      const err = e instanceof WhatsAppError ? e : new WhatsAppError((e as Error).message, null, {});
+    } catch (err0) {
+      const err = err0 instanceof WhatsAppError ? err0 : new WhatsAppError((err0 as Error).message, null, {});
       result.fallidos++;
       await sql.begin(async (tx) => {
         await tx`UPDATE col_wa_messages SET estado = 'fallido', error = ${JSON.stringify(err.detalle)}::text::jsonb, estado_actualizado_at = now() WHERE id = ${msg.id}`;
-        await openAlert(tx, fila.clientId, null, {
+        await openAlert(tx, e.clientId, e.creditId, {
           tipo: "mensaje_fallido",
           severidad: "atencion",
-          dedupeKey: `mensaje_fallido:${fila.clientId}`,
-          detalle: { error: err.message, plantilla: plantilla.nombre, fecha: preview.hoy },
+          dedupeKey: `mensaje_fallido:${e.clientId}`,
+          detalle: { error: err.message, plantilla: e.plantilla.nombre, fecha: p.hoy },
         });
       });
       if (esErrorGeneral(err.code)) {
@@ -306,12 +356,12 @@ export async function setEnvioMoraActivo(p: { activo: boolean; actor: string }) 
   await logAudit({ actorEmail: p.actor, action: p.activo ? "cobranza_whatsapp_mora_encendido" : "cobranza_whatsapp_mora_apagado", entityType: "col_settings", entityId: "whatsapp_mora" });
 }
 
-/** Mete una plantilla a la rotación (solo si Meta la aprobó y tiene las 6 variables) o la saca. */
+/** Activa una plantilla (solo si Meta la aprobó y tiene sus variables) o la desactiva. */
 export async function setPlantillaActiva(p: { id: number; activa: boolean; actor: string }) {
-  const [t] = await sql`SELECT estado_meta, cuerpo FROM col_wa_templates WHERE id = ${p.id} AND uso = 'mora'`;
+  const [t] = await sql`SELECT estado_meta, cuerpo, jsonb_array_length(variables) AS variables FROM col_wa_templates WHERE id = ${p.id}`;
   if (!t) throw new WhatsAppMoraError("No encontramos esa plantilla");
   if (p.activa) {
-    const motivo = motivoNoActivable({ estadoMeta: t.estado_meta, cuerpo: t.cuerpo });
+    const motivo = motivoNoActivable({ estadoMeta: t.estado_meta, cuerpo: t.cuerpo, variables: t.variables });
     if (motivo) throw new WhatsAppMoraError(motivo);
   }
   await sql`UPDATE col_wa_templates SET activa = ${p.activa}, updated_by = ${p.actor}, updated_at = now() WHERE id = ${p.id}`;
@@ -342,7 +392,7 @@ export async function revisarConMeta(p: { actor: string }): Promise<RevisionMeta
     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = now()
   `;
 
-  const locales = await plantillasMora();
+  const locales = await plantillasDe(null);
   let enMeta;
   try {
     const cuentaId = await obtenerCuentaWhatsApp(config);
@@ -369,7 +419,7 @@ export async function revisarConMeta(p: { actor: string }): Promise<RevisionMeta
       continue;
     }
     const estado = estadoDesdeMeta(m.estado);
-    const motivo = motivoNoActivable({ estadoMeta: estado, cuerpo: m.cuerpo });
+    const motivo = motivoNoActivable({ estadoMeta: estado, cuerpo: m.cuerpo, variables: t.variables });
     const sigueActiva = t.activa && !motivo;
     // Un aviso por plantilla: lo que impide usarla, con el motivo de Meta si lo dio.
     const conMotivoMeta = motivo && m.motivoRechazo ? `${motivo.replace(/.$/, "")} (${m.motivoRechazo}).` : motivo;
