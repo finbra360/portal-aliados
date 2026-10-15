@@ -8,6 +8,9 @@ import { formatFecha, formatFechaHora, formatMoney, formatTelefono } from "@/lib
 import Card from "@/components/ui/Card";
 import { CrearPlantillas, EnviarAhora, EnviarPrueba, EnvioToggle, PlantillaToggle, RevisarConMeta } from "./WhatsAppControls";
 
+/** "Sin WhatsApp válido" → "sin WhatsApp válido": solo la primera letra, para no perder siglas (SIAC, CLABE). */
+const minusculaInicial = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
+
 const ESTADO: Record<string, { label: string; clase: string }> = {
   pendiente: { label: "Pendiente", clase: "bg-black/5 text-finbra-gray" },
   enviado: { label: "Enviado", clase: "bg-emerald-100 text-emerald-700" },
@@ -204,7 +207,7 @@ export default async function WhatsAppMoraPage() {
                         </dl>
                       </details>
                     ) : (
-                      <span className="text-finbra-gray">No recibe: {f.decision.motivo.toLowerCase()}</span>
+                      <span className="text-finbra-gray">No recibe: {minusculaInicial(f.decision.motivo)}</span>
                     )}
                   </td>
                 </tr>
