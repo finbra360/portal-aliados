@@ -3,15 +3,34 @@ import { getTierProgress } from "@/lib/tiers";
 import { summarizeCommissions } from "@/lib/commissions";
 import { listOperations } from "@/lib/db/operations";
 import { getBrokerStatusMap } from "@/lib/db/broker-status";
+import { getBroker, type Broker } from "@/lib/db/brokers";
+import { getAdminSession } from "@/lib/get-admin-session";
+import { hasRole } from "@/lib/rbac";
+import { codigoDeError } from "@/lib/collections/errors";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import StatCard from "@/components/ui/StatCard";
 import StatusPill from "@/components/ui/StatusPill";
 import Badge from "@/components/ui/Badge";
 import { updateBrokerStatusAction } from "../actions";
+import { DatosBroker } from "../BrokerForms";
+import { BROKERS_EDITAN } from "../roles";
 
 export default async function BrokerDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: brokerId } = await params;
+  const puedeEditar = hasRole(await getAdminSession(), BROKERS_EDITAN);
+
+  let broker: Broker | null;
+  try {
+    broker = await getBroker(brokerId);
+  } catch (e) {
+    const c = codigoDeError("brokers: perfil", e);
+    return (
+      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
+        No pudimos cargar este broker en este momento. (código {c})
+      </div>
+    );
+  }
 
   let loadError = false;
   let stats: Awaited<ReturnType<typeof getStats>> | null = null;
@@ -33,8 +52,19 @@ export default async function BrokerDetailPage({ params }: { params: Promise<{ i
 
   if (loadError || !stats || !leaderboard) {
     return (
-      <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
-        No pudimos cargar este broker en este momento.
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">{broker?.nombre ?? brokerId}</h1>
+          <p className="text-sm text-finbra-gray">ID Broker: {brokerId}</p>
+        </div>
+        {broker && (
+          <Card>
+            <DatosBroker broker={broker} puedeEditar={puedeEditar} />
+          </Card>
+        )}
+        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
+          {broker ? "No pudimos traer la colocación de este broker en este momento (n8n no respondió)." : "No encontramos este broker."}
+        </div>
       </div>
     );
   }
@@ -48,18 +78,30 @@ export default async function BrokerDetailPage({ params }: { params: Promise<{ i
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-2xl font-bold">{entry?.nombre ?? brokerId}</h1>
+          <h1 className="text-2xl font-bold">{broker?.nombre ?? entry?.nombre ?? brokerId}</h1>
           <p className="text-sm text-finbra-gray">ID Broker: {brokerId}</p>
         </div>
         <div className="flex items-center gap-2">
           <Badge variant={estatus === "activo" ? "success" : "warning"}>{estatus}</Badge>
-          <form action={updateBrokerStatusAction.bind(null, brokerId, estatus === "activo" ? "suspendido" : "activo")}>
-            <button type="submit" className="rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple">
-              {estatus === "activo" ? "Suspender" : "Reactivar"}
-            </button>
-          </form>
+          {puedeEditar && (
+            <form action={updateBrokerStatusAction.bind(null, brokerId, estatus === "activo" ? "suspendido" : "activo")}>
+              <button type="submit" className="rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple">
+                {estatus === "activo" ? "Suspender" : "Reactivar"}
+              </button>
+            </form>
+          )}
         </div>
       </div>
+
+      {broker ? (
+        <Card>
+          <DatosBroker broker={broker} puedeEditar={puedeEditar} />
+        </Card>
+      ) : (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Este broker tiene colocación en el Sheet pero no está dado de alta en el backoffice. Dalo de alta con la carga masiva usando su ID {brokerId}.
+        </div>
+      )}
 
       {estatus === "suspendido" && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
