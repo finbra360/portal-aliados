@@ -435,6 +435,12 @@ ON CONFLICT (nombre) DO NOTHING;
 UPDATE col_wa_templates SET uso = 'otro', activa = false
 WHERE nombre IN ('recordatorio_pago_5d', 'recordatorio_pago_1d', 'recordatorio_pago_dia') AND uso = 'preventiva';
 
+-- 2026-10-15: plantilla para retomar una conversación del chat cuando ya
+-- pasaron 24 horas del último mensaje del cliente (Meta no deja texto libre).
+INSERT INTO col_wa_templates (nombre, uso, variables, orden) VALUES
+  ('finbra_contacto', 'otro', '["nombre"]', 31)
+ON CONFLICT (nombre) DO NOTHING;
+
 -- 2026-10-14: las plantillas de mora llevan la cuenta de pago del cliente.
 -- Solo se actualizan las que nunca se activaron.
 UPDATE col_wa_templates SET variables = '["nombre", "total_vencido", "creditos", "banco", "beneficiario", "clabe"]'
@@ -461,7 +467,7 @@ CREATE TABLE IF NOT EXISTS col_wa_messages (
   estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'enviado', 'entregado', 'leido', 'fallido', 'recibido')),
   error JSONB,
   origen TEXT NOT NULL CHECK (origen IN (
-    'backoffice_manual', 'recordatorio_mora', 'recordatorio_preventivo', 'n8n_preventiva', 'n8n_slack', 'cliente'
+    'backoffice_manual', 'recordatorio_mora', 'recordatorio_preventivo', 'chat', 'n8n_preventiva', 'n8n_slack', 'cliente'
   )),
   dedupe_key TEXT UNIQUE,
   enviado_por TEXT,
@@ -469,11 +475,22 @@ CREATE TABLE IF NOT EXISTS col_wa_messages (
   estado_actualizado_at TIMESTAMPTZ
 );
 
--- Bases creadas antes del 2026-10-15: su CHECK de origen no incluía 'recordatorio_preventivo'.
+-- Bases creadas antes del 2026-10-15: su CHECK de origen no incluía 'recordatorio_preventivo' ni 'chat'.
 ALTER TABLE col_wa_messages DROP CONSTRAINT IF EXISTS col_wa_messages_origen_check;
 ALTER TABLE col_wa_messages ADD CONSTRAINT col_wa_messages_origen_check CHECK (origen IN (
-  'backoffice_manual', 'recordatorio_mora', 'recordatorio_preventivo', 'n8n_preventiva', 'n8n_slack', 'cliente'
+  'backoffice_manual', 'recordatorio_mora', 'recordatorio_preventivo', 'chat', 'n8n_preventiva', 'n8n_slack', 'cliente'
 ));
+
+-- 2026-10-15: chat de WhatsApp en el backoffice. Fotos y documentos que manda
+-- el cliente (se descargan de Meta al verlos), su nombre de perfil, a qué
+-- mensaje responde y cuándo lo vio el equipo.
+ALTER TABLE col_wa_messages ADD COLUMN IF NOT EXISTS media_id TEXT;
+ALTER TABLE col_wa_messages ADD COLUMN IF NOT EXISTS media_mime TEXT;
+ALTER TABLE col_wa_messages ADD COLUMN IF NOT EXISTS media_nombre TEXT;
+ALTER TABLE col_wa_messages ADD COLUMN IF NOT EXISTS perfil_nombre TEXT;
+ALTER TABLE col_wa_messages ADD COLUMN IF NOT EXISTS responde_a TEXT;
+ALTER TABLE col_wa_messages ADD COLUMN IF NOT EXISTS leido_equipo_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_col_wa_sin_leer ON col_wa_messages(telefono) WHERE direccion = 'entrante' AND leido_equipo_at IS NULL;
 
 CREATE INDEX IF NOT EXISTS idx_col_wa_client ON col_wa_messages(client_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_col_wa_telefono ON col_wa_messages(telefono, created_at DESC);
