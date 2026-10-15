@@ -1,5 +1,6 @@
 import { cache } from "react";
-import { getStats, getLeaderboard, type BrokerStats, type LeaderboardResponse, type PorMes } from "./n8n";
+import { getStats, type BrokerStats, type LeaderboardResponse, type PorMes } from "./n8n";
+import { getLeaderboard } from "@/lib/leaderboard";
 import { getTierProgress, type TierProgress } from "./tiers";
 import { getCurrentStreak, getPeriodDelta } from "./streaks";
 

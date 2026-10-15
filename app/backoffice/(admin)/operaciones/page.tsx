@@ -1,4 +1,4 @@
-import { getLeaderboard } from "@/lib/n8n";
+import { getLeaderboard } from "@/lib/leaderboard";
 import { listOperations } from "@/lib/db/operations";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";

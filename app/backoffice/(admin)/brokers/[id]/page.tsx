@@ -1,4 +1,5 @@
-import { getStats, getLeaderboard } from "@/lib/n8n";
+import { getStats } from "@/lib/n8n";
+import { getLeaderboard } from "@/lib/leaderboard";
 import { getTierProgress } from "@/lib/tiers";
 import { summarizeCommissions } from "@/lib/commissions";
 import { listOperations } from "@/lib/db/operations";
@@ -105,8 +106,8 @@ export default async function BrokerDetailPage({ params }: { params: Promise<{ i
 
       {estatus === "suspendido" && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Este broker está marcado como suspendido. Nota: esto todavía no bloquea su login en el portal — falta
-          conectar esta bandera al workflow de n8n del login (documentado como pendiente).
+          Este broker está suspendido: ya no puede pedir código para entrar al portal. Si tenía una sesión abierta, le
+          dura hasta que venza (máximo 7 días).
         </div>
       )}
 

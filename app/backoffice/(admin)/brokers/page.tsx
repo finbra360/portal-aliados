@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getLeaderboard } from "@/lib/n8n";
+import { getLeaderboard } from "@/lib/leaderboard";
 import { listBrokers, type Broker } from "@/lib/db/brokers";
 import { getBrokerStatusMap } from "@/lib/db/broker-status";
 import { getAdminSession } from "@/lib/get-admin-session";

@@ -1,4 +1,5 @@
-import { getLeaderboard, getStats } from "@/lib/n8n";
+import { getStats } from "@/lib/n8n";
+import { getLeaderboard } from "@/lib/leaderboard";
 import { summarizeCommissions } from "@/lib/commissions";
 import { listCommissionPayments } from "@/lib/db/commission-payments";
 import { formatCurrency } from "@/lib/format";
