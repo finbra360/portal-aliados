@@ -2,7 +2,7 @@
 // entrada en el timeline (col_activities) y en audit_log, en la misma
 // transacción que el cambio (salvo audit_log, que se escribe al final).
 
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { SiacClient, getSiacConfig } from "@/lib/siac/client";
@@ -116,7 +116,7 @@ async function crearPromesaTx(
 
 export async function crearPromesa(p: Parameters<typeof crearPromesaTx>[1]) {
   let id = 0;
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     await loadClient(tx, p.clientId);
     id = await crearPromesaTx(tx, p);
   });
@@ -127,7 +127,7 @@ export async function crearPromesa(p: Parameters<typeof crearPromesaTx>[1]) {
 /** Cierra a mano una promesa vigente: cumplida (pagó por fuera de lo que ve SIAC) o cancelada. */
 export async function resolverPromesa(p: { clientId: string; promiseId: number; estado: "cumplida" | "cancelada"; actor: string }) {
   if (p.estado !== "cumplida" && p.estado !== "cancelada") throw new GestionError("Estado no válido");
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     await loadClient(tx, p.clientId);
     const [pr] = await tx`
       UPDATE col_promises SET estado = ${p.estado}, resuelta_por = 'manual', resuelta_at = now()
@@ -164,7 +164,7 @@ export async function registrarGestion(p: {
   if (v.resultado === "promesa" && !p.promesa) throw new GestionError("Escribe el monto y la fecha que prometió");
 
   let promiseId: number | null = null;
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     await loadClient(tx, p.clientId);
     let contacto: string | null = null;
     if (p.contactId) {
@@ -208,7 +208,7 @@ export async function registrarGestion(p: {
 export async function pausarCobranza(p: { clientId: string; hasta: string; motivo: string; actor: string }) {
   const v = validarPausa({ hasta: p.hasta, motivo: p.motivo, hoy: fechaMexico() });
   if (!v.ok) throw new GestionError(v.error);
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     await loadClient(tx, p.clientId);
     await tx`UPDATE col_clients SET pausa_hasta = ${v.hasta}, pausa_motivo = ${v.motivo} WHERE id = ${p.clientId}`;
     await activity(tx, { clientId: p.clientId, tipo: "pausa", descripcion: `Cobranza pausada hasta el ${formatFecha(v.hasta)}: ${v.motivo}`, actor: p.actor });
@@ -217,7 +217,7 @@ export async function pausarCobranza(p: { clientId: string; hasta: string; motiv
 }
 
 export async function reanudarCobranza(p: { clientId: string; actor: string }) {
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const c = await loadClient(tx, p.clientId);
     if (!c.pausa_hasta) throw new GestionError("La cobranza de este cliente no está pausada");
     await tx`UPDATE col_clients SET pausa_hasta = NULL, pausa_motivo = NULL WHERE id = ${p.clientId}`;
@@ -237,7 +237,7 @@ const TITULO_ALERTA: Record<string, string> = {
 
 export async function atenderAlerta(p: { clientId: string; alertId: number; estado: "atendida" | "descartada"; actor: string }) {
   if (p.estado !== "atendida" && p.estado !== "descartada") throw new GestionError("Estado no válido");
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     await loadClient(tx, p.clientId);
     const [a] = await tx`
       UPDATE col_alerts SET estado = ${p.estado}, atendida_por = ${p.actor}, atendida_at = now()
@@ -259,7 +259,7 @@ export async function atenderAlerta(p: { clientId: string; alertId: number; esta
 
 export async function cambiarEtapa(p: { clientId: string; creditId: string; etapa: Etapa | null; actor: string }) {
   if (p.etapa !== null && !(p.etapa in ETAPAS)) throw new GestionError("Etapa no válida");
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     await loadClient(tx, p.clientId);
     const cr = await loadCredit(tx, p.creditId, p.clientId);
     if ((cr.etapa_manual ?? null) === p.etapa) return;
@@ -329,7 +329,7 @@ export async function consultarSaldoAlDia(p: { clientId: string; creditId: strin
     saldoActual: money(r.Totales?.SaldoActual),
   };
   let consultadoAt = new Date().toISOString();
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const [row] = await tx`
       INSERT INTO col_saldo_consultas (credit_id, fecha_corte, saldo_vigente, saldo_vencido, total_pagar, saldo_actual, detalle, pedido_por, sync_run_id)
       VALUES (${p.creditId}, ${hoy}, ${saldo.saldoVigente}, ${saldo.saldoVencido}, ${saldo.totalPagar}, ${saldo.saldoActual},

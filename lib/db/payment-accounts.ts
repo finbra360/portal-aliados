@@ -2,7 +2,7 @@
 // Cambiar la cuenta de un cliente deja una entrada en su timeline; todo cambio
 // queda en audit_log.
 
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { formatClabe, validarCuenta, type CuentaPago } from "@/lib/collections/payment-accounts";
@@ -130,7 +130,7 @@ async function cuentaActiva(tx: Tx, id: string): Promise<CuentaPago> {
 
 /** Elige la cuenta a la que paga un cliente (o la quita, con `cuentaId` null). */
 export async function asignarCuenta(p: { clientId: string; cuentaId: string | null; actor: string }) {
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const [c] = await tx`SELECT id, cuenta_pago_id FROM col_clients WHERE id = ${p.clientId} AND ambiente = ${ambienteActual()} FOR UPDATE`;
     if (!c) throw new PaymentAccountError("No encontramos ese cliente");
     if (c.cuenta_pago_id === p.cuentaId) return;
@@ -143,7 +143,7 @@ export async function asignarCuenta(p: { clientId: string; cuentaId: string | nu
 /** Asigna una cuenta a todos los clientes activos que todavía no tienen. Regresa cuántos fueron. */
 export async function asignarCuentaASinCuenta(p: { cuentaId: string; actor: string }): Promise<number> {
   let n = 0;
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const cuenta = await cuentaActiva(tx, p.cuentaId);
     const clientes = await tx`
       SELECT c.id FROM col_clients c

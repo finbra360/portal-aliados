@@ -1,7 +1,7 @@
 // Perfil de un cliente de cobranza: lectura y cambios a sus contactos. Toda
 // escritura deja una entrada en el timeline (col_activities) y en audit_log.
 
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import {
@@ -259,7 +259,7 @@ async function closePhoneAlertIfFixed(tx: Tx, clientId: string, actor: string) {
  * `contactId = null` regresa al sugerido por SIAC.
  */
 export async function setContactoCobranza(p: { clientId: string; contactId: string | null; actor: string }) {
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const [c] = await tx`
       SELECT id, contacto_cobranza_id FROM col_clients WHERE id = ${p.clientId} AND ambiente = ${ambienteActual()} FOR UPDATE
     `;
@@ -288,7 +288,7 @@ export async function setContactTipo(p: { contactId: string; tipo: TipoContacto;
   const tipo = TIPOS_CONTACTO[p.tipo];
   if (!tipo) throw new ContactError("Tipo de contacto no válido");
   let clientId = "";
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const k = await loadContact(tx, p.contactId);
     clientId = k.client_id;
     const antes = TIPOS_CONTACTO[tipoDe(mapContact(k))].label;
@@ -312,7 +312,7 @@ const ESTATUS_LABEL = { activo: "activo", invalido: "inválido", baja: "dado de 
 export async function setContactEstatus(p: { contactId: string; estatus: "activo" | "invalido" | "baja"; actor: string }) {
   if (!(p.estatus in ESTATUS_LABEL)) throw new ContactError("Estado no válido");
   let clientId = "";
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const k = await loadContact(tx, p.contactId);
     clientId = k.client_id;
     await tx`
@@ -348,7 +348,7 @@ export async function addManualContact(p: {
   }
 
   let contactId = "";
-  await sql.begin(async (tx) => {
+  await transaccion(async (tx) => {
     const [c] = await tx`SELECT id FROM col_clients WHERE id = ${p.clientId} AND ambiente = ${ambienteActual()} FOR UPDATE`;
     if (!c) throw new ContactError("No encontramos ese cliente");
     const [dup] = await tx`

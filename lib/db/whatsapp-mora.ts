@@ -3,7 +3,7 @@
 // dedupe_key única por cliente y día: un segundo intento el mismo día falla en
 // la base y nunca llega a Meta.
 
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { EJEMPLO_PREVENTIVA, PLANTILLAS_PREVENTIVAS } from "@/lib/collections/preventivos";
 import { EJEMPLO_CONTACTO, PLANTILLA_CONTACTO } from "@/lib/collections/chat";
 import { logAudit } from "@/lib/db/audit";
@@ -317,7 +317,7 @@ export async function enviarLote(p: {
 
     try {
       const { wamid } = await enviarPlantilla(config, { telefono: e.telefono, plantilla: e.plantilla.nombre, idioma: e.plantilla.idioma, parametros: e.parametros });
-      await sql.begin(async (tx) => {
+      await transaccion(async (tx) => {
         await tx`UPDATE col_wa_messages SET estado = 'enviado', wamid = ${wamid}, estado_actualizado_at = now() WHERE id = ${msg.id}`;
         await tx`
           INSERT INTO col_activities (client_id, credit_id, tipo, descripcion, wa_message_id, metadata, actor)
@@ -329,7 +329,7 @@ export async function enviarLote(p: {
     } catch (err0) {
       const err = err0 instanceof WhatsAppError ? err0 : new WhatsAppError((err0 as Error).message, null, {});
       result.fallidos++;
-      await sql.begin(async (tx) => {
+      await transaccion(async (tx) => {
         await tx`UPDATE col_wa_messages SET estado = 'fallido', error = ${JSON.stringify(err.detalle)}::text::jsonb, estado_actualizado_at = now() WHERE id = ${msg.id}`;
         await openAlert(tx, e.clientId, e.creditId, {
           tipo: "mensaje_fallido",

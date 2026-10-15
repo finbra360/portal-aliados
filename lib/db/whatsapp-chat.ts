@@ -2,7 +2,7 @@
 // respuestas del equipo. Todo mensaje, de entrada o salida, queda en
 // col_wa_messages; los de clientes identificados, también en su historial.
 
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { openAlert } from "@/lib/collections/store";
@@ -121,7 +121,7 @@ export async function procesarWebhook(body: unknown): Promise<{ mensajes: number
       RETURNING client_id
     `;
     if (m?.client_id && s.estado === "fallido") {
-      await sql.begin((tx) =>
+      await transaccion((tx) =>
         openAlert(tx, m.client_id, null, {
           tipo: "mensaje_fallido",
           severidad: "atencion",

@@ -1,4 +1,4 @@
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { SiacClient, getSiacConfig, type SiacAmbiente } from "@/lib/siac/client";
 import { parseListado, type ListadoCredito } from "@/lib/siac/parse";
 import { notifySlack } from "./notify";
@@ -172,7 +172,7 @@ export async function runDailySync(opts: {
 
     if (result.foto === "vieja") {
       result.status = "foto_vieja";
-      await sql.begin(async (tx) => {
+      await transaccion(async (tx) => {
         result.alertas += await openAlert(tx, null, null, {
           tipo: "foto_vieja",
           severidad: "atencion",
@@ -182,7 +182,7 @@ export async function runDailySync(opts: {
       });
     } else {
       const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
-      const conPagoNuevo = await sql.begin((tx) => writeDailyPhoto(tx, { runId, ambiente, fechaCorte, creditos, conocidos, umbral, result }));
+      const conPagoNuevo = await transaccion((tx) => writeDailyPhoto(tx, { runId, ambiente, fechaCorte, creditos, conocidos, umbral, result }));
       await syncNewPayments(siac, runId, conPagoNuevo, result);
       result.promesasResueltas = await resolvePromises(ambiente, fechaCorte, umbral, result);
       await alertInvalidPhones(ambiente, fechaCorte, umbral, result);
@@ -478,7 +478,7 @@ async function resolvePromises(ambiente: SiacAmbiente, fechaCorte: string, umbra
     }
     if (estado === "vigente") continue;
 
-    await sql.begin(async (tx) => {
+    await transaccion(async (tx) => {
       const [upd] = await tx`
         UPDATE col_promises SET estado = ${estado}, resuelta_por = 'sistema', resuelta_at = now()
         WHERE id = ${p.id} AND estado = 'vigente'
@@ -527,7 +527,7 @@ async function alertInvalidPhones(ambiente: SiacAmbiente, fechaCorte: string, um
     HAVING sum(s.total_vencido) >= ${umbral}
   `;
   for (const c of sinTelefono) {
-    await sql.begin(async (tx) => {
+    await transaccion(async (tx) => {
       result.alertas += await openAlert(tx, c.id, null, {
         tipo: "telefono_invalido",
         severidad: "atencion",
@@ -559,7 +559,7 @@ async function alertMissingPaymentAccount(ambiente: SiacAmbiente, fechaCorte: st
     HAVING sum(s.total_vencido) >= ${umbral}
   `;
   for (const c of sinCuenta) {
-    await sql.begin(async (tx) => {
+    await transaccion(async (tx) => {
       result.alertas += await openAlert(tx, c.id, null, {
         tipo: "sin_cuenta_pago",
         severidad: "atencion",
@@ -576,7 +576,7 @@ async function reportRunOutcome(result: DailySyncResult) {
   if (result.status === "completado" || result.status === "ya_completada") return;
 
   if (result.status === "error") {
-    await sql.begin(async (tx) => {
+    await transaccion(async (tx) => {
       await openAlert(tx, null, null, {
         tipo: "sync_fallido",
         severidad: "critica",

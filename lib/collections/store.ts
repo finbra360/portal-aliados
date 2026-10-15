@@ -1,11 +1,10 @@
 // Escrituras de cobranza compartidas: eventos, alertas y sus entradas en el
 // timeline, configuración y el registro de llamadas a SIAC.
 
-import type { TransactionSql } from "postgres";
-import { sql } from "@/lib/db";
+import { sql, type Tx } from "@/lib/db";
 import type { AlertDraft, DerivedEvent } from "./rules";
 
-export type Tx = TransactionSql;
+export type { Tx };
 
 export const peso = (n: number) => n.toLocaleString("es-MX", { style: "currency", currency: "MXN" });
 const dias = (n: number | undefined) => (n === 1 ? "1 día" : `${n ?? 0} días`);
