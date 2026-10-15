@@ -10,6 +10,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import { IconCoins, IconListChecks, IconWallet, IconTrendingUp } from "@/components/ui/icons";
 import PhotoBanner from "./PhotoBanner";
 import { codigoDeError } from "@/lib/collections/errors";
+import BotonReporte from "./BotonReporte";
 
 const BUCKET_LABEL: Record<Bucket, string> = {
   al_corriente: "Al corriente",
@@ -34,7 +35,9 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
 }
 
 export default async function CobranzaInicioPage() {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
+  const session = await getAdminSession();
+  if (!hasRole(session, COBRANZA_ROLES)) return null;
+  const esSuperAdmin = session.role === "super_admin";
 
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   try {
@@ -72,12 +75,15 @@ export default async function CobranzaInicioPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-2xl font-bold">Cobranza</h1>
-        <Link
-          href="/backoffice/cobranza/cola"
-          className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90"
-        >
-          Ver cola de trabajo
-        </Link>
+        <div className="flex flex-wrap items-start gap-2">
+          {esSuperAdmin && <BotonReporte />}
+          <Link
+            href="/backoffice/cobranza/cola"
+            className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90"
+          >
+            Ver cola de trabajo
+          </Link>
+        </div>
       </div>
       <PhotoBanner status={status} />
 

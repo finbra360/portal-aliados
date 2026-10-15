@@ -4,6 +4,7 @@ import { runDailySync } from "@/lib/collections/sync";
 import { notifySlack } from "@/lib/collections/notify";
 import { runMoraReminders, type MoraRunResult } from "@/lib/db/whatsapp-mora";
 import { runPreventivos } from "@/lib/db/whatsapp-preventivo";
+import { enviarReporteDiario } from "@/lib/db/reporte";
 
 // Una sola llamada a SIAC y, a las 9:00, hasta max_envios_mora_por_dia mensajes de WhatsApp (~0.75 s cada uno).
 export const maxDuration = 120;
@@ -15,7 +16,8 @@ export const dynamic = "force-dynamic";
  *
  *   6:00 CDMX   /api/cron/siac-sync               foto de hoy
  *   9:00 CDMX   /api/cron/siac-sync?reintento=1   solo si la de las 6:00 no quedó completa,
- *                                                 y después los recordatorios de WhatsApp (mora y preventivos)
+ *                                                 después los recordatorios de WhatsApp (mora y preventivos)
+ *                                                 y al final el reporte diario a Slack
  *
  * Con el mismo secreto se puede correr a mano para otra fecha: ?fecha=2026-10-01
  */
@@ -63,7 +65,17 @@ export async function GET(req: NextRequest) {
         }
       }
     }
-    return NextResponse.json({ ...result, whatsapp }, { status: result.status === "error" ? 500 : 200 });
+    // El reporte sale aunque la foto haya fallado: justo ese día hay que saberlo.
+    let reporte: boolean | { error: string } | null = null;
+    if (reintento) {
+      try {
+        reporte = await enviarReporteDiario({ tandas: whatsapp, actor: "cron" });
+      } catch (e) {
+        reporte = { error: (e as Error).message };
+        console.error("Cobranza: no se pudo armar el reporte diario:", (e as Error).message);
+      }
+    }
+    return NextResponse.json({ ...result, whatsapp, reporte }, { status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     // Errores antes de poder registrar la corrida (base caída, fecha inválida).
     const mensaje = (e as Error).message;
