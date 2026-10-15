@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
+import { getStats } from "@/lib/db/colocacion";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
-import { getStats } from "@/lib/n8n";
 import { listOperations } from "@/lib/db/operations";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";

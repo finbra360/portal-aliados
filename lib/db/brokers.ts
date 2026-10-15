@@ -4,7 +4,6 @@
 
 import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
-import { getLeaderboard } from "@/lib/n8n";
 import { asignarIds, normalizarId, revisarImportacion, validarBroker, type FilaImportacion } from "@/lib/brokers/importar";
 
 export class BrokerError extends Error {}
@@ -103,31 +102,16 @@ export async function editarBroker(p: { id: string; email: string; nombre: strin
 }
 
 /**
- * IDs que ya usa el historial de colocación (Sheet, vía n8n). Mientras haya
- * brokers del Sheet sin importar, un ID nuevo no debe caer en uno de esos: el
- * broker nuevo heredaría la colocación de otro. Si n8n no responde, no se
- * numera nada (mejor fallar que asignar un ID ajeno).
- */
-async function idsDelHistorial(): Promise<string[]> {
-  try {
-    return (await getLeaderboard()).ranking.map((b) => b.brokerId);
-  } catch {
-    throw new BrokerError("No pudimos confirmar qué IDs ya usa el historial de colocación (n8n no respondió). Intenta en un momento, o pon el ID en el archivo.");
-  }
-}
-
-/**
  * Inserta brokers nuevos con IDs. Un candado sobre la tabla evita que dos
  * altas al mismo tiempo tomen el mismo número. Los correos que ya existan se
  * saltan (ON CONFLICT). Regresa los IDs insertados.
  */
 async function guardarNuevos(nuevos: { email: string; nombre: string; telefono: string | null; id: string | null }[], actor: string): Promise<string[]> {
   if (nuevos.length === 0) return [];
-  const reservados = nuevos.some((b) => !b.id) ? await idsDelHistorial() : [];
   return transaccion(async (tx) => {
     await tx`LOCK TABLE brokers IN SHARE ROW EXCLUSIVE MODE`;
     const ids = (await tx`SELECT id FROM brokers`).map((r) => r.id as string);
-    const filas = asignarIds(nuevos, [...ids, ...reservados]).map((b) => ({ id: b.id, email: b.email, nombre: b.nombre, telefono: b.telefono, created_by: actor }));
+    const filas = asignarIds(nuevos, ids).map((b) => ({ id: b.id, email: b.email, nombre: b.nombre, telefono: b.telefono, created_by: actor }));
     const insertados = await tx`
       INSERT INTO brokers ${tx(filas, "id", "email", "nombre", "telefono", "created_by")}
       ON CONFLICT DO NOTHING

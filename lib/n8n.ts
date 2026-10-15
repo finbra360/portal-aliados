@@ -45,7 +45,7 @@ export interface PorMes {
 export interface OperacionFondeada {
   fecha: string;
   monto: number;
-  /** % de comisión de apertura pactado con el cliente. undefined si no se ha capturado en el Sheet. */
+  /** % de comisión de apertura pactado con el cliente. undefined si no se ha capturado. */
   comisionAperturaPct?: number;
   /** true solo cuando el cliente ya terminó de pagar el crédito. */
   pagadoTotalidad: boolean;
@@ -111,20 +111,8 @@ export function verifyCode(email: string, code: string) {
   });
 }
 
-export function getStats(brokerId: string) {
-  return callWebhook<BrokerStats>("/webhook/broker-portal-stats", {
-    body: { brokerId },
-  });
-}
-
 export function getRecursos() {
   return callWebhook<RecursosResponse>("/webhook/broker-portal-recursos", {
-    method: "GET",
-  });
-}
-
-export function getLeaderboard() {
-  return callWebhook<LeaderboardResponse>("/webhook/broker-portal-leaderboard", {
     method: "GET",
   });
 }

@@ -66,8 +66,8 @@ export async function importarBrokersAction(contenido: string): Promise<BrokerAc
   return run(async (actor) => {
     const r = await importarBrokers(contenido, actor);
     const partes = [r.creados.length === 1 ? "Se dio de alta 1 broker" : `Se dieron de alta ${r.creados.length} brokers`];
-    if (r.existentes) partes.push(`${r.existentes} ya existían`);
-    if (r.errores) partes.push(`${r.errores} con error se omitieron`);
+    if (r.existentes) partes.push(r.existentes === 1 ? "1 ya existía" : `${r.existentes} ya existían`);
+    if (r.errores) partes.push(r.errores === 1 ? "1 con error se omitió" : `${r.errores} con error se omitieron`);
     return { mensaje: `${partes.join("; ")}.` };
   });
 }

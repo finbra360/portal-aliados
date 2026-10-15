@@ -1,6 +1,5 @@
-import { getStats } from "@/lib/n8n";
-import { getLeaderboard } from "@/lib/leaderboard";
 import { summarizeCommissions } from "@/lib/commissions";
+import { getLeaderboard, getStats } from "@/lib/db/colocacion";
 import { listCommissionPayments } from "@/lib/db/commission-payments";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";

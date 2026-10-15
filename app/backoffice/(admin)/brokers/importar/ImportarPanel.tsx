@@ -9,7 +9,7 @@ import { Aviso, boton, botonSecundario } from "../BrokerForms";
 const PLANTILLA = "Email,Nombre completo,Telefono,ID Broker\nana.perez@ejemplo.com,Ana Pérez López,5512345678,FAPBR001\n";
 
 /** Excel guarda "CSV" en Windows-1252 y "CSV UTF-8" en UTF-8: se aceptan los dos. */
-async function leerArchivo(archivo: File): Promise<string> {
+export async function leerArchivo(archivo: File): Promise<string> {
   const bytes = await archivo.arrayBuffer();
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
