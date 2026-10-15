@@ -51,7 +51,7 @@ export default function BackofficeLoginPage() {
         setError("Código inválido o expirado.");
         return;
       }
-      router.push("/backoffice/dashboard");
+      router.push("/backoffice/inicio");
       router.refresh();
     } catch {
       setError("Ocurrió un error. Intenta de nuevo.");

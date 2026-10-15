@@ -17,7 +17,7 @@ export async function middleware(req: NextRequest) {
   let rewriteTarget: string | null = null;
 
   if (isBackofficeHost && !pathname.startsWith("/backoffice")) {
-    rewriteTarget = `/backoffice${pathname === "/" ? "/dashboard" : pathname}`;
+    rewriteTarget = `/backoffice${pathname === "/" ? "/inicio" : pathname}`;
     pathname = rewriteTarget;
   }
 
@@ -27,7 +27,7 @@ export async function middleware(req: NextRequest) {
     const adminSession = token ? await verifyAdminSession(token) : null;
 
     const loginPath = isBackofficeHost ? "/login" : "/backoffice/login";
-    const dashboardPath = isBackofficeHost ? "/dashboard" : "/backoffice/dashboard";
+    const dashboardPath = isBackofficeHost ? "/inicio" : "/backoffice/inicio";
 
     if (!isLogin && !adminSession) {
       return NextResponse.redirect(new URL(loginPath, req.url));
@@ -74,6 +74,7 @@ export const config = {
     "/backoffice/:path*",
     // Alias de URL limpia para backoffice.finbra.com (ver isBackofficeHost arriba)
     "/",
+    "/inicio",
     "/cobranza/:path*",
     "/leads/:path*",
     "/brokers/:path*",
