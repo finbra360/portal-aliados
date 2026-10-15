@@ -88,3 +88,24 @@ export function puedeConsultarSaldo(ultimaConsulta: Date | null, ahora: Date): {
   if (transcurridos >= MINUTOS_ENTRE_CONSULTAS_SALDO) return { ok: true };
   return { ok: false, minutos: Math.ceil(MINUTOS_ENTRE_CONSULTAS_SALDO - transcurridos) };
 }
+
+/** Hasta dónde se puede pedir el saldo a otra fecha: un año atrás, 120 días adelante. */
+export const DIAS_SALDO_ATRAS = 366;
+export const DIAS_SALDO_ADELANTE = 120;
+
+const sumarDias = (fecha: string, dias: number) => new Date(Date.parse(`${fecha}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * Fecha de corte para ConsultarSaldoCredito. Vacía = hoy. Una fecha futura
+ * dice cuánto deberá el cliente ese día (por ejemplo, en su próximo vencimiento).
+ */
+export function validarFechaSaldo(texto: string | null | undefined, hoy: string): { ok: true; fecha: string } | { ok: false; error: string } {
+  const t = String(texto ?? "").trim();
+  if (!t) return { ok: true, fecha: hoy };
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  const valida = m && new Date(`${t}T00:00:00Z`).toISOString().slice(0, 10) === t;
+  if (!valida) return { ok: false, error: "La fecha no es válida" };
+  if (t < sumarDias(hoy, -DIAS_SALDO_ATRAS)) return { ok: false, error: "La fecha no puede ser de hace más de un año" };
+  if (t > sumarDias(hoy, DIAS_SALDO_ADELANTE)) return { ok: false, error: `La fecha no puede ser de más de ${DIAS_SALDO_ADELANTE} días adelante` };
+  return { ok: true, fecha: t };
+}

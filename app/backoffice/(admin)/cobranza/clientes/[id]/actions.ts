@@ -144,10 +144,10 @@ export async function cambiarEtapaAction(clientId: string, creditId: string, eta
   return run(clientId, (actor) => cambiarEtapa({ clientId, creditId, etapa: e, actor }));
 }
 
-export async function saldoAlDiaAction(clientId: string, creditId: string): Promise<{ ok: true; saldo: SaldoAlDia } | { ok: false; error: string }> {
+export async function saldoAlDiaAction(clientId: string, creditId: string, fechaCorte?: string): Promise<{ ok: true; saldo: SaldoAlDia } | { ok: false; error: string }> {
   let saldo: SaldoAlDia | null = null;
   const r = await run(clientId, async (actor) => {
-    saldo = await consultarSaldoAlDia({ clientId, creditId, actor });
+    saldo = await consultarSaldoAlDia({ clientId, creditId, fechaCorte, actor });
   });
   return r.ok && saldo ? { ok: true, saldo } : { ok: false, error: r.ok ? "No se obtuvo el saldo" : r.error };
 }

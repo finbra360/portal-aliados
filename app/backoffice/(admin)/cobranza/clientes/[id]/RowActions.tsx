@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { ETAPAS } from "@/lib/collections/gestiones";
-import { formatFechaHora, formatMoney } from "@/lib/format";
+import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
 import { atenderAlertaAction, cambiarEtapaAction, resolverPromesaAction, saldoAlDiaAction, type ActionResult } from "./actions";
 
 const chico = "rounded-lg px-2 py-1 text-xs font-medium disabled:opacity-50";
@@ -78,35 +78,52 @@ export function SaldoAlDiaButton({
 }: {
   clientId: string;
   creditId: string;
-  ultimo: { saldoVencido: number; totalPagar: number; consultadoAt: string } | null;
+  ultimo: { fechaCorte: string; saldoVencido: number; totalPagar: number; consultadoAt: string } | null;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saldo, setSaldo] = useState(ultimo);
+  const [otraFecha, setOtraFecha] = useState(false);
+  const [fecha, setFecha] = useState("");
+  const consultar = (fechaCorte?: string) =>
+    start(async () => {
+      setError(null);
+      const r = await saldoAlDiaAction(clientId, creditId, fechaCorte);
+      if (r.ok) setSaldo(r.saldo);
+      else setError(r.error);
+    });
+  // Una consulta a otra fecha (por ejemplo, el próximo vencimiento) se marca para no confundirla con el saldo de hoy.
+  const diaConsulta = saldo ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(new Date(saldo.consultadoAt)) : null;
   return (
     <span className="flex flex-col items-start gap-1">
       {saldo && (
         <span className="text-xs">
-          A pagar <strong>{formatMoney(saldo.totalPagar)}</strong>
+          A pagar{saldo.fechaCorte !== diaConsulta && <> al <strong>{formatFecha(saldo.fechaCorte)}</strong></>} <strong>{formatMoney(saldo.totalPagar)}</strong>
           <span className="block text-finbra-gray">{formatFechaHora(saldo.consultadoAt)}</span>
         </span>
       )}
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() =>
-          start(async () => {
-            setError(null);
-            const r = await saldoAlDiaAction(clientId, creditId);
-            if (r.ok) setSaldo(r.saldo);
-            else setError(r.error);
-          })
-        }
-        className={`${chico} bg-finbra-purple/10 text-finbra-purple hover:bg-finbra-purple/20`}
-        title="Consulta a SIAC el saldo de este crédito a hoy"
-      >
-        {pending ? "Consultando…" : saldo ? "Actualizar" : "Saldo al día"}
-      </button>
+      <span className="flex items-center gap-1">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => consultar()}
+          className={`${chico} bg-finbra-purple/10 text-finbra-purple hover:bg-finbra-purple/20`}
+          title="Consulta a SIAC el saldo de este crédito a hoy"
+        >
+          {pending ? "Consultando…" : saldo ? "Actualizar" : "Saldo al día"}
+        </button>
+        <button type="button" onClick={() => setOtraFecha((v) => !v)} className={`${chico} text-finbra-gray hover:bg-black/5`} title="Consultar lo que deberá a otra fecha">
+          Otra fecha
+        </button>
+      </span>
+      {otraFecha && (
+        <span className="flex items-center gap-1">
+          <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded border border-black/10 px-1 py-0.5 text-xs" aria-label="Fecha de corte" />
+          <button type="button" disabled={pending || !fecha} onClick={() => consultar(fecha)} className={`${chico} bg-finbra-purple/10 text-finbra-purple hover:bg-finbra-purple/20`}>
+            Consultar
+          </button>
+        </span>
+      )}
       {error && <span className="max-w-48 text-xs text-red-700" role="alert">{error}</span>}
     </span>
   );
