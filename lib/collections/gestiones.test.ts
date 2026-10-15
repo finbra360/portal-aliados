@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseMonto, puedeConsultarSaldo, validarGestion, validarPausa, validarPromesa } from "./gestiones.ts";
+import { parseMonto, puedeConsultarSaldo, validarFechaSaldo, validarGestion, validarPausa, validarPromesa } from "./gestiones.ts";
 
 const HOY = "2026-10-01";
 
@@ -41,4 +41,14 @@ test("saldo al día: una consulta por crédito cada 10 minutos", () => {
   assert.deepEqual(puedeConsultarSaldo(null, ahora), { ok: true });
   assert.deepEqual(puedeConsultarSaldo(new Date("2026-10-01T17:55:30Z"), ahora), { ok: false, minutos: 6 });
   assert.deepEqual(puedeConsultarSaldo(new Date("2026-10-01T17:50:00Z"), ahora), { ok: true });
+});
+
+test("saldo a otra fecha: vacío es hoy; hasta un año atrás y 120 días adelante", () => {
+  assert.deepEqual(validarFechaSaldo("", HOY), { ok: true, fecha: HOY });
+  assert.deepEqual(validarFechaSaldo("2026-10-19", HOY), { ok: true, fecha: "2026-10-19" });
+  assert.deepEqual(validarFechaSaldo("2027-01-29", HOY), { ok: true, fecha: "2027-01-29" }, "justo 120 días");
+  assert.equal(validarFechaSaldo("2027-01-30", HOY).ok, false);
+  assert.equal(validarFechaSaldo("2025-09-29", HOY).ok, false);
+  assert.equal(validarFechaSaldo("2026-02-30", HOY).ok, false);
+  assert.equal(validarFechaSaldo("19/10/2026", HOY).ok, false);
 });

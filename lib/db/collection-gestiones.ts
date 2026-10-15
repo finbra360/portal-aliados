@@ -14,6 +14,7 @@ import {
   RESULTADOS,
   TIPOS_GESTION,
   puedeConsultarSaldo,
+  validarFechaSaldo,
   validarGestion,
   validarPausa,
   validarPromesa,
@@ -290,13 +291,18 @@ export interface SaldoAlDia {
 }
 
 /**
- * Pide a SIAC el saldo de UN crédito a hoy (ConsultarSaldoCredito). Es la
+ * Pide a SIAC el saldo de UN crédito (ConsultarSaldoCredito) a hoy o a la
+ * fecha que se indique; una fecha futura dice cuánto deberá ese día. Es la
  * única consulta individual que hace la plataforma: la dispara una persona,
  * con a lo más una por crédito cada MINUTOS_ENTRE_CONSULTAS_SALDO.
  */
-export async function consultarSaldoAlDia(p: { clientId: string; creditId: string; actor: string }): Promise<SaldoAlDia> {
+export async function consultarSaldoAlDia(p: { clientId: string; creditId: string; fechaCorte?: string; actor: string }): Promise<SaldoAlDia> {
   const config = getSiacConfig();
   if (!config) throw new GestionError("La conexión con SIAC no está configurada");
+  const hoy = fechaMexico();
+  const fecha = validarFechaSaldo(p.fechaCorte, hoy);
+  if (!fecha.ok) throw new GestionError(fecha.error);
+  const corte = fecha.fecha;
 
   const [cr] = await sql`
     SELECT cr.id, cr.no_credito, cr.numero_cliente,
@@ -308,14 +314,13 @@ export async function consultarSaldoAlDia(p: { clientId: string; creditId: strin
   const limite = puedeConsultarSaldo(cr.ultima ? new Date(cr.ultima) : null, new Date());
   if (!limite.ok) throw new GestionError(`Ya se consultó hace poco. Vuelve a intentar en ${limite.minutos} min.`);
 
-  const hoy = fechaMexico();
   const [run] = await sql`
-    INSERT INTO col_sync_runs (ambiente, tipo, fecha_corte, disparado_por) VALUES (${config.ambiente}, 'consulta', ${hoy}, ${p.actor}) RETURNING id
+    INSERT INTO col_sync_runs (ambiente, tipo, fecha_corte, disparado_por) VALUES (${config.ambiente}, 'consulta', ${corte}, ${p.actor}) RETURNING id
   `;
   const siac = new SiacClient(config, siacCallRecorder(run.id));
   let r;
   try {
-    r = await siac.consultarSaldoCredito(cr.no_credito, cr.numero_cliente, hoy);
+    r = await siac.consultarSaldoCredito(cr.no_credito, cr.numero_cliente, corte);
   } catch (e) {
     await sql`UPDATE col_sync_runs SET status = 'error', error_detalle = ${(e as Error).message}, llamadas_siac = ${siac.llamadas}, finished_at = now() WHERE id = ${run.id}`;
     throw new GestionError(`SIAC no respondió el saldo: ${(e as Error).message}`);
@@ -332,7 +337,7 @@ export async function consultarSaldoAlDia(p: { clientId: string; creditId: strin
   await transaccion(async (tx) => {
     const [row] = await tx`
       INSERT INTO col_saldo_consultas (credit_id, fecha_corte, saldo_vigente, saldo_vencido, total_pagar, saldo_actual, detalle, pedido_por, sync_run_id)
-      VALUES (${p.creditId}, ${hoy}, ${saldo.saldoVigente}, ${saldo.saldoVencido}, ${saldo.totalPagar}, ${saldo.saldoActual},
+      VALUES (${p.creditId}, ${corte}, ${saldo.saldoVigente}, ${saldo.saldoVencido}, ${saldo.totalPagar}, ${saldo.saldoActual},
               ${JSON.stringify(r)}::text::jsonb, ${p.actor}, ${run.id})
       RETURNING created_at
     `;
@@ -341,11 +346,11 @@ export async function consultarSaldoAlDia(p: { clientId: string; creditId: strin
       clientId: p.clientId,
       creditId: p.creditId,
       tipo: "saldo_consultado",
-      descripcion: `Saldo al día del crédito ${cr.no_credito}: vencido ${peso(saldo.saldoVencido)}, total a pagar ${peso(saldo.totalPagar)}`,
+      descripcion: `${corte === hoy ? "Saldo al día" : `Saldo al ${corte}`} del crédito ${cr.no_credito}: vencido ${peso(saldo.saldoVencido)}, total a pagar ${peso(saldo.totalPagar)}`,
       actor: p.actor,
     });
     await tx`UPDATE col_sync_runs SET status = 'completado', creditos_leidos = 1, llamadas_siac = ${siac.llamadas}, duracion_siac_ms = ${siac.duracionMs}, finished_at = now() WHERE id = ${run.id}`;
   });
-  await logAudit({ actorEmail: p.actor, action: "cobranza_saldo_al_dia", entityType: "col_credit", entityId: p.creditId, metadata: { clientId: p.clientId } });
-  return { fechaCorte: hoy, saldoVencido: saldo.saldoVencido, totalPagar: saldo.totalPagar, saldoActual: saldo.saldoActual, consultadoAt };
+  await logAudit({ actorEmail: p.actor, action: "cobranza_saldo_al_dia", entityType: "col_credit", entityId: p.creditId, metadata: { clientId: p.clientId, fechaCorte: corte } });
+  return { fechaCorte: corte, saldoVencido: saldo.saldoVencido, totalPagar: saldo.totalPagar, saldoActual: saldo.saldoActual, consultadoAt };
 }
