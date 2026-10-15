@@ -61,7 +61,8 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
              to_char(c.pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta,
              to_char(s.proximo_vencimiento, 'YYYY-MM-DD') AS proximo_vencimiento,
              to_char(s.fecha_ultimo_pago, 'YYYY-MM-DD') AS fecha_ultimo_pago,
-             k.vencido, k.veces, k.atraso
+             k.vencido, k.veces, k.atraso,
+             (SELECT row_to_json(a) FROM (SELECT banco, beneficiario, clabe FROM col_payment_accounts WHERE id = c.cuenta_pago_id AND activa) a) AS cuenta
       FROM col_credits cr
       JOIN col_clients c ON c.id = cr.client_id
       JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}
@@ -115,6 +116,7 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
       contactoCobranzaId: c.contacto_cobranza_id,
       yaSeIntento: etapa ? enviados.has(dedupeKey(c.id, etapa, c.proximo_vencimiento)) : false,
       monto: montos.get(c.id) ?? null,
+      cuenta: c.cuenta,
     };
   });
 }

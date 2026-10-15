@@ -1,9 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { decidirPreventivo, etapaPara, fechaLarga, motivoSemaforo, semaforo, type PreventivoCandidate } from "./preventivos.ts";
+import {
+  EJEMPLO_PREVENTIVA,
+  PLANTILLAS_PREVENTIVAS,
+  VARIABLES_PREVENTIVA,
+  decidirPreventivo,
+  etapaPara,
+  fechaLarga,
+  motivoSemaforo,
+  semaforo,
+  type PreventivoCandidate,
+} from "./preventivos.ts";
+import { contarVariables } from "./whatsapp-mora.ts";
 
 const HOY = "2026-10-15";
-const ACTIVAS = ["recordatorio_pago_5d", "recordatorio_pago_1d", "recordatorio_pago_dia"];
+const ACTIVAS = ["finbra_preventivo_5d", "finbra_preventivo_1d", "finbra_preventivo_dia"];
+const CLABE = "032180000118359719";
 
 const cand = (over: Partial<PreventivoCandidate> = {}): PreventivoCandidate => ({
   creditId: "cr1",
@@ -22,6 +34,7 @@ const cand = (over: Partial<PreventivoCandidate> = {}): PreventivoCandidate => (
   contactoCobranzaId: null,
   yaSeIntento: false,
   monto: 18500,
+  cuenta: { banco: "Banco Ficticio", beneficiario: "Finbra Demo", clabe: CLABE },
   ...over,
 });
 const decidir = (c: PreventivoCandidate) => decidirPreventivo(c, { hoy: HOY, plantillasActivas: ACTIVAS });
@@ -60,8 +73,8 @@ test("preventivo: arma la plantilla del día con nombre, monto y fecha", () => {
     enviar: true,
     contactId: "k1",
     telefono: "525511112222",
-    plantilla: "recordatorio_pago_dia",
-    parametros: ["EMPRESA FICTICIA", "18,500.00", "15 de octubre de 2026"],
+    plantilla: "finbra_preventivo_dia",
+    parametros: ["EMPRESA FICTICIA", "crédito 2001", "18,500.00", "15 de octubre de 2026", "Banco Ficticio", "Finbra Demo", CLABE],
   });
   assert.equal(fechaLarga("2026-01-05"), "5 de enero de 2026");
 });
@@ -77,11 +90,25 @@ test("preventivo: a quién no se le escribe", () => {
   assert.match(motivo(cand({ pausaHasta: HOY }))!, /pausada/);
   assert.match(motivo(cand({ proximoVencimiento: "2026-10-20" }))!, /rojos/, "verde a 5 días: no");
   assert.equal(decidir(cand({ proximoVencimiento: "2026-10-20", historial: { vecesMora: 5, atrasoMaximo: 40 } }))!.enviar, true, "rojo a 5 días: sí");
+  assert.match(motivo(cand({ cuenta: null }))!, /cuenta de pago/);
   assert.match(motivo(cand({ contactos: [] }))!, /WhatsApp/);
   assert.match(motivo(cand({ yaSeIntento: true }))!, /Ya se le envió/);
   assert.match(motivo(cand({ monto: null }))!, /pendiente de SIAC/);
   const sinPlantilla = decidirPreventivo(cand(), { hoy: HOY, plantillasActivas: [] });
   assert.match(sinPlantilla && !sinPlantilla.enviar ? sinPlantilla.motivo : "", /no está activa/);
+});
+
+test("plantillas preventivas que se dan de alta en Meta", () => {
+  assert.deepEqual(PLANTILLAS_PREVENTIVAS.map((p) => p.nombre), ACTIVAS);
+  for (const p of PLANTILLAS_PREVENTIVAS) {
+    assert.equal(contarVariables(p.cuerpo), VARIABLES_PREVENTIVA.length, p.nombre);
+    const orden = [...p.cuerpo.matchAll(/\{\{(\d+)\}\}/g)].map((m) => Number(m[1]));
+    assert.deepEqual(orden, [1, 2, 3, 4, 5, 6, 7], `${p.nombre}: aparecen en orden`);
+    assert.doesNotMatch(p.cuerpo, /^\{\{|\}\}$/, `${p.nombre}: no empieza ni termina en variable`);
+    assert.ok(p.cuerpo.length <= 1024);
+    assert.doesNotMatch(p.cuerpo, /deposito|escribenos|aqui|manana|situacion/, "con acentos");
+  }
+  assert.equal(EJEMPLO_PREVENTIVA.length, VARIABLES_PREVENTIVA.length);
 });
 
 test("preventivo: avisa si pagó hace poco (posible pago adelantado)", () => {

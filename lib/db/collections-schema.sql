@@ -423,13 +423,17 @@ ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS cuerpo TEXT;
 ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS motivo_rechazo TEXT;
 ALTER TABLE col_wa_templates ADD COLUMN IF NOT EXISTS meta_revisada_at TIMESTAMPTZ;
 
--- 2026-10-15: plantillas preventivas que ya usa el flujo de n8n. Se activan
--- desde el backoffice después de "Revisar con Meta".
+-- 2026-10-15: plantillas preventivas del backoffice, con la cuenta de pago del
+-- cliente (ver PLANTILLAS_PREVENTIVAS en lib/collections/preventivos.ts). Las
+-- recordatorio_pago_* de n8n mandaban a buscar la cuenta al correo: quedan como
+-- 'otro' (las sigue usando n8n hasta el corte) y el backoffice no las envía.
 INSERT INTO col_wa_templates (nombre, uso, variables, orden) VALUES
-  ('recordatorio_pago_5d', 'preventiva', '["nombre", "monto", "fecha"]', 11),
-  ('recordatorio_pago_1d', 'preventiva', '["nombre", "monto", "fecha"]', 12),
-  ('recordatorio_pago_dia', 'preventiva', '["nombre", "monto", "fecha"]', 13)
+  ('finbra_preventivo_5d', 'preventiva', '["nombre", "credito", "monto", "fecha", "banco", "beneficiario", "clabe"]', 21),
+  ('finbra_preventivo_1d', 'preventiva', '["nombre", "credito", "monto", "fecha", "banco", "beneficiario", "clabe"]', 22),
+  ('finbra_preventivo_dia', 'preventiva', '["nombre", "credito", "monto", "fecha", "banco", "beneficiario", "clabe"]', 23)
 ON CONFLICT (nombre) DO NOTHING;
+UPDATE col_wa_templates SET uso = 'otro', activa = false
+WHERE nombre IN ('recordatorio_pago_5d', 'recordatorio_pago_1d', 'recordatorio_pago_dia') AND uso = 'preventiva';
 
 -- 2026-10-14: las plantillas de mora llevan la cuenta de pago del cliente.
 -- Solo se actualizan las que nunca se activaron.

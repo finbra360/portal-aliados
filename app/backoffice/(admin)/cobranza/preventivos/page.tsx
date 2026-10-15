@@ -2,12 +2,12 @@ import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { previewPreventivos } from "@/lib/db/whatsapp-preventivo";
-import { ETAPAS, type Semaforo } from "@/lib/collections/preventivos";
+import { ETAPAS, EJEMPLO_PREVENTIVA, PLANTILLAS_PREVENTIVAS, type Semaforo } from "@/lib/collections/preventivos";
 import { motivoNoActivable, renderPlantilla } from "@/lib/collections/whatsapp-mora";
 import { codigoDeError } from "@/lib/collections/errors";
 import { formatFecha, formatTelefono } from "@/lib/format";
 import Card from "@/components/ui/Card";
-import { EnviarAhora, EnvioToggle, PlantillaToggle } from "../whatsapp/WhatsAppControls";
+import { CrearPlantillas, EnviarAhora, EnvioToggle, PlantillaToggle } from "../whatsapp/WhatsAppControls";
 
 /** "Sin WhatsApp válido" → "sin WhatsApp válido": solo la primera letra, para no perder siglas (SIAC, CLABE). */
 const minusculaInicial = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
@@ -40,6 +40,8 @@ export default async function PreventivosPage() {
 
   const salen = p.filas.filter((f) => f.decision.enviar);
   const cuerpoDe = new Map(p.plantillas.map((t) => [t.nombre, t.cuerpo]));
+  // Revisadas con Meta y sin texto = no existen allá todavía.
+  const faltanEnMeta = p.plantillas.filter((t) => t.revisadaAt && !t.cuerpo).map((t) => t.nombre);
 
   return (
     <div className="space-y-6">
@@ -81,7 +83,7 @@ export default async function PreventivosPage() {
       <Card>
         <h2 className="mb-1 text-lg font-bold">Plantillas</h2>
         <p className="mb-3 text-sm text-finbra-gray">
-          Las mismas que usa n8n, ya aprobadas en Meta. Para ver su estado y activarlas, usa{" "}
+          Llevan la cuenta de pago del cliente en el mismo mensaje. Para actualizar su estado, usa{" "}
           <Link href="/backoffice/cobranza/whatsapp" className="font-medium text-finbra-purple hover:underline">&quot;Revisar con Meta&quot; en WhatsApp</Link>.
         </p>
         <ul className="divide-y divide-black/5">
@@ -99,6 +101,24 @@ export default async function PreventivosPage() {
             </li>
           ))}
         </ul>
+        {esSuperAdmin && faltanEnMeta.length > 0 && (
+          <div className="mt-4 space-y-3 border-t border-black/5 pt-4">
+            <p className="text-sm">
+              {faltanEnMeta.length === 1 ? "Esta plantilla no existe" : "Estas plantillas no existen"} en Meta todavía. Se pueden dar de alta desde aquí, con estos
+              textos, y quedan en revisión de Meta (de minutos a 24 horas):
+            </p>
+            {PLANTILLAS_PREVENTIVAS.filter((t) => faltanEnMeta.includes(t.nombre)).map((t) => (
+              <div key={t.nombre} className="text-sm">
+                <p className="font-mono text-xs text-finbra-gray">{t.nombre}</p>
+                <p className="rounded-lg bg-black/[0.03] p-2">{t.cuerpo}</p>
+              </div>
+            ))}
+            <p className="text-xs text-finbra-gray">
+              Ejemplos que se mandan a Meta: {EJEMPLO_PREVENTIVA.map((e, i) => `{{${i + 1}}} ${e}`).join(", ")}.
+            </p>
+            <CrearPlantillas faltan={faltanEnMeta} />
+          </div>
+        )}
       </Card>
 
       <Card className="p-0">
