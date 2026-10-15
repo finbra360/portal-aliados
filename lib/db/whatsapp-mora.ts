@@ -4,6 +4,7 @@
 // la base y nunca llega a Meta.
 
 import { sql } from "@/lib/db";
+import { EJEMPLO_PREVENTIVA, PLANTILLAS_PREVENTIVAS } from "@/lib/collections/preventivos";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getSetting, openAlert, peso } from "@/lib/collections/store";
@@ -482,26 +483,30 @@ export async function enviarPrueba(p: { telefono: string; plantillaId: number; a
 }
 
 /**
- * Da de alta en Meta las plantillas de mora que todavía no existen allá (con los
- * textos de PLANTILLAS_MORA) y las manda a revisión. Las que ya existen no se
+ * Da de alta en Meta las plantillas de mora y preventivas que todavía no existen
+ * allá (con los textos de PLANTILLAS_MORA y PLANTILLAS_PREVENTIVAS) y las manda a revisión. Las que ya existen no se
  * tocan. Después actualiza su estado con revisarConMeta.
  */
 export async function crearPlantillasEnMeta(p: { actor: string }): Promise<{ creadas: string[]; yaExistian: string[]; avisos: string[] }> {
   const config = getWhatsAppConfig();
   if (!config) throw new WhatsAppMoraError("Faltan las variables de WhatsApp en Vercel");
   const cuentaId = await obtenerCuentaWhatsApp(config);
-  const enMeta = await consultarPlantillas(config, cuentaId, PLANTILLAS_MORA.map((t) => t.nombre));
+  const definidas = [
+    ...PLANTILLAS_MORA.map((t) => ({ ...t, ejemplo: EJEMPLO_MORA })),
+    ...PLANTILLAS_PREVENTIVAS.map((t) => ({ ...t, ejemplo: EJEMPLO_PREVENTIVA })),
+  ];
+  const enMeta = await consultarPlantillas(config, cuentaId, definidas.map((t) => t.nombre));
 
   const creadas: string[] = [];
   const yaExistian: string[] = [];
   const avisos: string[] = [];
-  for (const t of PLANTILLAS_MORA) {
+  for (const t of definidas) {
     if (enMeta.some((m) => m.nombre === t.nombre)) {
       yaExistian.push(t.nombre);
       continue;
     }
     try {
-      const r = await crearPlantilla(config, cuentaId, { nombre: t.nombre, idioma: "es_MX", categoria: "UTILITY", cuerpo: t.cuerpo, ejemplo: EJEMPLO_MORA });
+      const r = await crearPlantilla(config, cuentaId, { nombre: t.nombre, idioma: "es_MX", categoria: "UTILITY", cuerpo: t.cuerpo, ejemplo: t.ejemplo });
       creadas.push(t.nombre);
       if (r.categoria && r.categoria !== "UTILITY") avisos.push(`${t.nombre}: Meta la clasificó como ${r.categoria}, no como Utilidad`);
     } catch (e) {

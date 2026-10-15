@@ -11,16 +11,39 @@ import { limpiarParametro } from "./whatsapp-mora.ts";
 export type Etapa = "5d" | "1d" | "dia";
 
 /**
- * Las plantillas que ya usa n8n, aprobadas en Meta. Variables:
- * {{1}} nombre, {{2}} monto de la mensualidad, {{3}} fecha de vencimiento.
+ * Plantillas propias del backoffice, con la cuenta de pago del cliente dentro
+ * del mensaje (las recordatorio_pago_* de n8n mandaban a buscarla al correo).
  */
 export const ETAPAS: Record<Etapa, { dias: number; plantilla: string; etiqueta: string }> = {
-  "5d": { dias: 5, plantilla: "recordatorio_pago_5d", etiqueta: "5 días antes" },
-  "1d": { dias: 1, plantilla: "recordatorio_pago_1d", etiqueta: "1 día antes" },
-  dia: { dias: 0, plantilla: "recordatorio_pago_dia", etiqueta: "el día del pago" },
+  "5d": { dias: 5, plantilla: "finbra_preventivo_5d", etiqueta: "5 días antes" },
+  "1d": { dias: 1, plantilla: "finbra_preventivo_1d", etiqueta: "1 día antes" },
+  dia: { dias: 0, plantilla: "finbra_preventivo_dia", etiqueta: "el día del pago" },
 };
 
-export const VARIABLES_PREVENTIVA = ["nombre", "monto", "fecha"] as const;
+/** {{1}} nombre, {{2}} crédito, {{3}} monto, {{4}} fecha, {{5}} banco, {{6}} beneficiario, {{7}} CLABE. */
+export const VARIABLES_PREVENTIVA = ["nombre", "credito", "monto", "fecha", "banco", "beneficiario", "clabe"] as const;
+
+/** Textos que el backoffice da de alta en Meta ("Crear plantillas en Meta"). Utilidad, es_MX. */
+export const PLANTILLAS_PREVENTIVAS: { nombre: string; cuerpo: string }[] = [
+  {
+    nombre: "finbra_preventivo_5d",
+    cuerpo:
+      "Hola {{1}}, te recordamos que el pago de tu {{2}} con Finbra por ${{3}} MXN vence el {{4}}. Puedes pagar por transferencia a {{5}}, a nombre de {{6}}, CLABE {{7}}, anotando tu número de crédito en el concepto. Si tienes dudas, responde este mensaje.",
+  },
+  {
+    nombre: "finbra_preventivo_1d",
+    cuerpo:
+      "Hola {{1}}, el pago de tu {{2}} con Finbra por ${{3}} MXN vence mañana, {{4}}. Transfiere a {{5}}, a nombre de {{6}}, CLABE {{7}}, y anota tu número de crédito en el concepto. Si ya realizaste tu pago, no tomes en cuenta este mensaje.",
+  },
+  {
+    nombre: "finbra_preventivo_dia",
+    cuerpo:
+      "Hola {{1}}, hoy vence el pago de tu {{2}} con Finbra por ${{3}} MXN ({{4}}). Puedes transferir a {{5}}, a nombre de {{6}}, CLABE {{7}}, con tu número de crédito en el concepto. Si ya pagaste, ¡gracias! Si necesitas apoyo, responde este mensaje.",
+  },
+];
+
+/** Ejemplos ficticios de las 7 variables, para la revisión de Meta. */
+export const EJEMPLO_PREVENTIVA = ["Juan Pérez", "crédito 2001", "18,500.00", "20 de octubre de 2026", "BBVA", "Litore Avances SAPI de CV SOFOM ENR", "032180000118359719"];
 
 export type Semaforo = "verde" | "amarillo" | "rojo";
 
@@ -88,6 +111,8 @@ export interface PreventivoCandidate {
   yaSeIntento: boolean;
   /** Monto de la mensualidad según SIAC, o null si SIAC todavía no lo da. */
   monto: number | null;
+  /** Cuenta de pago del cliente (Cuentas de pago), o null si no tiene. */
+  cuenta: { banco: string; beneficiario: string; clabe: string } | null;
 }
 
 export type PreventivoDecision = { etapa: Etapa; semaforo: Semaforo; aviso: string | null } & (
@@ -125,6 +150,7 @@ export function decidirPreventivo(
   if (c.enMora) return no("En mora: recibe el recordatorio de mora");
   const porSemaforo = motivoSemaforo(etapa, s);
   if (porSemaforo) return no(porSemaforo);
+  if (!c.cuenta) return no("Sin cuenta de pago");
   const rec = chooseRecipient(c.contactos, c.contactoCobranzaId);
   const k = c.contactos.find((x) => x.id === rec.contactId);
   if (!k?.telefonoWhatsapp) return no("Sin WhatsApp válido del deudor");
@@ -141,7 +167,15 @@ export function decidirPreventivo(
     contactId: k.id,
     telefono: k.telefonoWhatsapp,
     plantilla,
-    parametros: [k.nombre || c.nombre, montoTexto(c.monto), fechaLarga(c.proximoVencimiento!)].map(limpiarParametro),
+    parametros: [
+      k.nombre || c.nombre,
+      `crédito ${c.noCredito}`,
+      montoTexto(c.monto),
+      fechaLarga(c.proximoVencimiento!),
+      c.cuenta.banco,
+      c.cuenta.beneficiario,
+      c.cuenta.clabe,
+    ].map(limpiarParametro),
   };
 }
 
