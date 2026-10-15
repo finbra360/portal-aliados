@@ -6,7 +6,7 @@ import type { FilaImportacion } from "@/lib/brokers/importar";
 import { importarBrokersAction, previsualizarImportacionAction, type BrokerActionResult } from "../actions";
 import { Aviso, boton, botonSecundario } from "../BrokerForms";
 
-const PLANTILLA = "Email,Nombre completo,Telefono,ID Broker\nana.perez@ejemplo.com,Ana Pérez López,5512345678,\n";
+const PLANTILLA = "Email,Nombre completo,Telefono,ID Broker\nana.perez@ejemplo.com,Ana Pérez López,5512345678,FAPBR001\n";
 
 /** Excel guarda "CSV" en Windows-1252 y "CSV UTF-8" en UTF-8: se aceptan los dos. */
 async function leerArchivo(archivo: File): Promise<string> {
@@ -97,7 +97,7 @@ export default function ImportarPanel() {
             }}
             rows={8}
             spellCheck={false}
-            placeholder={"Email\tNombre completo\tTelefono\tID Broker\nana.perez@ejemplo.com\tAna Pérez López\t5512345678\t"}
+            placeholder={"Email\tNombre completo\tTelefono\tID Broker\nana.perez@ejemplo.com\tAna Pérez López\t5512345678\tFAPBR001"}
             className="w-full rounded-lg border border-black/10 px-3 py-2 font-mono text-xs"
           />
         </label>

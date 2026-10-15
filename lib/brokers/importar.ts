@@ -85,7 +85,7 @@ const SINONIMOS: Record<"email" | "nombre" | "telefono" | "id", string[]> = {
   email: ["email", "correo", "e-mail", "correo electronico", "mail"],
   nombre: ["nombre", "nombre completo", "name", "broker", "aliado"],
   telefono: ["telefono", "celular", "whatsapp", "tel", "movil", "numero"],
-  id: ["id", "id broker", "broker id", "id_broker", "clave"],
+  id: ["id", "id broker", "broker id", "id_broker", "clave", "codigo", "codigo broker", "id lendia", "clave lendia", "codigo lendia"],
 };
 
 /** Qué columna es cada dato, por su encabezado. */
@@ -100,14 +100,23 @@ export function mapearColumnas(encabezados: string[]): { email: number; nombre: 
   return { email, nombre, telefono: buscar("telefono"), id: buscar("id") };
 }
 
-export const ID_BROKER = /^B\d{3,}$/;
+/**
+ * Forma de un ID de broker: el código de Lendia (FAPBR044) o el B### que
+ * genera el backoffice (y que traía el Sheet). Igual que el CHECK de
+ * brokers-schema.sql.
+ */
+export const ID_BROKER = /^[A-Z0-9][A-Z0-9-]{1,29}$/;
 
-/** "b7" o " B007 " → "B007". null si viene vacío; "error" si no tiene forma de ID. */
+/**
+ * " fapbr044 " → "FAPBR044"; "b7" → "B007". null si viene vacío; "error" si
+ * no tiene forma de ID.
+ */
 export function normalizarId(texto: string | null | undefined): string | null | "error" {
   const t = String(texto ?? "").trim().toUpperCase();
   if (!t) return null;
-  const m = /^B(\d+)$/.exec(t);
-  return m ? `B${m[1].padStart(3, "0")}` : "error";
+  const b = /^B(\d+)$/.exec(t);
+  if (b) return `B${b[1].padStart(3, "0")}`;
+  return ID_BROKER.test(t) ? t : "error";
 }
 
 export interface FilaImportacion {
@@ -147,7 +156,7 @@ export function revisarImportacion(texto: string, existentes: Map<string, string
     const v = validarBroker(crudo);
     if (!v.ok) return error(v.error);
     const id = normalizarId(celda(cols.id));
-    if (id === "error") return error("El ID debe tener la forma B001");
+    if (id === "error") return error("El ID solo puede llevar letras, números y guiones (por ejemplo FAPBR044)");
     const fila = { fila: n, email: v.email, nombre: v.nombre, telefono: v.telefono, id };
 
     const actual = existentes.get(v.email);

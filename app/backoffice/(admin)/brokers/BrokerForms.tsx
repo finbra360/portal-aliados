@@ -61,7 +61,11 @@ export function AgregarBroker() {
       {abierto && (
         <form key={form} onSubmit={enviarSinBorrar(accion)} className="space-y-3 rounded-xl border border-dashed border-black/10 bg-white p-4">
           <Campos />
-          <p className="text-xs text-finbra-gray">El ID (B001, B002…) se asigna solo. Con el correo entra al portal de aliados.</p>
+          <label className="block max-w-xs space-y-1 text-sm">
+            <span className="text-finbra-gray">ID (código de Lendia, opcional)</span>
+            <input name="id" autoComplete="off" placeholder="Ej. FAPBR044" maxLength={30} className={`${input} uppercase`} />
+          </label>
+          <p className="text-xs text-finbra-gray">Si no tiene código de Lendia, el ID se asigna solo (B001, B002…). No se puede cambiar después. Con el correo entra al portal de aliados.</p>
           <div className="flex flex-wrap items-center gap-3">
             <button type="submit" disabled={guardando} className={boton}>{guardando ? "Guardando…" : "Dar de alta"}</button>
             <Aviso state={state} />
