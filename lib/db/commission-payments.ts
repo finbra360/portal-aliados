@@ -6,6 +6,8 @@ export type CommissionPaymentStatus = "generada" | "aprobada" | "pagada";
 export interface CommissionPayment {
   id: number;
   brokerId: string;
+  /** Operación (broker_colocaciones.id). null en los pagos anteriores que no se pudieron ligar con certeza. */
+  colocacionId: number | null;
   operacionFecha: string;
   operacionMonto: number;
   montoComision: number;
@@ -18,6 +20,7 @@ function mapRow(r: Record<string, unknown>): CommissionPayment {
   return {
     id: r.id as number,
     brokerId: r.broker_id as string,
+    colocacionId: r.colocacion_id === null || r.colocacion_id === undefined ? null : Number(r.colocacion_id),
     operacionFecha: r.operacion_fecha as string,
     operacionMonto: Number(r.operacion_monto),
     montoComision: Number(r.monto_comision),
@@ -36,24 +39,23 @@ export async function listCommissionPayments(brokerId?: string): Promise<Commiss
   return rows.map(mapRow);
 }
 
-/** Upsert: una fila por (broker, operación). No sobrescribe el monto una vez pagada. */
+/** Una fila por operación: si ya existe se regresa tal cual (no se pisa su monto ni su estatus). */
 export async function upsertCommissionPayment(params: {
   brokerId: string;
+  colocacionId: number;
   operacionFecha: string;
   operacionMonto: number;
   montoComision: number;
   actorEmail: string;
 }): Promise<CommissionPayment> {
   const rows = await sql`
-    INSERT INTO commission_payments (broker_id, operacion_fecha, operacion_monto, monto_comision, created_by)
-    VALUES (${params.brokerId}, ${params.operacionFecha}, ${params.operacionMonto}, ${params.montoComision}, ${params.actorEmail})
-    ON CONFLICT (broker_id, operacion_fecha) DO NOTHING
+    INSERT INTO commission_payments (broker_id, colocacion_id, operacion_fecha, operacion_monto, monto_comision, created_by)
+    VALUES (${params.brokerId}, ${params.colocacionId}, ${params.operacionFecha}, ${params.operacionMonto}, ${params.montoComision}, ${params.actorEmail})
+    ON CONFLICT (colocacion_id) WHERE colocacion_id IS NOT NULL DO NOTHING
     RETURNING *
   `;
   if (rows[0]) return mapRow(rows[0]);
-  const existing = await sql`
-    SELECT * FROM commission_payments WHERE broker_id = ${params.brokerId} AND operacion_fecha = ${params.operacionFecha}
-  `;
+  const existing = await sql`SELECT * FROM commission_payments WHERE colocacion_id = ${params.colocacionId}`;
   return mapRow(existing[0]);
 }
 

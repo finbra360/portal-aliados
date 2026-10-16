@@ -7,6 +7,7 @@ import { upsertCommissionPayment, setCommissionPaymentStatus, type CommissionPay
 
 export async function setCommissionStatusAction(
   brokerId: string,
+  colocacionId: number,
   operacionFecha: string,
   operacionMonto: number,
   montoComision: number,
@@ -17,6 +18,7 @@ export async function setCommissionStatusAction(
 
   const record = await upsertCommissionPayment({
     brokerId,
+    colocacionId,
     operacionFecha,
     operacionMonto,
     montoComision,
@@ -24,4 +26,5 @@ export async function setCommissionStatusAction(
   });
   await setCommissionPaymentStatus({ id: record.id, estatus, actorEmail: admin.email });
   revalidatePath("/backoffice/comisiones");
+  revalidatePath("/comisiones");
 }

@@ -1,4 +1,4 @@
-import type { OperacionFondeada } from "./n8n";
+import type { OperacionFondeada } from "./n8n.ts";
 
 /**
  * Tabla de comisión del broker según el % de comisión de apertura pactado
@@ -62,4 +62,51 @@ export function summarizeCommissions(operaciones: OperacionFondeada[]): Commissi
     totalPendienteDefinir: pendientes.reduce((sum, l) => sum + l.operacion.monto, 0),
     countPendienteDefinir: pendientes.length,
   };
+}
+
+// --- Estatus de pago de cada comisión ---------------------------------------
+
+export type EstatusPago = "generada" | "aprobada" | "pagada" | "sin_definir";
+
+/** Lo mínimo de un pago registrado que hace falta para cruzarlo con una operación. */
+export interface PagoRegistrado {
+  colocacionId: number | null;
+  operacionFecha: string;
+  operacionMonto: number;
+  estatus: "generada" | "aprobada" | "pagada";
+  fechaPago: string | null;
+}
+
+/**
+ * El pago de una operación: primero por su ID; si no, los pagos anteriores que
+ * no se pudieron ligar (colocacionId null) se buscan por fecha y monto.
+ */
+export function buscarPago<P extends PagoRegistrado>(pagos: P[], op: OperacionFondeada): P | undefined {
+  if (op.id !== undefined) {
+    const porId = pagos.find((p) => p.colocacionId === op.id);
+    if (porId) return porId;
+  }
+  return pagos.find((p) => p.colocacionId === null && p.operacionFecha === op.fecha && p.operacionMonto === op.monto);
+}
+
+/** Sin % de apertura reconocido no hay comisión que pagar; con él, lo que diga el pago (o "generada" si aún no hay registro). */
+export function estatusDeLinea(line: CommissionLine, pago: PagoRegistrado | undefined): EstatusPago {
+  if (line.brokerPct === null) return "sin_definir";
+  return pago?.estatus ?? "generada";
+}
+
+export interface TotalesPorEstatus {
+  /** Generada o aprobada: ya es del broker pero todavía no se le paga. */
+  porPagar: number;
+  pagado: number;
+}
+
+export function totalesPorEstatus(items: { line: CommissionLine; estatus: EstatusPago }[]): TotalesPorEstatus {
+  let porPagar = 0;
+  let pagado = 0;
+  for (const { line, estatus } of items) {
+    if (estatus === "pagada") pagado += line.montoTotal;
+    else if (estatus === "generada" || estatus === "aprobada") porPagar += line.montoTotal;
+  }
+  return { porPagar, pagado };
 }
