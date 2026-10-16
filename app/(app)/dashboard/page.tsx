@@ -97,7 +97,11 @@ export default async function DashboardPage() {
           </div>
           <p className="mt-1 text-3xl font-bold text-finbra-purple">{streak}</p>
           <p className="mt-2 text-xs text-finbra-gray">
-            {streak > 0 ? "meses seguidos colocando" : "coloca este mes para iniciar tu racha"}
+            {streak === 0
+              ? "coloca este mes para iniciar tu racha"
+              : mesActual.monto > 0
+                ? "meses seguidos colocando"
+                : "meses seguidos — coloca este mes para mantenerla"}
           </p>
         </Card>
 

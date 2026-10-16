@@ -1,13 +1,21 @@
 import { cookies } from "next/headers";
 import { getStats } from "@/lib/db/colocacion";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
-import { summarizeCommissions } from "@/lib/commissions";
+import { buscarPago, estatusDeLinea, summarizeCommissions, totalesPorEstatus, type EstatusPago } from "@/lib/commissions";
+import { listCommissionPayments } from "@/lib/db/commission-payments";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import StatCard from "@/components/ui/StatCard";
 import EmptyState from "@/components/ui/EmptyState";
 import Badge from "@/components/ui/Badge";
 import { IconCoins } from "@/components/ui/icons";
+
+const ETIQUETA_ESTATUS: Record<EstatusPago, { texto: string; variante: "success" | "warning" | "gray" | "purple" }> = {
+  generada: { texto: "Generada", variante: "gray" },
+  aprobada: { texto: "Aprobada · por pagar", variante: "purple" },
+  pagada: { texto: "Pagada", variante: "success" },
+  sin_definir: { texto: "Falta % de apertura", variante: "warning" },
+};
 
 export default async function ComisionesPage() {
   const cookieStore = await cookies();
@@ -19,9 +27,10 @@ export default async function ComisionesPage() {
   }
 
   let stats: Awaited<ReturnType<typeof getStats>> | null = null;
+  let pagos: Awaited<ReturnType<typeof listCommissionPayments>> = [];
   let loadError = false;
   try {
-    stats = await getStats(session.brokerId);
+    [stats, pagos] = await Promise.all([getStats(session.brokerId), listCommissionPayments(session.brokerId)]);
   } catch {
     loadError = true;
   }
@@ -35,6 +44,11 @@ export default async function ComisionesPage() {
   }
 
   const summary = summarizeCommissions(stats.operaciones);
+  const lineas = summary.lines.map((line) => {
+    const pago = buscarPago(pagos, line.operacion);
+    return { line, pago, estatus: estatusDeLinea(line, pago) };
+  });
+  const totales = totalesPorEstatus(lineas);
 
   return (
     <div className="space-y-6">
@@ -48,17 +62,18 @@ export default async function ComisionesPage() {
         />
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-3">
             <StatCard label="Comisión total generada" value={formatCurrency(summary.totalGenerado)} icon={<IconCoins />} />
+            <StatCard label="Por pagar" value={formatCurrency(totales.porPagar)} sublabel="Generada o aprobada, aún sin pago" />
             <StatCard
-              label="Operaciones colocadas"
-              value={String(stats.operaciones.length)}
+              label="Ya pagado"
+              value={formatCurrency(totales.pagado)}
               sublabel={summary.countPendienteDefinir > 0 ? `${summary.countPendienteDefinir} sin % de apertura capturado` : undefined}
             />
           </div>
 
           <Card className="overflow-x-auto p-0">
-            <table className="w-full min-w-[560px] text-left text-sm">
+            <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                   <th className="px-6 py-3">Fecha</th>
@@ -67,11 +82,12 @@ export default async function ComisionesPage() {
                   <th className="px-6 py-3">Comisión</th>
                   <th className="px-6 py-3">Bono pagado</th>
                   <th className="px-6 py-3">Total</th>
+                  <th className="px-6 py-3">Estatus</th>
                 </tr>
               </thead>
               <tbody>
-                {summary.lines.map((line, idx) => (
-                  <tr key={`${line.operacion.fecha}-${idx}`} className="border-b border-black/5 last:border-0">
+                {lineas.map(({ line, pago, estatus }, idx) => (
+                  <tr key={line.operacion.id ?? `${line.operacion.fecha}-${idx}`} className="border-b border-black/5 last:border-0">
                     <td className="px-6 py-4">{line.operacion.fecha}</td>
                     <td className="px-6 py-4">{formatCurrency(line.operacion.monto)}</td>
                     <td className="px-6 py-4">
@@ -90,6 +106,12 @@ export default async function ComisionesPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 font-semibold">{formatCurrency(line.montoTotal)}</td>
+                    <td className="px-6 py-4">
+                      <Badge variant={ETIQUETA_ESTATUS[estatus].variante}>{ETIQUETA_ESTATUS[estatus].texto}</Badge>
+                      {estatus === "pagada" && pago?.fechaPago && (
+                        <span className="mt-1 block text-xs text-finbra-gray">{pago.fechaPago.slice(0, 10)}</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -104,11 +126,6 @@ export default async function ComisionesPage() {
           )}
         </>
       )}
-
-      <EmptyState
-        title="Estatus de pago — próximamente"
-        description="Aquí vas a poder ver si tu comisión ya generada está pendiente de pago o ya fue pagada, en cuanto conectemos esa información."
-      />
     </div>
   );
 }

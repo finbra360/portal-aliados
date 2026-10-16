@@ -1,4 +1,4 @@
-import { summarizeCommissions } from "@/lib/commissions";
+import { buscarPago, estatusDeLinea, summarizeCommissions, type EstatusPago } from "@/lib/commissions";
 import { getLeaderboard, getStats } from "@/lib/db/colocacion";
 import { listCommissionPayments } from "@/lib/db/commission-payments";
 import { formatCurrency } from "@/lib/format";
@@ -10,13 +10,14 @@ import CommissionStatusSelect from "./CommissionStatusSelect";
 export default async function BackofficeComisionesPage() {
   let loadError = false;
   let rows: {
+    colocacionId: number | null;
     brokerId: string;
     brokerNombre: string;
     fecha: string;
     monto: number;
     brokerPct: number | null;
     montoTotal: number;
-    estatus: "generada" | "aprobada" | "pagada" | "sin_definir";
+    estatus: EstatusPago;
   }[] = [];
 
   try {
@@ -28,15 +29,16 @@ export default async function BackofficeComisionesPage() {
 
     rows = allStats.flatMap(({ broker, stats }) =>
       summarizeCommissions(stats.operaciones).lines.map((line) => {
-        const payment = payments.find((p) => p.brokerId === broker.brokerId && p.operacionFecha === line.operacion.fecha);
+        const payment = buscarPago(payments.filter((p) => p.brokerId === broker.brokerId), line.operacion);
         return {
+          colocacionId: line.operacion.id ?? null,
           brokerId: broker.brokerId,
           brokerNombre: broker.nombre,
           fecha: line.operacion.fecha,
           monto: line.operacion.monto,
           brokerPct: line.brokerPct,
           montoTotal: line.montoTotal,
-          estatus: line.brokerPct === null ? ("sin_definir" as const) : payment?.estatus ?? "generada",
+          estatus: estatusDeLinea(line, payment),
         };
       }),
     );
@@ -75,19 +77,19 @@ export default async function BackofficeComisionesPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={`${r.brokerId}-${r.fecha}`} className="border-b border-black/5 last:border-0">
+            {rows.map((r, i) => (
+              <tr key={r.colocacionId ?? `${r.brokerId}-${r.fecha}-${i}`} className="border-b border-black/5 last:border-0">
                 <td className="px-6 py-4">{r.brokerNombre}</td>
                 <td className="px-6 py-4">{r.fecha}</td>
                 <td className="px-6 py-4">{formatCurrency(r.monto)}</td>
                 <td className="px-6 py-4 font-semibold">{formatCurrency(r.montoTotal)}</td>
                 <td className="px-6 py-4">
-                  {r.estatus === "sin_definir" ? (
-                    <Badge variant="warning">% apertura sin definir</Badge>
+                  {r.estatus === "sin_definir" || r.colocacionId === null ? (
+                    <Badge variant="warning">{r.estatus === "sin_definir" ? "% apertura sin definir" : "Sin ID de operación"}</Badge>
                   ) : (
                     <CommissionStatusSelect
                       current={r.estatus}
-                      onChange={setCommissionStatusAction.bind(null, r.brokerId, r.fecha, r.monto, r.montoTotal)}
+                      onChange={setCommissionStatusAction.bind(null, r.brokerId, r.colocacionId, r.fecha, r.monto, r.montoTotal)}
                     />
                   )}
                 </td>

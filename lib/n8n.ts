@@ -43,6 +43,8 @@ export interface PorMes {
 }
 
 export interface OperacionFondeada {
+  /** ID de la colocación en la base (broker_colocaciones). Identifica la operación, p. ej. para su pago de comisión. */
+  id?: number;
   fecha: string;
   monto: number;
   /** % de comisión de apertura pactado con el cliente. undefined si no se ha capturado. */

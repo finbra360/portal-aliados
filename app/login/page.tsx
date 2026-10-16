@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 type Step = "email" | "code";
@@ -13,6 +13,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // El portal manda aquí con ?sesion=cerrada cuando el acceso se desactivó con la sesión abierta.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("sesion") === "cerrada") {
+      setError("Tu acceso al portal ya no está activo. Si crees que es un error, contacta a Finbra.");
+    }
+  }, []);
+
   async function handleRequestCode(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -24,8 +31,12 @@ export default function LoginPage() {
         body: JSON.stringify({ email }),
       });
       const data = await res.json();
+      if (res.status === 429) {
+        setError(data.error ?? "Demasiados intentos. Espera unos minutos e intenta de nuevo.");
+        return;
+      }
       if (!res.ok || !data.sent) {
-        setError("No pudimos enviar el código. Verifica tu email.");
+        setError("No pudimos enviar el código. Intenta de nuevo en unos minutos.");
         return;
       }
       setStep("code");
@@ -47,6 +58,10 @@ export default function LoginPage() {
         body: JSON.stringify({ email, code }),
       });
       const data = await res.json();
+      if (res.status === 429) {
+        setError(data.error ?? "Demasiados intentos. Espera unos minutos e intenta de nuevo.");
+        return;
+      }
       if (!res.ok || !data.valid) {
         setError("Código inválido o expirado.");
         return;
@@ -95,7 +110,7 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={handleVerifyCode} className="space-y-4">
             <p className="text-sm">
-              Enviamos un código a <span className="font-medium">{email}</span>
+              Si <span className="font-medium">{email}</span> está dado de alta como aliado, te enviamos un código.
             </p>
             <div>
               <label htmlFor="code" className="mb-1 block text-sm font-medium">

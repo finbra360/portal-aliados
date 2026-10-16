@@ -33,6 +33,7 @@ export function calcularStats(colocaciones: Colocacion[]): BrokerStats {
   const operaciones: OperacionFondeada[] = [...colocaciones]
     .sort((a, b) => b.fecha.localeCompare(a.fecha) || b.id - a.id)
     .map((c) => ({
+      id: c.id,
       fecha: c.fecha,
       monto: c.monto,
       comisionAperturaPct: c.comisionAperturaPct ?? undefined,

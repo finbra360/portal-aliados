@@ -54,6 +54,21 @@ export async function brokerQuePuedeEntrar(email: string): Promise<{ id: string;
   return row ? { id: row.id as string, nombre: row.nombre as string } : null;
 }
 
+/**
+ * Para las páginas del portal: ¿este broker sigue pudiendo usarlo? La sesión
+ * dura 7 días, así que una suspensión (o una baja) tiene que revisarse aquí en
+ * cada visita y no solo al iniciar sesión. Se busca por ID, no por correo, para
+ * que cambiarle el correo a un broker no le cierre la sesión.
+ */
+export async function brokerSigueActivo(id: string): Promise<boolean> {
+  const [row] = await sql`
+    SELECT 1 FROM brokers b
+    LEFT JOIN broker_status s ON s.broker_id = b.id
+    WHERE b.id = ${id} AND coalesce(s.estatus, 'activo') <> 'suspendido'
+  `;
+  return Boolean(row);
+}
+
 /** ID → nombre de todos los brokers (para mostrar nombres en rankings). */
 export async function nombresDeBrokers(): Promise<Map<string, string>> {
   const rows = await sql`SELECT id, nombre FROM brokers`;
