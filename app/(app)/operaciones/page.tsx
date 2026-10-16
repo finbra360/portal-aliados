@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { cookies } from "next/headers";
 import { getStats } from "@/lib/db/colocacion";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
@@ -48,12 +49,13 @@ export default async function OperacionesPage() {
           />
         ) : (
           <Card className="overflow-x-auto p-0">
-            <table className="w-full min-w-[480px] text-left text-sm">
+            <table className="w-full min-w-[560px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                   <th className="px-6 py-3">Cliente</th>
                   <th className="px-6 py-3">Monto solicitado</th>
                   <th className="px-6 py-3">Etapa</th>
+                  <th className="px-6 py-3"></th>
                 </tr>
               </thead>
               <tbody>
@@ -63,6 +65,14 @@ export default async function OperacionesPage() {
                     <td className="px-6 py-4 font-semibold">{formatCurrency(op.montoSolicitado)}</td>
                     <td className="px-6 py-4">
                       <StatusPill status={op.etapa} />
+                      {op.mensajeBroker && (
+                        <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Mensaje</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <Link href={`/operaciones/${op.id}`} className="text-sm font-semibold text-finbra-purple hover:underline">
+                        Ver seguimiento
+                      </Link>
                     </td>
                   </tr>
                 ))}

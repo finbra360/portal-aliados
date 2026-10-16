@@ -5,6 +5,7 @@ import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { brokerSigueActivo } from "@/lib/db/brokers";
 import { getBrokerContext } from "@/lib/broker-data";
 import { getInsights } from "@/lib/insights";
+import { anunciosParaBroker, type AnuncioParaBroker } from "@/lib/db/announcements";
 import Nav from "./Nav";
 
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -14,6 +15,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   let tier = null;
   let notifications: string[] = [];
+  let anuncios: AnuncioParaBroker[] = [];
 
   if (session) {
     // Suspendido o dado de baja después de iniciar sesión: se le cierra el acceso ya.
@@ -27,6 +29,12 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     if (!activo) redirect("/api/auth/sesion-invalida");
 
     try {
+      anuncios = await anunciosParaBroker(session.brokerId);
+    } catch {
+      // Sin anuncios si falla: no tumba la página.
+    }
+
+    try {
       const ctx = await getBrokerContext(session.brokerId);
       tier = ctx.tier.actual;
       notifications = getInsights(ctx);
@@ -37,7 +45,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
-      <Nav nombre={session?.nombre ?? ""} tier={tier} notifications={notifications} />
+      <Nav nombre={session?.nombre ?? ""} tier={tier} notifications={notifications} anuncios={anuncios} />
       <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
     </div>
   );

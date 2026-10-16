@@ -1,4 +1,4 @@
-import { sql } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "./audit";
 import type { OperationStatus } from "@/components/ui/StatusPill";
 
@@ -9,6 +9,8 @@ export interface Operation {
   montoSolicitado: number;
   etapa: OperationStatus;
   notas: string | null;
+  /** Lo que Finbra le dice al broker sobre esta solicitud (las notas internas no se muestran). */
+  mensajeBroker: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -21,6 +23,7 @@ function mapRow(r: Record<string, unknown>): Operation {
     montoSolicitado: Number(r.monto_solicitado),
     etapa: r.etapa as OperationStatus,
     notas: (r.notas as string) ?? null,
+    mensajeBroker: (r.mensaje_broker as string) ?? null,
     createdAt: (r.created_at as Date).toISOString(),
     updatedAt: (r.updated_at as Date).toISOString(),
   };
@@ -47,6 +50,32 @@ export async function getOperation(id: number): Promise<Operation | null> {
   return rows[0] ? mapRow(rows[0]) : null;
 }
 
+/** Solo si la solicitud es de ese broker: un broker no ve las de otro cambiando el número en la URL. */
+export async function getOperationOfBroker(id: number, brokerId: string): Promise<Operation | null> {
+  const rows = await sql`SELECT * FROM operations WHERE id = ${id} AND broker_id = ${brokerId}`;
+  return rows[0] ? mapRow(rows[0]) : null;
+}
+
+export async function listOperationHistory(operationId: number): Promise<{ etapa: OperationStatus; fecha: string }[]> {
+  const rows = await sql`
+    SELECT etapa, created_at FROM operation_history WHERE operation_id = ${operationId} ORDER BY created_at, id
+  `;
+  return rows.map((r) => ({ etapa: r.etapa as OperationStatus, fecha: (r.created_at as Date).toISOString() }));
+}
+
+export async function setOperationBrokerMessage(params: { id: number; mensaje: string | null; actorEmail: string }): Promise<void> {
+  const rows = await sql`
+    UPDATE operations SET mensaje_broker = ${params.mensaje}, updated_at = now() WHERE id = ${params.id} RETURNING id
+  `;
+  if (!rows[0]) throw new Error("Operación no encontrada");
+  await logAudit({
+    actorEmail: params.actorEmail,
+    action: "update_operation_message",
+    entityType: "operation",
+    entityId: String(params.id),
+  });
+}
+
 export async function createOperation(params: {
   brokerId: string;
   clienteReferencia: string;
@@ -54,12 +83,15 @@ export async function createOperation(params: {
   notas?: string;
   actorEmail: string;
 }): Promise<Operation> {
-  const rows = await sql`
-    INSERT INTO operations (broker_id, cliente_referencia, monto_solicitado, notas)
-    VALUES (${params.brokerId}, ${params.clienteReferencia}, ${params.montoSolicitado}, ${params.notas ?? null})
-    RETURNING *
-  `;
-  const operation = mapRow(rows[0]);
+  const operation = await transaccion(async (tx) => {
+    const rows = await tx`
+      INSERT INTO operations (broker_id, cliente_referencia, monto_solicitado, notas)
+      VALUES (${params.brokerId}, ${params.clienteReferencia}, ${params.montoSolicitado}, ${params.notas ?? null})
+      RETURNING *
+    `;
+    await tx`INSERT INTO operation_history (operation_id, etapa) VALUES (${rows[0].id}, ${rows[0].etapa})`;
+    return mapRow(rows[0]);
+  });
   await logAudit({
     actorEmail: params.actorEmail,
     action: "create_operation",
@@ -75,15 +107,22 @@ export async function updateOperationStage(params: {
   etapa: OperationStatus;
   actorEmail: string;
 }): Promise<Operation> {
-  const rows = await sql`
-    UPDATE operations SET etapa = ${params.etapa}, updated_at = now()
-    WHERE id = ${params.id}
-    RETURNING *
-  `;
-  if (!rows[0]) {
-    throw new Error("Operación no encontrada");
-  }
-  const operation = mapRow(rows[0]);
+  const operation = await transaccion(async (tx) => {
+    const antes = await tx`SELECT etapa FROM operations WHERE id = ${params.id} FOR UPDATE`;
+    if (!antes[0]) {
+      throw new Error("Operación no encontrada");
+    }
+    const rows = await tx`
+      UPDATE operations SET etapa = ${params.etapa}, updated_at = now()
+      WHERE id = ${params.id}
+      RETURNING *
+    `;
+    // Elegir la misma etapa otra vez no es un paso nuevo.
+    if (antes[0].etapa !== params.etapa) {
+      await tx`INSERT INTO operation_history (operation_id, etapa) VALUES (${params.id}, ${params.etapa})`;
+    }
+    return mapRow(rows[0]);
+  });
   await logAudit({
     actorEmail: params.actorEmail,
     action: "update_operation_stage",

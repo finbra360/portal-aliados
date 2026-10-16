@@ -4,7 +4,7 @@ import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import { IconListChecks } from "@/components/ui/icons";
-import { createOperationAction, updateOperationStageAction } from "./actions";
+import { createOperationAction, setOperationMessageAction, updateOperationStageAction } from "./actions";
 import StageSelect from "./StageSelect";
 
 export default async function BackofficeOperacionesPage() {
@@ -67,13 +67,14 @@ export default async function BackofficeOperacionesPage() {
         <EmptyState icon={<IconListChecks />} title="Sin operaciones registradas" description="Registra la primera solicitud arriba." />
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[640px] text-left text-sm">
+          <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                 <th className="px-6 py-3">Broker</th>
                 <th className="px-6 py-3">Cliente</th>
                 <th className="px-6 py-3">Monto</th>
                 <th className="px-6 py-3">Etapa</th>
+                <th className="px-6 py-3">Mensaje para el broker</th>
                 <th className="px-6 py-3">Actualizado</th>
               </tr>
             </thead>
@@ -87,6 +88,21 @@ export default async function BackofficeOperacionesPage() {
                     <td className="px-6 py-4 font-semibold">{formatCurrency(op.montoSolicitado)}</td>
                     <td className="px-6 py-4">
                       <StageSelect id={op.id} current={op.etapa} action={updateOperationStageAction} />
+                    </td>
+                    <td className="px-6 py-4">
+                      <form action={setOperationMessageAction.bind(null, op.id)} className="flex gap-2">
+                        <input
+                          name="mensaje"
+                          defaultValue={op.mensajeBroker ?? ""}
+                          maxLength={500}
+                          placeholder="Ej. Falta comprobante de domicilio"
+                          aria-label={`Mensaje para el broker sobre ${op.clienteReferencia}`}
+                          className="w-56 rounded-lg border border-black/10 px-2 py-1 text-xs"
+                        />
+                        <button type="submit" className="text-xs font-semibold text-finbra-purple hover:underline">
+                          Guardar
+                        </button>
+                      </form>
                     </td>
                     <td className="px-6 py-4 text-xs text-finbra-gray">{new Date(op.updatedAt).toLocaleDateString("es-MX")}</td>
                   </tr>
