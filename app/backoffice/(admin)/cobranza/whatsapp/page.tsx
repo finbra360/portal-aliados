@@ -174,9 +174,9 @@ export default async function WhatsAppMoraPage() {
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-4 py-2">Cliente</th>
-                <th className="px-4 py-2 text-right">Vencido</th>
-                <th className="px-4 py-2">Resultado</th>
+                <th scope="col" className="px-4 py-2">Cliente</th>
+                <th scope="col" className="px-4 py-2 text-right">Vencido</th>
+                <th scope="col" className="px-4 py-2">Resultado</th>
               </tr>
             </thead>
             <tbody>
@@ -227,11 +227,11 @@ export default async function WhatsAppMoraPage() {
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-4 py-2">Cuándo</th>
-                  <th className="px-4 py-2">Cliente</th>
-                  <th className="px-4 py-2">Teléfono</th>
-                  <th className="px-4 py-2">Plantilla</th>
-                  <th className="px-4 py-2">Estado</th>
+                  <th scope="col" className="px-4 py-2">Cuándo</th>
+                  <th scope="col" className="px-4 py-2">Cliente</th>
+                  <th scope="col" className="px-4 py-2">Teléfono</th>
+                  <th scope="col" className="px-4 py-2">Plantilla</th>
+                  <th scope="col" className="px-4 py-2">Estado</th>
                 </tr>
               </thead>
               <tbody>

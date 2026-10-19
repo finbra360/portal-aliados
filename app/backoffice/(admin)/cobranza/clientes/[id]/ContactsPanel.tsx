@@ -111,7 +111,7 @@ function ContactRow({
               )}
             </>
           ) : (
-            <button type="button" disabled={pending} onClick={() => correr(() => setEstatusAction(clientId, c.id, "activo"))} className="rounded-lg px-2 py-1.5 text-sm text-finbra-purple hover:bg-finbra-purple/10 disabled:opacity-50">
+            <button type="button" disabled={pending} onClick={() => correr(() => setEstatusAction(clientId, c.id, "activo"))} className="rounded-lg px-2 py-1.5 text-sm text-finbra-purple-700 hover:bg-finbra-purple/10 disabled:opacity-50">
               Reactivar
             </button>
           )}
@@ -141,7 +141,7 @@ function AddContactForm({ clientId }: { clientId: string }) {
 
   if (!abierto) {
     return (
-      <button type="button" onClick={() => setAbierto(true)} className="rounded-lg border border-dashed border-finbra-purple/40 px-4 py-2 text-sm font-medium text-finbra-purple hover:bg-finbra-purple/5">
+      <button type="button" onClick={() => setAbierto(true)} className="rounded-lg border border-dashed border-finbra-purple/40 px-4 py-2 text-sm font-medium text-finbra-purple-700 hover:bg-finbra-purple/5">
         + Agregar contacto
       </button>
     );

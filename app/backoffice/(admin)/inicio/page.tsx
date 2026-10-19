@@ -6,7 +6,7 @@ import Card from "@/components/ui/Card";
 
 const TONO: Record<Tono, string> = {
   urgente: "bg-red-100 text-red-700",
-  atencion: "bg-finbra-purple/10 text-finbra-purple",
+  atencion: "bg-finbra-purple/10 text-finbra-purple-700",
   normal: "bg-black/5 text-black/70",
 };
 

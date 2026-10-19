@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
@@ -10,6 +11,8 @@ import EmptyState from "@/components/ui/EmptyState";
 import ProgressBar from "@/components/ui/ProgressBar";
 import { IconTrendingUp, IconWallet, IconListChecks, IconTrophy, IconFlame, IconCoins } from "@/components/ui/icons";
 import DashboardChart from "./DashboardChart";
+
+export const metadata: Metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const cookieStore = await cookies();
@@ -112,7 +115,7 @@ export default async function DashboardPage() {
             <span>{tier.siguiente ? tier.siguiente.nombre : "Nivel máximo"}</span>
           </div>
           <div className="mt-1">
-            <ProgressBar percent={tier.progresoPct} color={tier.actual.color} />
+            <ProgressBar percent={tier.progresoPct} color={tier.actual.color} label="Progreso hacia el siguiente nivel" />
           </div>
           <p className="mt-2 text-xs text-finbra-gray">
             {tier.siguiente

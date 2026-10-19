@@ -176,9 +176,9 @@ export default async function CobranzaInicioPage() {
             <table className="mt-3 w-full min-w-[420px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-6 py-2">Fecha</th>
-                  <th className="px-6 py-2">Cliente</th>
-                  <th className="px-6 py-2">Crédito</th>
+                  <th scope="col" className="px-6 py-2">Fecha</th>
+                  <th scope="col" className="px-6 py-2">Cliente</th>
+                  <th scope="col" className="px-6 py-2">Crédito</th>
                 </tr>
               </thead>
               <tbody>
@@ -204,10 +204,10 @@ export default async function CobranzaInicioPage() {
           <table className="mt-3 w-full min-w-[420px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-2">Cliente</th>
-                <th className="px-6 py-2 text-right">Adeudo</th>
-                <th className="px-6 py-2 text-right">Vencido</th>
-                <th className="px-6 py-2 text-right">Atraso</th>
+                <th scope="col" className="px-6 py-2">Cliente</th>
+                <th scope="col" className="px-6 py-2 text-right">Adeudo</th>
+                <th scope="col" className="px-6 py-2 text-right">Vencido</th>
+                <th scope="col" className="px-6 py-2 text-right">Atraso</th>
               </tr>
             </thead>
             <tbody>

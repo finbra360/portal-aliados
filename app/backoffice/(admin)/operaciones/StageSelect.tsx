@@ -26,6 +26,7 @@ export default function StageSelect({
 
   return (
     <select
+      aria-label="Etapa de la solicitud"
       defaultValue={current}
       disabled={isPending}
       onChange={(e) => startTransition(() => action(id, e.target.value as OperationStatus))}

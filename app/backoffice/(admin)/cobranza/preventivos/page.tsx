@@ -145,10 +145,10 @@ export default async function PreventivosPage() {
             <table className="w-full min-w-[760px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-4 py-2">Cliente</th>
-                  <th className="px-4 py-2">Vence</th>
-                  <th className="px-4 py-2">Semáforo</th>
-                  <th className="px-4 py-2">Resultado</th>
+                  <th scope="col" className="px-4 py-2">Cliente</th>
+                  <th scope="col" className="px-4 py-2">Vence</th>
+                  <th scope="col" className="px-4 py-2">Semáforo</th>
+                  <th scope="col" className="px-4 py-2">Resultado</th>
                 </tr>
               </thead>
               <tbody>

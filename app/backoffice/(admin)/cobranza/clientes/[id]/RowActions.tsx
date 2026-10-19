@@ -23,7 +23,7 @@ export function AlertActions({ clientId, alertId }: { clientId: string; alertId:
   const { pending, error, correr } = useAccion();
   return (
     <span className="flex flex-wrap items-center gap-1">
-      <button type="button" disabled={pending} onClick={() => correr(() => atenderAlertaAction(clientId, alertId, "atendida"))} className={`${chico} bg-finbra-purple/10 text-finbra-purple hover:bg-finbra-purple/20`}>
+      <button type="button" disabled={pending} onClick={() => correr(() => atenderAlertaAction(clientId, alertId, "atendida"))} className={`${chico} bg-finbra-purple/10 text-finbra-purple-700 hover:bg-finbra-purple/20`}>
         Atendida
       </button>
       <button type="button" disabled={pending} onClick={() => correr(() => atenderAlertaAction(clientId, alertId, "descartada"))} className={`${chico} text-finbra-gray hover:bg-black/5`}>
@@ -110,7 +110,7 @@ export function SaldoAlDiaButton({
           type="button"
           disabled={pending}
           onClick={() => consultar()}
-          className={`${chico} bg-finbra-purple/10 text-finbra-purple hover:bg-finbra-purple/20`}
+          className={`${chico} bg-finbra-purple/10 text-finbra-purple-700 hover:bg-finbra-purple/20`}
           title="Consulta a SIAC el saldo de este crédito a hoy"
         >
           {pending ? "Consultando…" : saldo ? "Actualizar" : "Saldo al día"}
@@ -122,7 +122,7 @@ export function SaldoAlDiaButton({
       {otraFecha && (
         <span className="flex items-center gap-1">
           <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded border border-black/10 px-1 py-0.5 text-xs" aria-label="Fecha de corte" />
-          <button type="button" disabled={pending || !fecha} onClick={() => consultar(fecha)} className={`${chico} bg-finbra-purple/10 text-finbra-purple hover:bg-finbra-purple/20`}>
+          <button type="button" disabled={pending || !fecha} onClick={() => consultar(fecha)} className={`${chico} bg-finbra-purple/10 text-finbra-purple-700 hover:bg-finbra-purple/20`}>
             Consultar
           </button>
         </span>

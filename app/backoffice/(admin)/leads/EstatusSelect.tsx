@@ -27,6 +27,7 @@ export default function EstatusSelect({
 
   return (
     <select
+      aria-label="Estatus comercial del lead"
       defaultValue={current}
       disabled={isPending}
       onChange={(e) => startTransition(() => action(id, e.target.value as LeadEstatusComercial))}

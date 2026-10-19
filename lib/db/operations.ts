@@ -45,11 +45,6 @@ export async function listOperations(filters: OperationFilters = {}): Promise<Op
   return rows.map(mapRow);
 }
 
-export async function getOperation(id: number): Promise<Operation | null> {
-  const rows = await sql`SELECT * FROM operations WHERE id = ${id}`;
-  return rows[0] ? mapRow(rows[0]) : null;
-}
-
 /** Solo si la solicitud es de ese broker: un broker no ve las de otro cambiando el número en la URL. */
 export async function getOperationOfBroker(id: number, brokerId: string): Promise<Operation | null> {
   const rows = await sql`SELECT * FROM operations WHERE id = ${id} AND broker_id = ${brokerId}`;

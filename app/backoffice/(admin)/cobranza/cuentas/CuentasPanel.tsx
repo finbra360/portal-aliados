@@ -112,7 +112,7 @@ function Cuenta({ cuenta, clientesSinCuenta }: { cuenta: CuentaConUso; clientesS
                   const quienes = clientesSinCuenta === 1 ? "al cliente que no tiene cuenta" : `a los ${clientesSinCuenta} clientes que no tienen cuenta`;
                   if (window.confirm(`¿Asignar ${cuenta.alias} ${quienes}?`)) correr(() => asignarASinCuentaAction(cuenta.id));
                 }}
-                className={`${chico} bg-finbra-purple/10 text-finbra-purple hover:bg-finbra-purple/20`}
+                className={`${chico} bg-finbra-purple/10 text-finbra-purple-700 hover:bg-finbra-purple/20`}
               >
                 Asignar a {clientesSinCuenta === 1 ? "1 cliente" : `${clientesSinCuenta} clientes`} sin cuenta
               </button>

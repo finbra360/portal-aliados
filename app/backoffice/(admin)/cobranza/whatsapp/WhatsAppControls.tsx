@@ -131,7 +131,7 @@ export function EnviarPrueba({ plantillas }: { plantillas: { id: number; nombre:
         </label>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" disabled={enviando} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-40">
+        <button type="submit" disabled={enviando} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5 disabled:opacity-40">
           {enviando ? "Enviando…" : "Enviar prueba"}
         </button>
       </div>
@@ -155,7 +155,7 @@ export function EnviarAhora({ disponible, cuantos, tipo = "mora" }: { disponible
         onClick={() => {
           if (window.confirm(TEXTO[tipo].enviar(cuantos))) correr(tipo === "mora" ? enviarAhoraAction : enviarPreventivosAhoraAction);
         }}
-        className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-40"
+        className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5 disabled:opacity-40"
       >
         {pending ? "Enviando…" : "Enviar ahora"}
       </button>
@@ -194,7 +194,7 @@ export function ConsultarMontos({ cuantos }: { cuantos: number }) {
         onClick={() => {
           if (window.confirm(`¿Consultar a SIAC el monto de ${cuantos === 1 ? "1 crédito" : `${cuantos} créditos`}? Es una consulta por crédito (ConsultarSaldoCredito a su fecha de vencimiento).`)) correr(obtenerMontosAction);
         }}
-        className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-40"
+        className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5 disabled:opacity-40"
       >
         {pending ? "Consultando…" : cuantos === 1 ? "Consultar 1 monto a SIAC" : `Consultar ${cuantos} montos a SIAC`}
       </button>

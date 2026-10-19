@@ -40,11 +40,11 @@ export default async function BackofficeRecursosPage() {
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Título</th>
-                <th className="px-6 py-3">Categoría</th>
-                <th className="px-6 py-3">Tipo</th>
-                <th className="px-6 py-3">Estatus</th>
-                <th className="px-6 py-3"></th>
+                <th scope="col" className="px-6 py-3">Título</th>
+                <th scope="col" className="px-6 py-3">Categoría</th>
+                <th scope="col" className="px-6 py-3">Tipo</th>
+                <th scope="col" className="px-6 py-3">Estatus</th>
+                <th scope="col" className="px-6 py-3"><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>

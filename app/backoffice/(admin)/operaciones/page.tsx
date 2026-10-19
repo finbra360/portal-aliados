@@ -35,7 +35,7 @@ export default async function BackofficeOperacionesPage() {
       <Card>
         <p className="mb-3 text-sm font-medium text-finbra-gray">Registrar nueva solicitud</p>
         <form action={createOperationAction} className="grid gap-3 sm:grid-cols-4">
-          <select name="brokerId" required className="rounded-lg border border-black/10 px-3 py-2 text-sm">
+          <select name="brokerId" required aria-label="Broker" className="rounded-lg border border-black/10 px-3 py-2 text-sm">
             <option value="">Broker…</option>
             {brokers.map((b) => (
               <option key={b.brokerId} value={b.brokerId}>
@@ -70,12 +70,12 @@ export default async function BackofficeOperacionesPage() {
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Broker</th>
-                <th className="px-6 py-3">Cliente</th>
-                <th className="px-6 py-3">Monto</th>
-                <th className="px-6 py-3">Etapa</th>
-                <th className="px-6 py-3">Mensaje para el broker</th>
-                <th className="px-6 py-3">Actualizado</th>
+                <th scope="col" className="px-6 py-3">Broker</th>
+                <th scope="col" className="px-6 py-3">Cliente</th>
+                <th scope="col" className="px-6 py-3">Monto</th>
+                <th scope="col" className="px-6 py-3">Etapa</th>
+                <th scope="col" className="px-6 py-3">Mensaje para el broker</th>
+                <th scope="col" className="px-6 py-3">Actualizado</th>
               </tr>
             </thead>
             <tbody>

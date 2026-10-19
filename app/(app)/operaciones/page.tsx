@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { getStats } from "@/lib/db/colocacion";
@@ -8,6 +9,8 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import StatusPill from "@/components/ui/StatusPill";
 import { IconListChecks } from "@/components/ui/icons";
+
+export const metadata: Metadata = { title: "Mis Operaciones" };
 
 export default async function OperacionesPage() {
   const cookieStore = await cookies();
@@ -52,10 +55,10 @@ export default async function OperacionesPage() {
             <table className="w-full min-w-[560px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-6 py-3">Cliente</th>
-                  <th className="px-6 py-3">Monto solicitado</th>
-                  <th className="px-6 py-3">Etapa</th>
-                  <th className="px-6 py-3"></th>
+                  <th scope="col" className="px-6 py-3">Cliente</th>
+                  <th scope="col" className="px-6 py-3">Monto solicitado</th>
+                  <th scope="col" className="px-6 py-3">Etapa</th>
+                  <th scope="col" className="px-6 py-3"><span className="sr-only">Acciones</span></th>
                 </tr>
               </thead>
               <tbody>
@@ -95,9 +98,9 @@ export default async function OperacionesPage() {
             <table className="w-full min-w-[420px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-6 py-3">Fecha</th>
-                  <th className="px-6 py-3">Monto</th>
-                  <th className="px-6 py-3">Estatus</th>
+                  <th scope="col" className="px-6 py-3">Fecha</th>
+                  <th scope="col" className="px-6 py-3">Monto</th>
+                  <th scope="col" className="px-6 py-3">Estatus</th>
                 </tr>
               </thead>
               <tbody>

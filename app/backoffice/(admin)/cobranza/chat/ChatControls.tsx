@@ -80,7 +80,7 @@ export function Retomar({ telefono, disponible }: { telefono: string; disponible
               setR(await retomarAction(telefono));
             })
           }
-          className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-50"
+          className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5 disabled:opacity-50"
         >
           {pending ? "Enviando…" : "Retomar la conversación"}
         </button>

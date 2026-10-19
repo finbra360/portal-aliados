@@ -20,15 +20,15 @@ export default async function BackofficeAuditLogPage() {
       ) : entries.length === 0 ? (
         <EmptyState title="Sin actividad registrada todavía" description="Cada acción sensible (cambios de etapa, comisiones, brokers, usuarios) queda registrada aquí automáticamente." />
       ) : (
-        <Card className="overflow-x-auto p-0">
+        <Card className="overflow-x-auto p-0" tabIndex={0} aria-label="Bitácora de acciones (desplazable)">
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Fecha</th>
-                <th className="px-6 py-3">Actor</th>
-                <th className="px-6 py-3">Acción</th>
-                <th className="px-6 py-3">Entidad</th>
-                <th className="px-6 py-3">Detalle</th>
+                <th scope="col" className="px-6 py-3">Fecha</th>
+                <th scope="col" className="px-6 py-3">Actor</th>
+                <th scope="col" className="px-6 py-3">Acción</th>
+                <th scope="col" className="px-6 py-3">Entidad</th>
+                <th scope="col" className="px-6 py-3">Detalle</th>
               </tr>
             </thead>
             <tbody>

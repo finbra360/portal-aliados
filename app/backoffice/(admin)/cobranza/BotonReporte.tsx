@@ -12,7 +12,7 @@ export default function BotonReporte() {
         type="button"
         disabled={pending}
         onClick={() => start(async () => setR(await enviarReporteAction()))}
-        className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5 disabled:opacity-50"
+        className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5 disabled:opacity-50"
         title="El reporte también sale solo todos los días después de las 9:00"
       >
         {pending ? "Enviando…" : "Mandar reporte a Slack"}

@@ -95,12 +95,12 @@ export default async function BackofficeConcursoDetallePage({ params }: { params
           <table className="w-full min-w-[640px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Lugar</th>
-                <th className="px-6 py-3">Broker</th>
-                <th className="px-6 py-3">{c.criterio === "monto" ? "Monto colocado" : "Operaciones"}</th>
-                <th className="px-6 py-3">{c.criterio === "monto" ? "Operaciones" : "Monto"}</th>
-                {c.metaObjetivo !== null && <th className="px-6 py-3">Meta</th>}
-                <th className="px-6 py-3">Premio</th>
+                <th scope="col" className="px-6 py-3">Lugar</th>
+                <th scope="col" className="px-6 py-3">Broker</th>
+                <th scope="col" className="px-6 py-3">{c.criterio === "monto" ? "Monto colocado" : "Operaciones"}</th>
+                <th scope="col" className="px-6 py-3">{c.criterio === "monto" ? "Operaciones" : "Monto"}</th>
+                {c.metaObjetivo !== null && <th scope="col" className="px-6 py-3">Meta</th>}
+                <th scope="col" className="px-6 py-3">Premio</th>
               </tr>
             </thead>
             <tbody>

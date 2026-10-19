@@ -22,7 +22,7 @@ export default function StatCard({
     <Card>
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm text-finbra-gray">{label}</p>
-        {icon && <div className="text-finbra-purple/60">{icon}</div>}
+        {icon && <div aria-hidden="true" className="text-finbra-purple/60">{icon}</div>}
       </div>
       <p className="mt-1 text-3xl font-bold text-finbra-purple">{value}</p>
       <div className="mt-2 flex items-center gap-2 text-xs text-finbra-gray">

@@ -1,9 +1,12 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { getLeaderboard } from "@/lib/db/colocacion";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import { IconTrophy } from "@/components/ui/icons";
+
+export const metadata: Metadata = { title: "Ranking" };
 
 export default async function RankingPage() {
   const cookieStore = await cookies();
@@ -52,11 +55,11 @@ export default async function RankingPage() {
         <table className="w-full min-w-[480px] text-left text-sm">
           <thead>
             <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-              <th className="px-6 py-3">Posición</th>
-              <th className="px-6 py-3">Broker</th>
-              <th className="px-6 py-3">Colocado</th>
-              <th className="px-6 py-3">Operaciones</th>
-              <th className="px-6 py-3">Ticket promedio</th>
+              <th scope="col" className="px-6 py-3">Posición</th>
+              <th scope="col" className="px-6 py-3">Broker</th>
+              <th scope="col" className="px-6 py-3">Colocado</th>
+              <th scope="col" className="px-6 py-3">Operaciones</th>
+              <th scope="col" className="px-6 py-3">Ticket promedio</th>
             </tr>
           </thead>
           <tbody>
@@ -71,7 +74,7 @@ export default async function RankingPage() {
                   <td className="px-6 py-4">
                     {entry.nombre}
                     {isMe && (
-                      <span className="ml-2 rounded-full bg-finbra-purple/10 px-2 py-0.5 text-xs font-semibold text-finbra-purple">
+                      <span className="ml-2 rounded-full bg-finbra-purple/10 px-2 py-0.5 text-xs font-semibold text-finbra-purple-700">
                         Tú
                       </span>
                     )}

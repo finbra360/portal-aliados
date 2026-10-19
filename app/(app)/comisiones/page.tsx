@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { getStats } from "@/lib/db/colocacion";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
@@ -16,6 +17,8 @@ const ETIQUETA_ESTATUS: Record<EstatusPago, { texto: string; variante: "success"
   pagada: { texto: "Pagada", variante: "success" },
   sin_definir: { texto: "Falta % de apertura", variante: "warning" },
 };
+
+export const metadata: Metadata = { title: "Comisiones" };
 
 export default async function ComisionesPage() {
   const cookieStore = await cookies();
@@ -76,13 +79,13 @@ export default async function ComisionesPage() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-6 py-3">Fecha</th>
-                  <th className="px-6 py-3">Monto colocado</th>
-                  <th className="px-6 py-3">% apertura</th>
-                  <th className="px-6 py-3">Comisión</th>
-                  <th className="px-6 py-3">Bono pagado</th>
-                  <th className="px-6 py-3">Total</th>
-                  <th className="px-6 py-3">Estatus</th>
+                  <th scope="col" className="px-6 py-3">Fecha</th>
+                  <th scope="col" className="px-6 py-3">Monto colocado</th>
+                  <th scope="col" className="px-6 py-3">% apertura</th>
+                  <th scope="col" className="px-6 py-3">Comisión</th>
+                  <th scope="col" className="px-6 py-3">Bono pagado</th>
+                  <th scope="col" className="px-6 py-3">Total</th>
+                  <th scope="col" className="px-6 py-3">Estatus</th>
                 </tr>
               </thead>
               <tbody>

@@ -26,7 +26,7 @@ export default async function BackofficeUsuariosPage() {
           <form action={createAdminUserAction} className="grid gap-3 sm:grid-cols-4">
             <input name="nombre" required placeholder="Nombre" className="rounded-lg border border-black/10 px-3 py-2 text-sm" />
             <input name="email" type="email" required placeholder="email@finbra.com" className="rounded-lg border border-black/10 px-3 py-2 text-sm" />
-            <select name="role" className="rounded-lg border border-black/10 px-3 py-2 text-sm">
+            <select name="role" aria-label="Rol" className="rounded-lg border border-black/10 px-3 py-2 text-sm">
               <option value="comercial">Comercial</option>
               <option value="finanzas">Finanzas</option>
               <option value="super_admin">Super Admin</option>
@@ -45,11 +45,11 @@ export default async function BackofficeUsuariosPage() {
           <table className="w-full min-w-[520px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Nombre</th>
-                <th className="px-6 py-3">Email</th>
-                <th className="px-6 py-3">Rol</th>
-                <th className="px-6 py-3">Estatus</th>
-                {isSuperAdmin && <th className="px-6 py-3"></th>}
+                <th scope="col" className="px-6 py-3">Nombre</th>
+                <th scope="col" className="px-6 py-3">Email</th>
+                <th scope="col" className="px-6 py-3">Rol</th>
+                <th scope="col" className="px-6 py-3">Estatus</th>
+                {isSuperAdmin && <th scope="col" className="px-6 py-3"><span className="sr-only">Acciones</span></th>}
               </tr>
             </thead>
             <tbody>
