@@ -63,3 +63,8 @@ export function formatFechaHora(isoDate: string): string {
     minute: "2-digit",
   }).format(new Date(isoDate));
 }
+
+/** Lo que cuenta en un concurso: pesos o número de operaciones, según su criterio. */
+export function formatValorConcurso(criterio: "monto" | "operaciones", valor: number): string {
+  return criterio === "monto" ? formatCurrency(valor) : `${valor} operación${valor === 1 ? "" : "es"}`;
+}
