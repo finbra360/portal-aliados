@@ -6,15 +6,6 @@ export function formatCurrency(value: number): string {
   }).format(value);
 }
 
-export function formatCompactCurrency(value: number): string {
-  return new Intl.NumberFormat("es-MX", {
-    style: "currency",
-    currency: "MXN",
-    notation: "compact",
-    maximumFractionDigits: 1,
-  }).format(value);
-}
-
 export function formatPercent(value: number): string {
   const sign = value > 0 ? "+" : "";
   return `${sign}${value.toFixed(0)}%`;
@@ -66,5 +57,5 @@ export function formatFechaHora(isoDate: string): string {
 
 /** Lo que cuenta en un concurso: pesos o número de operaciones, según su criterio. */
 export function formatValorConcurso(criterio: "monto" | "operaciones", valor: number): string {
-  return criterio === "monto" ? formatCurrency(valor) : `${valor} operación${valor === 1 ? "" : "es"}`;
+  return criterio === "monto" ? formatCurrency(valor) : `${valor} ${valor === 1 ? "operación" : "operaciones"}`;
 }

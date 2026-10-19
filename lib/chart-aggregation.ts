@@ -1,4 +1,4 @@
-import type { PorMes } from "./n8n";
+import type { PorMes } from "./n8n.ts";
 
 export type ChartPeriod = "mes" | "trimestre" | "anio";
 

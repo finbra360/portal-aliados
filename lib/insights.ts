@@ -1,5 +1,5 @@
-import type { BrokerContext } from "./broker-data";
-import { formatCurrency, formatPercent } from "./format";
+import type { BrokerContext } from "./broker-data.ts";
+import { formatCurrency, formatPercent } from "./format.ts";
 
 /**
  * All insights here are derived purely from real data already returned by

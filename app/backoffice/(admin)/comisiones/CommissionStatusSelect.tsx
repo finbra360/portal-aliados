@@ -16,6 +16,7 @@ export default function CommissionStatusSelect({
 
   return (
     <select
+      aria-label="Estatus de pago de la comisión"
       defaultValue={current}
       disabled={isPending}
       onChange={(e) => startTransition(() => onChange(e.target.value as CommissionPaymentStatus))}

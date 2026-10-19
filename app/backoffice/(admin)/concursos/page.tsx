@@ -70,7 +70,7 @@ export default async function BackofficeConcursosPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Link href={`/backoffice/concursos/${c.id}`} className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-finbra-purple hover:bg-finbra-purple/5">
+                  <Link href={`/backoffice/concursos/${c.id}`} className="rounded-lg border border-black/10 px-3 py-1.5 text-xs font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5">
                     Ver tabla
                   </Link>
                   {puedeEditar && c.estatus !== "activo" && c.estatus !== "finalizado" && (

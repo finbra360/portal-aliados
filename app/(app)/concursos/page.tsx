@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { listActiveContests, listFinishedContests, listWinners, posicionesDelConcurso, type Contest, type Ganador } from "@/lib/db/contests";
@@ -13,6 +14,8 @@ interface ConcursoActivo {
   contest: Contest;
   posiciones: PosicionConcurso[];
 }
+
+export const metadata: Metadata = { title: "Concursos" };
 
 export default async function ConcursosPage() {
   const cookieStore = await cookies();
@@ -213,7 +216,7 @@ function FinishedCard({ contest, ganadores, miBrokerId }: { contest: Contest; ga
         </div>
         <Badge variant="purple">Finalizado</Badge>
       </div>
-      {gane && <p className="mt-3 rounded-lg bg-finbra-purple/10 p-3 text-sm font-semibold text-finbra-purple">¡Felicidades, ganaste este concurso!</p>}
+      {gane && <p className="mt-3 rounded-lg bg-finbra-purple/10 p-3 text-sm font-semibold text-finbra-purple-700">¡Felicidades, ganaste este concurso!</p>}
       {ganadores.length === 0 ? (
         <p className="mt-3 text-sm text-finbra-gray">Nadie cumplió las condiciones para ganar.</p>
       ) : (

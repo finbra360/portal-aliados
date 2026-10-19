@@ -24,7 +24,7 @@ export function FinalizarConcurso({ id, enCurso }: { id: number; enCurso: boolea
         <button
           type="button"
           onClick={() => setConfirmando(true)}
-          className="rounded-lg border border-finbra-purple/30 px-3 py-1.5 text-xs font-semibold text-finbra-purple hover:bg-finbra-purple/5"
+          className="rounded-lg border border-finbra-purple/30 px-3 py-1.5 text-xs font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5"
         >
           Finalizar y fijar ganadores
         </button>

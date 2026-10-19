@@ -60,17 +60,6 @@ export interface BrokerStats {
   operaciones: OperacionFondeada[];
 }
 
-export interface Recurso {
-  titulo: string;
-  tipo: string;
-  url: string;
-  categoria: string;
-}
-
-export interface RecursosResponse {
-  recursos: Recurso[];
-}
-
 export type LeaderboardCriterio = "monto" | "operaciones";
 
 export interface LeaderboardEntry {
@@ -86,20 +75,6 @@ export interface LeaderboardResponse {
   criterioActual: LeaderboardCriterio;
 }
 
-/**
- * No implementado todavía — no existe backend de concursos. El tipo queda
- * definido para que activar un concurso futuro solo requiera el webhook.
- */
-export interface Contest {
-  id: string;
-  nombre: string;
-  periodoInicio: string;
-  periodoFin: string;
-  criterio: LeaderboardCriterio | "puntos";
-  premio: string;
-  standings: LeaderboardEntry[];
-}
-
 /** Manda el código por correo. El portal ya validó que el broker existe y está activo. */
 export function requestCode(email: string, nombre: string) {
   return callWebhook<RequestCodeResponse>("/webhook/broker-portal-request-code", {
@@ -113,8 +88,3 @@ export function verifyCode(email: string, code: string) {
   });
 }
 
-export function getRecursos() {
-  return callWebhook<RecursosResponse>("/webhook/broker-portal-recursos", {
-    method: "GET",
-  });
-}

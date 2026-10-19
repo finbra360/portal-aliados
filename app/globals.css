@@ -2,6 +2,8 @@
 
 @theme {
   --color-finbra-purple: #5d5bdb;
+  /* Para texto sobre fondos morado/lila claros: #5d5bdb ahí no llega a 4.5 de contraste. */
+  --color-finbra-purple-700: #4a48c2;
   --color-finbra-lilac: #e9aef9;
   --color-finbra-gray: #5d5d5d;
   --font-sans: "Montserrat", sans-serif;
@@ -10,4 +12,21 @@
 body {
   background-color: #f7f7fb;
   color: #000000;
+}
+
+/* Foco visible para quien navega con teclado, en cualquier control. */
+:focus-visible {
+  outline: 2px solid var(--color-finbra-purple);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

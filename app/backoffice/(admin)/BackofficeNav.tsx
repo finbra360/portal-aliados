@@ -161,7 +161,7 @@ export default function BackofficeNav({ nombre, role }: { nombre: string; role: 
               <Link
                 key={entry.href}
                 href={entry.href}
-                className={`${fila} font-medium ${active ? "bg-finbra-purple/10 text-finbra-purple" : "text-black/70 hover:bg-black/[0.04]"}`}
+                className={`${fila} font-medium ${active ? "bg-finbra-purple/10 text-finbra-purple-700" : "text-black/70 hover:bg-black/[0.04]"}`}
               >
                 <span className={active ? "text-finbra-purple" : "text-finbra-gray"}>{entry.icon}</span>
                 {entry.label}
@@ -195,7 +195,7 @@ export default function BackofficeNav({ nombre, role }: { nombre: string; role: 
                         key={item.href}
                         href={item.href}
                         className={`block rounded-lg py-1.5 pl-11 pr-3 ${
-                          active ? "bg-finbra-purple/10 font-semibold text-finbra-purple" : "text-black/60 hover:bg-black/[0.04] hover:text-black/80"
+                          active ? "bg-finbra-purple/10 font-semibold text-finbra-purple-700" : "text-black/60 hover:bg-black/[0.04] hover:text-black/80"
                         }`}
                       >
                         {item.label}
@@ -210,7 +210,7 @@ export default function BackofficeNav({ nombre, role }: { nombre: string; role: 
       </nav>
 
       <div className="flex items-center gap-3 border-t border-black/5 px-4 py-3">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-finbra-purple/10 text-xs font-bold text-finbra-purple" aria-hidden>
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-finbra-purple/10 text-xs font-bold text-finbra-purple-700" aria-hidden>
           {iniciales(nombre)}
         </span>
         <span className="min-w-0 flex-1 leading-tight">

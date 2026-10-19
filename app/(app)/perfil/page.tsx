@@ -1,8 +1,11 @@
+import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/auth";
 import { getBrokerContext } from "@/lib/broker-data";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
+
+export const metadata: Metadata = { title: "Perfil" };
 
 export default async function PerfilPage() {
   const cookieStore = await cookies();

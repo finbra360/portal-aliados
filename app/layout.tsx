@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Portal de Aliados — Finbra 360",
+  title: { default: "Portal de Aliados — Finbra 360", template: "%s — Finbra 360" },
   description: "Portal privado para aliados y brokers de Finbra 360.",
   robots: { index: false, follow: false },
 };

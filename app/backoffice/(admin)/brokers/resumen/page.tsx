@@ -66,9 +66,9 @@ export default async function BrokersResumenPage() {
         <table className="w-full min-w-[480px] text-left text-sm">
           <thead>
             <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-              <th className="px-6 py-3">Broker</th>
-              <th className="px-6 py-3">Colocado</th>
-              <th className="px-6 py-3">Operaciones</th>
+              <th scope="col" className="px-6 py-3">Broker</th>
+              <th scope="col" className="px-6 py-3">Colocado</th>
+              <th scope="col" className="px-6 py-3">Operaciones</th>
             </tr>
           </thead>
           <tbody>

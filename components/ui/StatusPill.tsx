@@ -20,7 +20,7 @@ const STATUS_LABELS: Record<OperationStatus, string> = {
 const STATUS_CLASSES: Record<OperationStatus, string> = {
   recibida: "bg-black/5 text-finbra-gray",
   documentacion_pendiente: "bg-amber-100 text-amber-800",
-  en_analisis: "bg-finbra-purple/10 text-finbra-purple",
+  en_analisis: "bg-finbra-purple/10 text-finbra-purple-700",
   aprobada: "bg-sky-100 text-sky-700",
   formalizacion: "bg-sky-100 text-sky-700",
   fondeada: "bg-emerald-100 text-emerald-700",

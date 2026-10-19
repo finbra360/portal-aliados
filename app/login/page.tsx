@@ -92,13 +92,20 @@ export default function LoginPage() {
                 type="email"
                 required
                 autoFocus
+                autoComplete="email"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "login-error" : undefined}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="tu@email.com"
-                className="w-full rounded-lg border border-black/10 px-3 py-2 outline-none focus:border-finbra-purple"
+                className="w-full rounded-lg border border-black/10 px-3 py-2 focus:border-finbra-purple"
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p id="login-error" role="alert" className="text-sm text-red-700">
+                {error}
+              </p>
+            )}
             <button
               type="submit"
               disabled={loading}
@@ -120,16 +127,25 @@ export default function LoginPage() {
                 id="code"
                 type="text"
                 inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                title="6 dígitos"
                 maxLength={6}
                 required
                 autoFocus
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "login-error" : undefined}
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
                 placeholder="123456"
-                className="w-full rounded-lg border border-black/10 px-3 py-2 tracking-widest outline-none focus:border-finbra-purple"
+                className="w-full rounded-lg border border-black/10 px-3 py-2 tracking-widest focus:border-finbra-purple"
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && (
+              <p id="login-error" role="alert" className="text-sm text-red-700">
+                {error}
+              </p>
+            )}
             <button
               type="submit"
               disabled={loading}

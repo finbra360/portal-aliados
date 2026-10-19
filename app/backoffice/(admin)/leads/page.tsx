@@ -126,7 +126,7 @@ export default async function LeadsPage({
               key={size}
               href={buildHref("/backoffice/leads", { categoria, perPage: size })}
               className={`rounded-lg px-2 py-1 font-semibold ${
-                perPage === size ? "bg-finbra-purple/10 text-finbra-purple" : "hover:bg-black/5"
+                perPage === size ? "bg-finbra-purple/10 text-finbra-purple-700" : "hover:bg-black/5"
               }`}
             >
               {size}
@@ -161,15 +161,15 @@ export default async function LeadsPage({
             </colgroup>
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-4 py-3">Empresa</th>
-                <th className="px-4 py-3">Contacto</th>
-                <th className="px-4 py-3">Ubicación</th>
-                <th className="px-4 py-3">Empleados</th>
-                <th className="px-4 py-3">Antigüedad</th>
-                <th className="px-4 py-3">Garantía</th>
-                <th className="px-4 py-3">Score</th>
-                <th className="px-4 py-3">Categoría</th>
-                <th className="px-4 py-3">Estatus</th>
+                <th scope="col" className="px-4 py-3">Empresa</th>
+                <th scope="col" className="px-4 py-3">Contacto</th>
+                <th scope="col" className="px-4 py-3">Ubicación</th>
+                <th scope="col" className="px-4 py-3">Empleados</th>
+                <th scope="col" className="px-4 py-3">Antigüedad</th>
+                <th scope="col" className="px-4 py-3">Garantía</th>
+                <th scope="col" className="px-4 py-3">Score</th>
+                <th scope="col" className="px-4 py-3">Categoría</th>
+                <th scope="col" className="px-4 py-3">Estatus</th>
               </tr>
             </thead>
             <tbody>
@@ -318,9 +318,9 @@ export default async function LeadsPage({
             <table className="w-full min-w-[700px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th className="px-6 py-3">Empresa</th>
-                  <th className="px-6 py-3">Motivo</th>
-                  <th className="px-6 py-3">Resolución</th>
+                  <th scope="col" className="px-6 py-3">Empresa</th>
+                  <th scope="col" className="px-6 py-3">Motivo</th>
+                  <th scope="col" className="px-6 py-3">Resolución</th>
                 </tr>
               </thead>
               <tbody>

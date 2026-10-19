@@ -8,7 +8,7 @@ import { enviarSinBorrar } from "../cobranza/enviarSinBorrar";
 
 const input = "w-full rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm";
 export const boton = "rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50";
-export const botonSecundario = "rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5";
+export const botonSecundario = "rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5";
 
 export function Aviso({ state }: { state: BrokerActionResult | null }) {
   if (!state) return null;

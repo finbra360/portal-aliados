@@ -115,9 +115,9 @@ export default async function BrokerDetailPage({ params }: { params: Promise<{ i
           <table className="mt-2 w-full min-w-[480px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Cliente</th>
-                <th className="px-6 py-3">Monto</th>
-                <th className="px-6 py-3">Etapa</th>
+                <th scope="col" className="px-6 py-3">Cliente</th>
+                <th scope="col" className="px-6 py-3">Monto</th>
+                <th scope="col" className="px-6 py-3">Etapa</th>
               </tr>
             </thead>
             <tbody>

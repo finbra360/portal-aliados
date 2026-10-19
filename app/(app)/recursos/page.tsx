@@ -1,4 +1,4 @@
-import { getRecursos, type Recurso } from "@/lib/n8n";
+import type { Metadata } from "next";
 import { listResources } from "@/lib/db/resources";
 import {
   PRODUCTO,
@@ -26,29 +26,16 @@ function DraftSection({ title, children }: { title: string; children: React.Reac
   );
 }
 
+export const metadata: Metadata = { title: "Recursos" };
+
 export default async function RecursosPage() {
-  let recursos: Recurso[] = [];
-  let loadError = false;
-
-  try {
-    const data = await getRecursos();
-    recursos = data.recursos;
-  } catch {
-    loadError = true;
-  }
-
   let cmsResources: Awaited<ReturnType<typeof listResources>> = [];
+  let loadError = false;
   try {
     cmsResources = await listResources(true);
   } catch {
-    // El CMS de recursos es un complemento — si falla, seguimos con lo que venga de n8n.
+    loadError = true;
   }
-
-  const porCategoria = recursos.reduce<Record<string, Recurso[]>>((acc, recurso) => {
-    (acc[recurso.categoria] ??= []).push(recurso);
-    return acc;
-  }, {});
-  const categorias = Object.keys(porCategoria);
 
   return (
     <div className="space-y-6">
@@ -57,33 +44,13 @@ export default async function RecursosPage() {
         <p className="text-sm text-finbra-gray">Herramientas y materiales para ayudarte a vender más con Finbra.</p>
       </div>
 
-      {loadError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
+      {loadError && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">
           No pudimos cargar los materiales descargables en este momento.
         </div>
-      ) : categorias.length ? (
-        <div className="space-y-6">
-          {categorias.map((categoria) => (
-            <section key={categoria}>
-              <h2 className="mb-3 text-xs font-bold uppercase tracking-wide text-finbra-purple">{categoria}</h2>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {porCategoria[categoria].map((recurso) => (
-                  <a
-                    key={recurso.url}
-                    href={recurso.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="rounded-xl border border-finbra-purple/10 bg-white p-5 shadow-[0_2px_12px_rgba(93,91,219,0.12)] transition hover:shadow-[0_4px_24px_rgba(93,91,219,0.2)]"
-                  >
-                    <Badge>{recurso.tipo}</Badge>
-                    <p className="mt-2 font-medium">{recurso.titulo}</p>
-                  </a>
-                ))}
-              </div>
-            </section>
-          ))}
-        </div>
-      ) : (
+      )}
+
+      {!loadError && cmsResources.length === 0 && (
         <Card>
           <p className="text-sm text-finbra-gray">
             Los materiales descargables (presentaciones, casos de uso, ficha de producto en PDF) están en preparación

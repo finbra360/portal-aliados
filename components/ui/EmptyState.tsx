@@ -14,7 +14,7 @@ export default function EmptyState({
 }) {
   return (
     <Card className="flex flex-col items-center gap-2 py-10 text-center">
-      {icon && <div className="mb-1 text-3xl text-finbra-purple/40">{icon}</div>}
+      {icon && <div aria-hidden="true" className="mb-1 text-3xl text-finbra-purple/40">{icon}</div>}
       <p className="font-medium">{title}</p>
       {description && <p className="max-w-sm text-sm text-finbra-gray">{description}</p>}
       {action && <div className="mt-3">{action}</div>}

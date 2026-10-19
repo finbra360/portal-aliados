@@ -18,6 +18,11 @@ export default function DashboardChart({ data }: { data: PorMes[] }) {
   const [period, setPeriod] = useState<ChartPeriod>("mes");
   const points = useMemo(() => aggregatePorMes(data, period), [data, period]);
 
+  // La gráfica es un dibujo: el lector de pantalla recibe lo mismo en texto.
+  const resumen = `Colocación por ${period === "mes" ? "mes" : period === "trimestre" ? "trimestre" : "año"}: ${points
+    .map((p) => `${p.label} ${formatCurrency(p.monto)}`)
+    .join(", ")}`;
+
   if (!data.length) {
     return <p className="text-sm text-finbra-gray">Todavía no hay datos de colocación.</p>;
   }
@@ -30,15 +35,16 @@ export default function DashboardChart({ data }: { data: PorMes[] }) {
             key={p.id}
             type="button"
             onClick={() => setPeriod(p.id)}
+            aria-pressed={period === p.id}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
-              period === p.id ? "bg-finbra-purple text-white" : "bg-finbra-purple/10 text-finbra-purple"
+              period === p.id ? "bg-finbra-purple text-white" : "bg-finbra-purple/10 text-finbra-purple-700"
             }`}
           >
             {p.label}
           </button>
         ))}
       </div>
-      <div className="h-72 w-full">
+      <div className="h-72 w-full" role="img" aria-label={resumen}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={points}>
             <CartesianGrid strokeDasharray="3 3" stroke="#00000010" />

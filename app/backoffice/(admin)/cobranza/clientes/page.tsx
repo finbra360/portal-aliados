@@ -57,7 +57,7 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
                 filtro === f.value ? "bg-finbra-purple text-white" : "bg-black/5 text-finbra-gray hover:bg-black/10"
               }`}
             >
-              {f.label} <span className="opacity-70">{data.conteos[f.value]}</span>
+              {f.label} <span className="font-normal">({data.conteos[f.value]})</span>
             </Link>
           ))}
         </div>
@@ -93,13 +93,13 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-4 py-3">Cliente</th>
-                <th className="px-4 py-3 text-right">Créditos</th>
-                <th className="px-4 py-3 text-right">Adeudo</th>
-                <th className="px-4 py-3 text-right">Vencido</th>
-                <th className="px-4 py-3">Atraso</th>
-                <th className="px-4 py-3">Recordatorios a</th>
-                <th className="px-4 py-3">Último pago</th>
+                <th scope="col" className="px-4 py-3">Cliente</th>
+                <th scope="col" className="px-4 py-3 text-right">Créditos</th>
+                <th scope="col" className="px-4 py-3 text-right">Adeudo</th>
+                <th scope="col" className="px-4 py-3 text-right">Vencido</th>
+                <th scope="col" className="px-4 py-3">Atraso</th>
+                <th scope="col" className="px-4 py-3">Recordatorios a</th>
+                <th scope="col" className="px-4 py-3">Último pago</th>
               </tr>
             </thead>
             <tbody>

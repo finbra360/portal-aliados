@@ -45,8 +45,14 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen">
+      <a
+        href="#contenido"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:bg-finbra-purple focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
+      >
+        Saltar al contenido
+      </a>
       <Nav nombre={session?.nombre ?? ""} tier={tier} notifications={notifications} anuncios={anuncios} />
-      <main className="mx-auto max-w-6xl px-4 py-8">{children}</main>
+      <main id="contenido" tabIndex={-1} className="mx-auto max-w-6xl px-4 py-8 outline-none">{children}</main>
     </div>
   );
 }

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
@@ -14,6 +15,8 @@ const ESTILO_PASO = {
   pendiente: { punto: "bg-black/10 text-finbra-gray", texto: "text-finbra-gray" },
   rechazada: { punto: "bg-red-500 text-white", texto: "font-bold text-red-700" },
 } as const;
+
+export const metadata: Metadata = { title: "Seguimiento de solicitud" };
 
 export default async function OperacionDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const { id: idTexto } = await params;

@@ -48,12 +48,12 @@ export default async function BackofficeComunicacionesPage() {
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Anuncio</th>
-                <th className="px-6 py-3">Para</th>
-                <th className="px-6 py-3">Publicado</th>
-                <th className="px-6 py-3">Leído por</th>
-                <th className="px-6 py-3">Estado</th>
-                <th className="px-6 py-3"></th>
+                <th scope="col" className="px-6 py-3">Anuncio</th>
+                <th scope="col" className="px-6 py-3">Para</th>
+                <th scope="col" className="px-6 py-3">Publicado</th>
+                <th scope="col" className="px-6 py-3">Leído por</th>
+                <th scope="col" className="px-6 py-3">Estado</th>
+                <th scope="col" className="px-6 py-3"><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>

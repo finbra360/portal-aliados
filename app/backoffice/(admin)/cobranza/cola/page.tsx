@@ -37,13 +37,13 @@ function Tabla({ items, conNivel }: { items: QueueItem[]; conNivel: boolean }) {
       <table className="w-full min-w-[860px] text-left text-sm">
         <thead>
           <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-            {conNivel && <th className="px-4 py-3">#</th>}
-            <th className="px-4 py-3">Cliente</th>
-            <th className="px-4 py-3">Créditos</th>
-            <th className="px-4 py-3 text-right">Vencido</th>
-            <th className="px-4 py-3">Por qué</th>
-            <th className="px-4 py-3">Qué sigue</th>
-            <th className="px-4 py-3">Última gestión</th>
+            {conNivel && <th scope="col" className="px-4 py-3">#</th>}
+            <th scope="col" className="px-4 py-3">Cliente</th>
+            <th scope="col" className="px-4 py-3">Créditos</th>
+            <th scope="col" className="px-4 py-3 text-right">Vencido</th>
+            <th scope="col" className="px-4 py-3">Por qué</th>
+            <th scope="col" className="px-4 py-3">Qué sigue</th>
+            <th scope="col" className="px-4 py-3">Última gestión</th>
           </tr>
         </thead>
         <tbody>

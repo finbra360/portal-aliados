@@ -69,11 +69,11 @@ export default async function BackofficeComisionesPage() {
         <table className="w-full min-w-[640px] text-left text-sm">
           <thead>
             <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-              <th className="px-6 py-3">Broker</th>
-              <th className="px-6 py-3">Fecha</th>
-              <th className="px-6 py-3">Monto</th>
-              <th className="px-6 py-3">Comisión</th>
-              <th className="px-6 py-3">Estatus</th>
+              <th scope="col" className="px-6 py-3">Broker</th>
+              <th scope="col" className="px-6 py-3">Fecha</th>
+              <th scope="col" className="px-6 py-3">Monto</th>
+              <th scope="col" className="px-6 py-3">Comisión</th>
+              <th scope="col" className="px-6 py-3">Estatus</th>
             </tr>
           </thead>
           <tbody>

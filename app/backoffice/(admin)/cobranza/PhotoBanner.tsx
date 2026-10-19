@@ -22,7 +22,7 @@ export default function PhotoBanner({ status }: { status: PhotoStatus }) {
         </span>
       )}
       {status.ambiente === "pruebas" && (
-        <span className="rounded-full bg-finbra-lilac/40 px-3 py-1 text-xs font-semibold text-finbra-purple">
+        <span className="rounded-full bg-finbra-lilac/40 px-3 py-1 text-xs font-semibold text-finbra-purple-700">
           Ambiente de pruebas de SIAC: sirve para revisar la plataforma, no para decidir cobranza
         </span>
       )}

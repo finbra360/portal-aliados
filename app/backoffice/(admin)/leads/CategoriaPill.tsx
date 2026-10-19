@@ -18,7 +18,7 @@ const CLASSES: Record<LeadCategoria, string> = {
 
 export default function CategoriaPill({ categoria }: { categoria: LeadCategoria | null }) {
   if (!categoria) {
-    return <span className="inline-block rounded-full bg-finbra-lilac/40 px-3 py-1 text-xs font-semibold text-finbra-purple">Sin calificar</span>;
+    return <span className="inline-block rounded-full bg-finbra-lilac/40 px-3 py-1 text-xs font-semibold text-finbra-purple-700">Sin calificar</span>;
   }
   return <span className={`inline-block rounded-full px-3 py-1 text-xs font-semibold ${CLASSES[categoria]}`}>{LABELS[categoria]}</span>;
 }

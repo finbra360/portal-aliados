@@ -42,7 +42,7 @@ export default async function BackofficeBrokersPage() {
           <p className="text-sm text-finbra-gray">{brokers.length === 1 ? "1 broker dado de alta" : `${brokers.length} brokers dados de alta`}</p>
         </div>
         {puedeCapturar && (
-          <Link href="/backoffice/brokers/colocacion" className="rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
+          <Link href="/backoffice/brokers/colocacion" className="rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5">
             Carga de colocación
           </Link>
         )}
@@ -59,12 +59,12 @@ export default async function BackofficeBrokersPage() {
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-6 py-3">Broker</th>
-                <th className="px-6 py-3">ID</th>
-                <th className="px-6 py-3">Teléfono</th>
-                <th className="px-6 py-3">Colocado</th>
-                <th className="px-6 py-3">Operaciones</th>
-                <th className="px-6 py-3"></th>
+                <th scope="col" className="px-6 py-3">Broker</th>
+                <th scope="col" className="px-6 py-3">ID</th>
+                <th scope="col" className="px-6 py-3">Teléfono</th>
+                <th scope="col" className="px-6 py-3">Colocado</th>
+                <th scope="col" className="px-6 py-3">Operaciones</th>
+                <th scope="col" className="px-6 py-3"><span className="sr-only">Acciones</span></th>
               </tr>
             </thead>
             <tbody>

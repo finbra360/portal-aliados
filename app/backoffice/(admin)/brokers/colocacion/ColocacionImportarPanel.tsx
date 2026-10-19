@@ -8,7 +8,7 @@ import { importarColocacionAction, previsualizarColocacionAction, type Colocacio
 import { leerArchivo } from "../importar/ImportarPanel";
 
 const boton = "rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50";
-const botonSecundario = "rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5";
+const botonSecundario = "rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5";
 
 const PLANTILLA = "ID Broker,Fecha,Monto MXN,Comisión Apertura %,Pagado en su totalidad,Referencia\nFAPBR001,2026-06-15,850000,5,No,Cliente ejemplo\n";
 

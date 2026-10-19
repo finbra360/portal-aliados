@@ -130,14 +130,14 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th className="px-4 py-2">Crédito</th>
-                <th className="px-4 py-2 text-right">Vencido</th>
-                <th className="px-4 py-2 text-right">Adeudo</th>
-                <th className="px-4 py-2">Atraso</th>
-                <th className="px-4 py-2">Próximo venc.</th>
-                <th className="px-4 py-2">Último pago</th>
-                <th className="px-4 py-2">Saldo al día</th>
-                <th className="px-4 py-2">Etapa</th>
+                <th scope="col" className="px-4 py-2">Crédito</th>
+                <th scope="col" className="px-4 py-2 text-right">Vencido</th>
+                <th scope="col" className="px-4 py-2 text-right">Adeudo</th>
+                <th scope="col" className="px-4 py-2">Atraso</th>
+                <th scope="col" className="px-4 py-2">Próximo venc.</th>
+                <th scope="col" className="px-4 py-2">Último pago</th>
+                <th scope="col" className="px-4 py-2">Saldo al día</th>
+                <th scope="col" className="px-4 py-2">Etapa</th>
               </tr>
             </thead>
             <tbody>
@@ -198,9 +198,9 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
               <table className="mt-3 w-full min-w-[420px] text-left text-sm">
                 <thead>
                   <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                    <th className="px-6 py-2">Fecha</th>
-                    <th className="px-6 py-2">Crédito</th>
-                    <th className="px-6 py-2 text-right">Monto</th>
+                    <th scope="col" className="px-6 py-2">Fecha</th>
+                    <th scope="col" className="px-6 py-2">Crédito</th>
+                    <th scope="col" className="px-6 py-2 text-right">Monto</th>
                   </tr>
                 </thead>
                 <tbody>
