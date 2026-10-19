@@ -6,7 +6,8 @@ import { usePathname, useRouter } from "next/navigation";
 import type { AdminRole } from "@/lib/db/admin-users";
 import { COBRANZA_ROLES } from "@/lib/rbac";
 import FinbraLogo from "@/components/ui/FinbraLogo";
-import { IconHome, IconLogout, IconSettings, IconTarget, IconUsers, IconWallet } from "@/components/ui/icons";
+import { IconHome, IconLogout, IconSettings, IconTarget, IconTrendingUp, IconUsers, IconWallet } from "@/components/ui/icons";
+import { CH_VEN } from "@/lib/credit-health/roles";
 
 // exact: solo se marca activo en esa ruta exacta (no en sus subrutas).
 // excluir: subrutas que tienen su propio elemento en el menú.
@@ -54,6 +55,17 @@ const NAV: NavEntry[] = [
     label: "Leads",
     icon: <IconTarget />,
     items: [{ href: "/backoffice/leads", label: "Leads" }],
+  },
+  {
+    type: "group",
+    label: "Credit Health",
+    icon: <IconTrendingUp />,
+    roles: CH_VEN,
+    items: [
+      { href: "/backoffice/credit-health", label: "Resumen", exact: true },
+      { href: "/backoffice/credit-health/prospectos", label: "Prospectos" },
+      { href: "/backoffice/credit-health/politicas", label: "Políticas" },
+    ],
   },
   {
     type: "group",
