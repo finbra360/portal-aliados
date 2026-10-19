@@ -77,6 +77,7 @@ export const config = {
     "/inicio",
     "/cobranza/:path*",
     "/leads/:path*",
+    "/credit-health/:path*",
     "/brokers/:path*",
     "/rankings/:path*",
     "/comunicaciones/:path*",
