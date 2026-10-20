@@ -10,6 +10,28 @@ const ACCIONES: Array<{ v: AccionRegla; l: string }> = [
   { v: "ignore", l: "Ignorar" },
 ];
 
+/** Marcas de «pendiente» de la política de referencia, para volver a ponerlas si se desmarca la aprobación. */
+const PENDIENTES_REFERENCIA = [
+  "product.annualRate",
+  "product.minAmount",
+  "product.maxAmount",
+  "product.minTermMonths",
+  "product.maxTermMonths",
+  "capacity.minDscr",
+  "capacity.stressSalesDropPct",
+  "capacity.operatingCashBufferMonths",
+  "eligibility.minAnnualRevenue",
+  "eligibility.minMonthsOperating",
+  "eligibility.collateral",
+  "eligibility.bureau",
+  "eligibility.restrictedIndustries",
+  "eligibility.customerConcentrationReviewPct",
+  "eligibility.declaredVsHistoryReviewPct",
+  "scoring.weights",
+  "priority",
+  "retention",
+];
+
 const campo = "h-10 w-full rounded-lg border border-black/10 bg-white px-3 text-sm tabular-nums focus:border-finbra-purple focus:outline-none disabled:bg-black/5";
 const redondear = (v: number) => Math.round(v * 1000) / 1000;
 
@@ -147,6 +169,22 @@ export default function EditorPolitica({ inicial, puedeEditar }: { inicial: Poli
         <Campo etiqueta="Notas para el comité (qué cambió y por qué)">
           <textarea value={notas} maxLength={1000} onChange={(e) => setNotas(e.target.value)} className="min-h-20 w-full rounded-lg border border-black/10 px-3 py-2 text-sm focus:border-finbra-purple focus:outline-none" />
         </Campo>
+
+        {/* Mientras haya marcas de pendiente, el diagnóstico avisa a los empresarios que los parámetros no están aprobados. */}
+        <label className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm">
+          <input
+            type="checkbox"
+            checked={p.pendingApproval.length === 0}
+            onChange={(e) =>
+              set((d) => void (d.pendingApproval = e.target.checked ? [] : inicial.pendingApproval.length ? [...inicial.pendingApproval] : PENDIENTES_REFERENCIA))
+            }
+            className="mt-0.5 size-4 accent-[#5d5bdb]"
+          />
+          <span>
+            <strong>El comité de crédito aprobó estos parámetros.</strong>
+            <span className="block text-emerald-800">Quita las marcas de «pendiente» y el diagnóstico deja de decir que la política está sujeta a aprobación.</span>
+          </span>
+        </label>
       </fieldset>
 
       {estado.mensaje ? (
