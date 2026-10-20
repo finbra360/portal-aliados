@@ -35,9 +35,11 @@ export default async function PoliticasPage() {
           Parámetros del diagnóstico. Los cambios se guardan como borrador y un Super Admin los activa; cada prospecto guarda la versión con la que se evaluó.
         </p>
       </div>
-      <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-        Los parámetros marcados como <strong>pendientes</strong> son valores de referencia y requieren la aprobación del comité de crédito antes del lanzamiento.
-      </p>
+      {datos?.activa?.config.pendingApproval?.length ? (
+        <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          La política activa tiene parámetros marcados como <strong>pendientes</strong>. Cuando el comité los apruebe, marca la casilla de aprobación al final del editor, guarda y activa la versión.
+        </p>
+      ) : null}
 
       {!datos ? (
         <ErrorCarga texto="No pudimos cargar las políticas." />
