@@ -1,7 +1,16 @@
 import { getAdminSession } from "@/lib/get-admin-session";
 import { hasRole } from "@/lib/rbac";
 import { CH_EXPORTAN, CH_VEN_CONTACTO } from "@/lib/credit-health/roles";
-import { CLASIFICACION_LABELS, ESTADO_CONTACTO_LABELS, INTENCION_LABELS, SECTORES, type Clasificacion, type EstadoContacto } from "@/lib/credit-health/catalogo";
+import {
+  CLASIFICACION_LABELS,
+  ELEGIBILIDAD_LABELS,
+  ESTADO_CONTACTO_LABELS,
+  INTENCION_LABELS,
+  origenLabel,
+  SECTORES,
+  type Clasificacion,
+  type EstadoContacto,
+} from "@/lib/credit-health/catalogo";
 import { descifrar, llaveCreditHealth } from "@/lib/credit-health/cifrado";
 import { aCsv } from "@/lib/credit-health/csv";
 import { creditHealthConfigurado } from "@/lib/credit-health/db";
@@ -44,6 +53,7 @@ export async function GET(req: Request) {
     "Motivos de descarte",
     "Motivos de revisión",
     "Demo",
+    "Origen",
     ...(conContacto ? ["Nombre", "Correo", "Teléfono", "Cargo"] : []),
   ];
   const datos = filas.map((l) => [
@@ -53,7 +63,7 @@ export async function GET(req: Request) {
     (l.sector_code && SECTORES[l.sector_code]) || "",
     l.state,
     CLASIFICACION_LABELS[l.classification as Clasificacion] ?? l.classification,
-    l.eligibility_status,
+    ELEGIBILIDAD_LABELS[l.eligibility_status] ?? l.eligibility_status,
     l.score,
     l.requested_amount,
     l.term_months,
@@ -68,6 +78,7 @@ export async function GET(req: Request) {
     ((l.exclusion_reasons as string[]) ?? []).join(" | "),
     ((l.review_reasons as string[]) ?? []).join(" | "),
     l.is_demo ? "sí" : "no",
+    origenLabel(l.source),
     ...(conContacto ? [descifrar(l.contact_name_enc, llave), descifrar(l.contact_email_enc, llave), descifrar(l.contact_phone_enc, llave), l.contact_role] : []),
   ]);
 

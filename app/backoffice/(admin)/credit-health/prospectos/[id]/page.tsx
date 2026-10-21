@@ -13,11 +13,12 @@ import {
   GARANTIA_LABELS,
   HISTORIAL_LABELS,
   INTENCION_LABELS,
+  origenLabel,
   SECTORES,
   type EstadoContacto,
 } from "@/lib/credit-health/catalogo";
-import { obtenerProspecto, revelarContacto } from "@/lib/credit-health/prospectos";
-import type { ReglaCH } from "@/lib/credit-health/tipos";
+import { obtenerProspecto, revelarContacto, type ProspectoDetalle } from "@/lib/credit-health/prospectos";
+import type { EntradaCH, ReglaCH, ResultadoCH } from "@/lib/credit-health/tipos";
 import { agregarNotaAction, asignarAction, cambiarEstadoAction, eliminarAction } from "../../actions";
 import { ClasificacionPill, ContactoPill, DemoPill, ErrorCarga, fechaHora, pesos, veces } from "../../ui";
 
@@ -28,7 +29,7 @@ const botonSec = "h-9 rounded-lg border border-black/10 bg-white px-3 text-sm fo
 
 const EVENTOS: Record<string, string> = {
   created: "Prospecto creado",
-  updated: "Nuevo envío del empresario",
+  updated: "Actividad del empresario",
   status_changed: "Cambio de estado",
   assigned: "Asignación",
   note: "Nota",
@@ -75,11 +76,11 @@ export default async function ProspectoDetallePage({ params, searchParams }: { p
 
       <div>
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="text-2xl font-bold">{p.tradeName}</h1>
+          <h1 className="text-2xl font-bold">{p.tradeName ?? "Sin empresa todavía"}</h1>
           {p.isDemo ? <DemoPill /> : null}
         </div>
         <p className="mt-1 text-sm text-finbra-gray">
-          {p.folio} · {(p.sectorCode && SECTORES[p.sectorCode]) || "Sin sector"} · {p.state ?? "Sin estado"} · Recibido {fechaHora(p.createdAt)}
+          {p.folio} · {(p.sectorCode && SECTORES[p.sectorCode]) || "Sin sector"} · {p.state ?? "Sin estado"} · Recibido {fechaHora(p.createdAt)} · Origen: {origenLabel(p.source)}
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <ClasificacionPill valor={p.classification} />
@@ -91,69 +92,7 @@ export default async function ProspectoDetallePage({ params, searchParams }: { p
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="min-w-0 space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Metrica etiqueta="Monto solicitado" valor={pesos(p.requestedAmount)} nota={`${p.termMonths ?? "—"} meses`} />
-            <Metrica etiqueta="Monto preliminar" valor={pesos(p.preliminaryAmount)} nota={r.capacity.bindingConstraint ? `Límite: ${LIMITE[r.capacity.bindingConstraint] ?? r.capacity.bindingConstraint}` : undefined} />
-            <Metrica etiqueta="Pago sostenible" valor={pesos(p.maxPayment)} nota={`Flujo ${pesos(p.cfads)}/mes`} />
-            <Metrica etiqueta="DSCR actual / proyectado" valor={`${veces(r.dscrCurrent.value)} / ${veces(p.dscrProjected)}`} nota={`Score ${p.score ?? "—"}/100`} />
-          </div>
-
-          {r.exclusions.length || r.reviews.length || r.missing.length ? (
-            <Card>
-              <h2 className="font-semibold">Motivos de descarte y revisión</h2>
-              <ul className="mt-2 divide-y divide-black/5">
-                {[...r.exclusions, ...r.reviews].map((regla) => (
-                  <Regla key={regla.id} regla={regla} />
-                ))}
-              </ul>
-              {r.missing.length ? (
-                <p className="mt-3 text-sm text-finbra-gray">
-                  <strong className="text-black">Datos faltantes:</strong> {r.missing.map((m) => m.label).join(", ")}.
-                </p>
-              ) : null}
-            </Card>
-          ) : null}
-
-          <Card>
-            <h2 className="mb-3 font-semibold">Lo que declaró el empresario</h2>
-            <div className="grid gap-x-8 md:grid-cols-2">
-              <Lista
-                filas={[
-                  ["Figura jurídica", (e.company.legalForm && FIGURA_LABELS[e.company.legalForm]) || "—"],
-                  ["Antigüedad", e.company.monthsOperating !== null ? `${e.company.monthsOperating} meses` : "—"],
-                  ["Facturación anual", pesos(e.company.annualRevenue)],
-                  ["RFC activo (declarado)", e.company.rfcActive === "si" ? "Sí" : e.company.rfcActive === "no" ? "No" : e.company.rfcActive === "no_se" ? "No sabe" : "—"],
-                  ["Destino del crédito", (e.financing.purpose && DESTINO_LABELS[e.financing.purpose]) || "—"],
-                  ["Garantía", e.financing.collateralType ? `${GARANTIA_LABELS[e.financing.collateralType] ?? e.financing.collateralType} · ${pesos(e.financing.collateralValue)}` : "—"],
-                  ["Historial de pago", (e.financing.creditHistory && HISTORIAL_LABELS[e.financing.creditHistory]) || "—"],
-                ]}
-              />
-              <Lista
-                filas={[
-                  ["Ventas mensuales", `${pesos(r.cashflow.baseSales.value)}${r.cashflow.salesSource === "historial" ? " (historial)" : ""}`],
-                  ["Costo de ventas", pesos(e.finances.costOfSales)],
-                  ["Gastos fijos", pesos(r.cashflow.fixedExpenses.value)],
-                  ["Impuestos", pesos(e.finances.taxesPaid)],
-                  ["Servicio de deuda actual", pesos(r.currentDebtService.value)],
-                  ["Saldo de deuda", pesos(e.finances.debtBalance)],
-                  ["Cobra / paga en", `${e.finances.collectionDays ?? "—"} / ${e.finances.paymentDays ?? "—"} días`],
-                  ["Cliente principal", e.finances.topClientSharePct !== null ? `${e.finances.topClientSharePct} % de las ventas` : "—"],
-                ]}
-              />
-            </div>
-          </Card>
-
-          <Card>
-            <h2 className="font-semibold">Criterios evaluados</h2>
-            <p className="text-xs text-finbra-gray">
-              Política v{p.policyVersion ?? "—"} ({p.policyLabel ?? "desconocida"}) · Motor v{p.engineVersion}. El historial crediticio es declarado: no se consultó Buró.
-            </p>
-            <ul className="mt-2 divide-y divide-black/5">
-              {r.rules.map((regla) => (
-                <Regla key={regla.id} regla={regla} />
-              ))}
-            </ul>
-          </Card>
+          {r && e ? <Diagnostico p={p} r={r} e={e} /> : <SinDiagnostico />}
         </div>
 
         <div className="space-y-6">
@@ -273,6 +212,89 @@ export default async function ProspectoDetallePage({ params, searchParams }: { p
         </div>
       </div>
     </div>
+  );
+}
+
+/** Resultado del diagnóstico y lo que declaró el empresario. */
+function Diagnostico({ p, r, e }: { p: ProspectoDetalle; r: ResultadoCH; e: EntradaCH }) {
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Metrica etiqueta="Monto solicitado" valor={pesos(p.requestedAmount)} nota={`${p.termMonths ?? "—"} meses`} />
+        <Metrica etiqueta="Monto preliminar" valor={pesos(p.preliminaryAmount)} nota={r.capacity.bindingConstraint ? `Límite: ${LIMITE[r.capacity.bindingConstraint] ?? r.capacity.bindingConstraint}` : undefined} />
+        <Metrica etiqueta="Pago sostenible" valor={pesos(p.maxPayment)} nota={`Flujo ${pesos(p.cfads)}/mes`} />
+        <Metrica etiqueta="DSCR actual / proyectado" valor={`${veces(r.dscrCurrent.value)} / ${veces(p.dscrProjected)}`} nota={`Score ${p.score ?? "—"}/100`} />
+      </div>
+
+      {r.exclusions.length || r.reviews.length || r.missing.length ? (
+        <Card>
+          <h2 className="font-semibold">Motivos de descarte y revisión</h2>
+          <ul className="mt-2 divide-y divide-black/5">
+            {[...r.exclusions, ...r.reviews].map((regla) => (
+              <Regla key={regla.id} regla={regla} />
+            ))}
+          </ul>
+          {r.missing.length ? (
+            <p className="mt-3 text-sm text-finbra-gray">
+              <strong className="text-black">Datos faltantes:</strong> {r.missing.map((m) => m.label).join(", ")}.
+            </p>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <Card>
+        <h2 className="mb-3 font-semibold">Lo que declaró el empresario</h2>
+        <div className="grid gap-x-8 md:grid-cols-2">
+          <Lista
+            filas={[
+              ["Figura jurídica", (e.company.legalForm && FIGURA_LABELS[e.company.legalForm]) || "—"],
+              ["Antigüedad", e.company.monthsOperating !== null ? `${e.company.monthsOperating} meses` : "—"],
+              ["Facturación anual", pesos(e.company.annualRevenue)],
+              ["RFC activo (declarado)", e.company.rfcActive === "si" ? "Sí" : e.company.rfcActive === "no" ? "No" : e.company.rfcActive === "no_se" ? "No sabe" : "—"],
+              ["Destino del crédito", (e.financing.purpose && DESTINO_LABELS[e.financing.purpose]) || "—"],
+              ["Garantía", e.financing.collateralType ? `${GARANTIA_LABELS[e.financing.collateralType] ?? e.financing.collateralType} · ${pesos(e.financing.collateralValue)}` : "—"],
+              ["Historial de pago", (e.financing.creditHistory && HISTORIAL_LABELS[e.financing.creditHistory]) || "—"],
+            ]}
+          />
+          <Lista
+            filas={[
+              ["Ventas mensuales", `${pesos(r.cashflow.baseSales.value)}${r.cashflow.salesSource === "historial" ? " (historial)" : ""}`],
+              ["Costo de ventas", pesos(e.finances.costOfSales)],
+              ["Gastos fijos", pesos(r.cashflow.fixedExpenses.value)],
+              ["Impuestos", pesos(e.finances.taxesPaid)],
+              ["Servicio de deuda actual", pesos(r.currentDebtService.value)],
+              ["Saldo de deuda", pesos(e.finances.debtBalance)],
+              ["Cobra / paga en", `${e.finances.collectionDays ?? "—"} / ${e.finances.paymentDays ?? "—"} días`],
+              ["Cliente principal", e.finances.topClientSharePct !== null ? `${e.finances.topClientSharePct} % de las ventas` : "—"],
+            ]}
+          />
+        </div>
+      </Card>
+
+      <Card>
+        <h2 className="font-semibold">Criterios evaluados</h2>
+        <p className="text-xs text-finbra-gray">
+          Política v{p.policyVersion ?? "—"} ({p.policyLabel ?? "desconocida"}) · Motor v{p.engineVersion}. El historial crediticio es declarado: no se consultó Buró.
+        </p>
+        <ul className="mt-2 divide-y divide-black/5">
+          {r.rules.map((regla) => (
+            <Regla key={regla.id} regla={regla} />
+          ))}
+        </ul>
+      </Card>
+    </>
+  );
+}
+
+function SinDiagnostico() {
+  return (
+    <Card>
+      <h2 className="font-semibold">Aún no termina su diagnóstico</h2>
+      <p className="mt-1 text-sm text-finbra-gray">
+        Dejó sus datos de contacto al iniciar, pero todavía no envía las respuestas de su empresa. Si las completa, aquí aparecerán su resultado, su capacidad de pago y
+        los criterios evaluados. Mientras tanto puedes contactarlo para ayudarle a terminar.
+      </p>
+    </Card>
   );
 }
 

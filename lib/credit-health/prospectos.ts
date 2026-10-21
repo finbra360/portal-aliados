@@ -12,7 +12,8 @@ export interface ProspectoFila {
   id: string;
   folio: string;
   createdAt: Date;
-  tradeName: string;
+  /** null mientras no termine el diagnóstico (solo dejó sus datos al iniciar). */
+  tradeName: string | null;
   sectorCode: string | null;
   state: string | null;
   requestedAmount: number | null;
@@ -28,6 +29,7 @@ export interface ProspectoFila {
   assignedTo: string | null;
   exclusionReasons: string[];
   isDemo: boolean;
+  source: string | null;
 }
 
 function mapFila(r: Record<string, unknown>): ProspectoFila {
@@ -35,7 +37,7 @@ function mapFila(r: Record<string, unknown>): ProspectoFila {
     id: r.id as string,
     folio: r.folio as string,
     createdAt: r.created_at as Date,
-    tradeName: r.trade_name as string,
+    tradeName: r.trade_name as string | null,
     sectorCode: r.sector_code as string | null,
     state: r.state as string | null,
     requestedAmount: n(r.requested_amount),
@@ -51,6 +53,7 @@ function mapFila(r: Record<string, unknown>): ProspectoFila {
     assignedTo: r.assigned_to as string | null,
     exclusionReasons: (r.exclusion_reasons as string[]) ?? [],
     isDemo: r.is_demo as boolean,
+    source: r.source as string | null,
   };
 }
 
@@ -71,7 +74,7 @@ function where(sql: postgres.Sql, f: Partial<FiltrosProspectos>) {
 
 const COLUMNAS_LISTA = `id, folio, created_at, trade_name, sector_code, state, requested_amount, term_months,
   preliminary_amount, max_payment, dscr_projected, score, eligibility_status, classification,
-  contact_status, intent, assigned_to, exclusion_reasons, is_demo`;
+  contact_status, intent, assigned_to, exclusion_reasons, is_demo, source`;
 
 /** Listado SIN datos personales. */
 export async function listarProspectos(f: FiltrosProspectos, limite = PAGINA_CH) {
@@ -107,9 +110,10 @@ export interface ProspectoDetalle extends ProspectoFila {
   retentionUntil: Date;
   policyVersion: number | null;
   policyLabel: string | null;
-  engineVersion: string;
-  entrada: EntradaCH;
-  resultado: ResultadoCH;
+  engineVersion: string | null;
+  /** null mientras no termine el diagnóstico. */
+  entrada: EntradaCH | null;
+  resultado: ResultadoCH | null;
   cifrado: { nombre: string; correo: string; telefono: string; rfc: string | null };
 }
 
@@ -136,8 +140,8 @@ export async function obtenerProspecto(id: string) {
     policyVersion: n(r.policy_version),
     policyLabel: r.policy_label,
     engineVersion: r.engine_version,
-    entrada: r.input_snapshot as EntradaCH,
-    resultado: r.result_snapshot as ResultadoCH,
+    entrada: (r.input_snapshot as EntradaCH | null) ?? null,
+    resultado: (r.result_snapshot as ResultadoCH | null) ?? null,
     cifrado: { nombre: r.contact_name_enc, correo: r.contact_email_enc, telefono: r.contact_phone_enc, rfc: r.rfc_enc },
   };
   return {
