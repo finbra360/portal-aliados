@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createCipheriv, randomBytes } from "node:crypto";
 import { descifrar } from "./cifrado.ts";
+import { origenLabel } from "./catalogo.ts";
 import { aCsv, csvCelda } from "./csv.ts";
 import { filtrosQuery, parseFiltros } from "./filtros.ts";
 import { CH_BORRAN, CH_EDITAN_POLITICAS, CH_EXPORTAN, CH_OPERAN, CH_VEN, CH_VEN_CONTACTO } from "./roles.ts";
@@ -65,4 +66,11 @@ test("permisos: comercial opera, finanzas solo consulta, super_admin todo", () =
   }
   assert.deepEqual(CH_BORRAN, ["super_admin"]);
   assert.deepEqual(CH_EDITAN_POLITICAS, ["super_admin"]);
+});
+
+test("el origen distingue sitio web, eventos y demostraciones", () => {
+  assert.equal(origenLabel(null), "Sitio web");
+  assert.equal(origenLabel("diagnostico"), "Sitio web");
+  assert.equal(origenLabel("demo"), "Demostración");
+  assert.equal(origenLabel("evento:expo-pyme-2026"), "Evento: expo-pyme-2026");
 });

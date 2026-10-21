@@ -128,7 +128,7 @@ export default async function CreditHealthResumenPage({ searchParams }: { search
                   <li key={p.id}>
                     <Link href={`/backoffice/credit-health/prospectos/${p.id}`} className="flex items-center justify-between gap-4 px-6 py-3 hover:bg-finbra-purple/5">
                       <div className="min-w-0">
-                        <p className="truncate font-medium">{p.tradeName}</p>
+                        <p className="truncate font-medium">{p.tradeName ?? <span className="italic text-finbra-gray">Sin empresa todavía</span>}</p>
                         <p className="text-xs text-finbra-gray">
                           {p.folio} · {fecha(p.createdAt)} · {(p.sectorCode && SECTORES[p.sectorCode]) || "—"}
                         </p>

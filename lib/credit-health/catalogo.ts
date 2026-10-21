@@ -24,6 +24,8 @@ export const ESTADO_CONTACTO_LABELS: Record<EstadoContacto, string> = {
 };
 
 export const INTENCION_LABELS: Record<string, string> = {
+  inicio: "Dejó sus datos, sin terminar",
+  diagnostico: "Completó el diagnóstico",
   asesoria: "Solicitó asesoría",
   llamada: "Pidió una llamada",
   solicitud: "Apartó su evaluación",
@@ -36,7 +38,16 @@ export const ELEGIBILIDAD_LABELS: Record<string, string> = {
   requiere_revision: "Requiere revisión",
   no_elegible: "No elegible bajo criterios actuales",
   informacion_insuficiente: "Información insuficiente",
+  sin_diagnostico: "Sin diagnóstico todavía",
 };
+
+/** «evento:expo-pyme-2026» → «Evento: expo-pyme-2026». */
+export function origenLabel(source: string | null): string {
+  if (!source || source === "diagnostico") return "Sitio web";
+  if (source === "demo") return "Demostración";
+  if (source.startsWith("evento:")) return `Evento: ${source.slice("evento:".length)}`;
+  return source;
+}
 
 /** Sectores SCIAN (INEGI), nombre corto. */
 export const SECTORES: Record<string, string> = {

@@ -124,7 +124,7 @@ export default async function ProspectosPage({ searchParams }: { searchParams: P
                 <tr key={p.id} className="border-b border-black/5 last:border-0 hover:bg-finbra-purple/5">
                   <td className="px-6 py-3">
                     <Link href={`/backoffice/credit-health/prospectos/${p.id}`} className="font-medium hover:text-finbra-purple">
-                      {p.tradeName}
+                      {p.tradeName ?? <span className="italic text-finbra-gray">Sin empresa todavía</span>}
                     </Link>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-finbra-gray">
                       <span>
