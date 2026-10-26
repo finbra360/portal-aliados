@@ -3,6 +3,7 @@
 // poder probarlas con `node --test`.
 
 import { chooseRecipient, type ContactLike } from "./contacts.ts";
+import { estaEnMora } from "./rules.ts";
 
 /**
  * Orden de las variables de las plantillas finbra_mora_v1..v3 en Meta:
@@ -15,6 +16,8 @@ export interface MoraCandidate {
   clientId: string;
   nombre: string;
   totalVencido: number;
+  /** Días de atraso del crédito más atrasado (Antiguedad de SIAC). */
+  diasAtraso: number;
   creditos: { noCredito: string; totalVencido: number }[];
   pausaHasta: string | null;
   /** juridico o reestructura en alguno de sus créditos. */
@@ -65,6 +68,7 @@ export function limpiarParametro(s: string): string {
  */
 export function decidirMora(c: MoraCandidate, p: { umbral: number; hoy: string; plantillasActivas: string[] }): MoraDecision {
   if (c.totalVencido < p.umbral) return { enviar: false, motivo: "Saldo vencido menor al umbral de mora" };
+  if (!estaEnMora(c.totalVencido, c.diasAtraso, p.umbral)) return { enviar: false, motivo: "Vence hoy: todavía no está en mora" };
   if (c.etapa === "juridico") return { enviar: false, motivo: "En jurídico" };
   if (c.etapa === "reestructura") return { enviar: false, motivo: "En reestructura" };
   if (c.pausaHasta && c.pausaHasta >= p.hoy) return { enviar: false, motivo: "Cobranza pausada" };

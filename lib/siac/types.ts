@@ -66,6 +66,13 @@ export interface ListadoCobranzaItem {
     ProximoVencimiento?: Texto;
     /** Total pendiente por vencer, NO la mensualidad. */
     MontoPorVencer?: Numero;
+    /**
+     * Lo que debe pagar en su siguiente vencimiento, con lo ya vencido. Solo lo
+     * llena ListadoCobranzaPersonalizado (desde 2026-10-21); en ListadoCobranzaJSON
+     * llega null. Si el vencimiento cae el día de la foto, es el de HOY aunque
+     * ProximoVencimiento ya muestre el del mes siguiente.
+     */
+    MontoSiguienteVencimiento?: Numero;
   };
   Vencido: {
     InteresesMoratorios: Numero;

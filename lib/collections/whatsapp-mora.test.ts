@@ -37,6 +37,7 @@ const cliente = (over: Partial<MoraCandidate> = {}): MoraCandidate => ({
   clientId: "c1",
   nombre: "TRANSPORTES FICTICIOS",
   totalVencido: 41325,
+  diasAtraso: 12,
   creditos: [{ noCredito: "2001", totalVencido: 41325 }],
   pausaHasta: null,
   etapa: null,
@@ -136,4 +137,9 @@ test("mora: bloqueos antes de enviar", () => {
   assert.equal(bloqueosDeEnvio({ ...listo, hora: "08:59" }).length, 1);
   assert.equal(bloqueosDeEnvio({ ...listo, hora: "19:00" }).length, 1);
   assert.equal(bloqueosDeEnvio({ ...listo, activado: false, configurado: false, plantillasActivas: 0, fotoDeHoy: false }).length, 4);
+});
+
+test("mora: el día del vencimiento no sale recordatorio de mora", () => {
+  const d = decidirMora(cliente({ diasAtraso: 0 }), { umbral: 1000, hoy: "2026-10-26", plantillasActivas: ["finbra_mora_v1"] });
+  assert.deepEqual(d, { enviar: false, motivo: "Vence hoy: todavía no está en mora" });
 });

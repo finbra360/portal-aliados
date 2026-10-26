@@ -120,6 +120,8 @@ export interface ListadoCredito {
     diasSinMovimiento: number | null;
     proximoVencimiento: string | null;
     montoPorVencer: number | null;
+    /** Solo con el Listado Personalizado; null con el estándar. */
+    montoSiguienteVencimiento: number | null;
     interesesMoratorios: number;
     ivaVencido: number;
     totalVencido: number;
@@ -196,6 +198,8 @@ export function parseListado(r: ListadoCobranzaResponse): { creditos: ListadoCre
           diasSinMovimiento: int(cr.DiasSinMovimiento),
           proximoVencimiento: siacDate(cr.ProximoVencimiento),
           montoPorVencer: cr.MontoPorVencer === null || cr.MontoPorVencer === undefined ? null : money(cr.MontoPorVencer),
+          montoSiguienteVencimiento:
+            cr.MontoSiguienteVencimiento === null || cr.MontoSiguienteVencimiento === undefined || cr.MontoSiguienteVencimiento === "" ? null : money(cr.MontoSiguienteVencimiento),
           interesesMoratorios: money(v.InteresesMoratorios),
           ivaVencido: money(v.IVAVencido),
           totalVencido: money(v.TotalVencido),

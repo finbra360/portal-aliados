@@ -2,6 +2,7 @@
 // Función pura, sin base de datos, para poder probarla con `node --test`.
 
 import { chooseRecipient, type ContactLike } from "./contacts.ts";
+import { estaEnMora } from "./rules.ts";
 
 export interface ClientListRow {
   clientId: string;
@@ -56,7 +57,7 @@ export function buildClientList(
     const k = suyos.find((c) => c.id === rec.contactId);
     return {
       ...r,
-      enMora: r.vencido >= umbral,
+      enMora: estaEnMora(r.vencido, r.maxAtraso, umbral),
       recordatorios: { telefono: k?.valor ?? null, nombre: k?.nombre ?? null, origen: rec.origen },
     };
   });

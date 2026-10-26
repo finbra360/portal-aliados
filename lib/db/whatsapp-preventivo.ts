@@ -7,7 +7,7 @@ import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getSetting } from "@/lib/collections/store";
-import { UMBRAL_MORA_DEFAULT, addDays, fechaMexico } from "@/lib/collections/rules";
+import { UMBRAL_MORA_DEFAULT, addDays, estaEnMora, fechaMexico } from "@/lib/collections/rules";
 import { bloqueosDeEnvio } from "@/lib/collections/whatsapp-mora";
 import {
   ETAPAS,
@@ -64,7 +64,15 @@ async function umbralesSemaforo(): Promise<UmbralesSemaforo> {
   return { rojoVeces: s.rojo_veces ?? UMBRALES_SEMAFORO_DEFAULT.rojoVeces, rojoAtraso: s.rojo_atraso ?? UMBRALES_SEMAFORO_DEFAULT.rojoAtraso };
 }
 
-/** Créditos de la foto que vencen entre hoy y dentro de 5 días, con todo lo que decide el recordatorio. */
+/**
+ * Créditos de la foto que vencen entre hoy y dentro de 5 días, con todo lo que
+ * decide el recordatorio.
+ *
+ * El día del vencimiento, la foto de SIAC ya muestra ProximoVencimiento del mes
+ * siguiente y la cuota de hoy como vencida con 0 días de atraso (comprobado con
+ * las fotos de pruebas del 2026-10-26). Por eso "vence hoy" se reconoce porque
+ * la foto ANTERIOR tenía hoy como próximo vencimiento y hoy no hay atraso.
+ */
 async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): Promise<PreventivoCandidate[]> {
   const ambiente = ambienteActual();
   const [creditos, contactos] = await Promise.all([
@@ -72,6 +80,7 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
       WITH cliente AS (
         SELECT cr.client_id,
                sum(s.total_vencido) AS vencido,
+               max(s.antiguedad) AS dias_atraso,
                max(coalesce(s.numero_veces_mora, 0)) AS veces,
                max(coalesce(s.atraso_maximo, 0)) AS atraso
         FROM col_credits cr JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}
@@ -79,7 +88,8 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
       )
       SELECT cr.id, cr.client_id, cr.no_credito, cr.etapa_manual, c.nombre, c.contacto_cobranza_id,
              to_char(c.pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta,
-             to_char(s.proximo_vencimiento, 'YYYY-MM-DD') AS proximo_vencimiento,
+             to_char(CASE WHEN p.proximo_vencimiento = ${hoy}::date AND s.antiguedad = 0 THEN ${hoy}::date ELSE s.proximo_vencimiento END, 'YYYY-MM-DD') AS proximo_vencimiento,
+             s.monto_siguiente_vencimiento,
              to_char(s.fecha_ultimo_pago, 'YYYY-MM-DD') AS fecha_ultimo_pago,
              k.vencido, k.veces, k.atraso,
              (SELECT row_to_json(a) FROM (SELECT banco, beneficiario, clabe FROM col_payment_accounts WHERE id = c.cuenta_pago_id AND activa) a) AS cuenta
@@ -87,9 +97,14 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
       JOIN col_clients c ON c.id = cr.client_id
       JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}
       JOIN cliente k ON k.client_id = cr.client_id
+      LEFT JOIN LATERAL (
+        SELECT x.proximo_vencimiento FROM col_credit_snapshots x
+        WHERE x.credit_id = cr.id AND x.fecha_corte < ${fechaCorte} ORDER BY x.fecha_corte DESC LIMIT 1
+      ) p ON true
       WHERE c.ambiente = ${ambiente} AND cr.en_listado
-        AND s.proximo_vencimiento BETWEEN ${hoy}::date AND ${addDays(hoy, 5)}::date
-      ORDER BY s.proximo_vencimiento, c.nombre
+        AND (s.proximo_vencimiento BETWEEN ${hoy}::date AND ${addDays(hoy, 5)}::date
+             OR (p.proximo_vencimiento = ${hoy}::date AND s.antiguedad = 0))
+      ORDER BY proximo_vencimiento, c.nombre
     `,
     sql`
       SELECT k.id, k.client_id, k.relacion, k.rol, k.tipo, k.telefono_whatsapp, k.estatus, k.baja_whatsapp_at, k.es_principal, k.nombre_contacto
@@ -129,13 +144,14 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
       proximoVencimiento: c.proximo_vencimiento,
       fechaUltimoPago: c.fecha_ultimo_pago,
       historial: { vecesMora: Number(c.veces), atrasoMaximo: Number(c.atraso) },
-      enMora: Number(c.vencido) >= umbralMora,
+      enMora: estaEnMora(Number(c.vencido), Number(c.dias_atraso), umbralMora),
       etapaManual: c.etapa_manual === "juridico" || c.etapa_manual === "reestructura" ? c.etapa_manual : null,
       pausaHasta: c.pausa_hasta,
       contactos: porCliente.get(c.client_id) ?? [],
       contactoCobranzaId: c.contacto_cobranza_id,
       yaSeIntento: etapa ? enviados.has(dedupeKey(c.id, etapa, c.proximo_vencimiento)) : false,
-      monto: montos.get(c.id) ?? null,
+      // MontoSiguienteVencimiento de la foto (Listado Personalizado); si no vino, lo que se le preguntó a SIAC aparte.
+      monto: c.monto_siguiente_vencimiento !== null ? Number(c.monto_siguiente_vencimiento) : (montos.get(c.id) ?? null),
       cuenta: c.cuenta,
     };
   });

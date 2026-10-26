@@ -88,6 +88,7 @@ async function candidatos(fechaCorte: string, hoy: string): Promise<MoraCandidat
     sql`
       SELECT c.id, c.nombre, to_char(c.pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta, c.contacto_cobranza_id,
              sum(s.total_vencido) AS total_vencido,
+             max(s.antiguedad) AS dias_atraso,
              json_agg(json_build_object('noCredito', cr.no_credito, 'totalVencido', s.total_vencido) ORDER BY s.total_vencido DESC) AS creditos,
              (array_agg(cr.etapa_manual ORDER BY cr.etapa_manual = 'juridico' DESC) FILTER (WHERE cr.etapa_manual IN ('juridico', 'reestructura')))[1] AS etapa,
              EXISTS (SELECT 1 FROM col_promises p WHERE p.client_id = c.id AND p.estado = 'vigente') AS promesa_vigente,
@@ -129,6 +130,7 @@ async function candidatos(fechaCorte: string, hoy: string): Promise<MoraCandidat
     clientId: c.id,
     nombre: c.nombre,
     totalVencido: Number(c.total_vencido),
+    diasAtraso: Number(c.dias_atraso),
     creditos: (c.creditos as { noCredito: string; totalVencido: number | string }[]).map((x) => ({ noCredito: x.noCredito, totalVencido: Number(x.totalVencido) })),
     pausaHasta: c.pausa_hasta,
     etapa: c.etapa,
@@ -187,6 +189,7 @@ export async function previewMora(): Promise<MoraPreview> {
   const filas = status.fechaCorte
     ? (await candidatos(status.fechaCorte, hoy))
         .map((c) => ({ clientId: c.clientId, nombre: c.nombre, totalVencido: c.totalVencido, decision: decidirMora(c, { umbral, hoy, plantillasActivas: activas }) }))
+        .filter((f) => f.decision.enviar || f.decision.motivo !== "Vence hoy: todavía no está en mora")
         .filter((f) => f.totalVencido >= umbral)
         .sort((a, b) => Number(b.decision.enviar) - Number(a.decision.enviar) || b.totalVencido - a.totalVencido)
     : [];

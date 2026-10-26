@@ -62,6 +62,16 @@ export function campoTelefonoPrincipal(c: { celular: string | null; telefonoClie
 export type Bucket = "al_corriente" | "1-7" | "8-30" | "31-60" | "61-90" | "90+";
 export const BUCKETS: Bucket[] = ["al_corriente", "1-7", "8-30", "31-60", "61-90", "90+"];
 
+/**
+ * En mora = saldo vencido ≥ umbral CON al menos 1 día de atraso. El día del
+ * vencimiento, SIAC ya cuenta la cuota de hoy como vencida pero con 0 días de
+ * atraso (comprobado con las fotos de pruebas del 2026-10-26): el cliente aún
+ * tiene todo el día para pagar, así que eso todavía no es mora.
+ */
+export function estaEnMora(totalVencido: number, diasAtraso: number, umbral: number): boolean {
+  return totalVencido >= umbral && diasAtraso >= 1;
+}
+
 /** Bucket de aging a partir de `Antiguedad` (días de atraso de SIAC). */
 export function bucketFor(antiguedad: number): Bucket {
   if (antiguedad < 1) return "al_corriente";
@@ -225,8 +235,8 @@ export function deriveClientAlerts(
 ): AlertDraft[] {
   if (!prev) return [];
   const alerts: AlertDraft[] = [];
-  const enMoraAntes = prev.totalVencido >= umbral;
-  const enMoraAhora = curr.totalVencido >= umbral;
+  const enMoraAntes = estaEnMora(prev.totalVencido, prev.maxAntiguedad, umbral);
+  const enMoraAhora = estaEnMora(curr.totalVencido, curr.maxAntiguedad, umbral);
 
   if (!enMoraAntes && enMoraAhora) {
     alerts.push({

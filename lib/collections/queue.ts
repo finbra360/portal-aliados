@@ -3,7 +3,7 @@
 // dentro de cada nivel se ordena por monto vencido. Función pura, sin base de
 // datos, para poder probarla y auditarla.
 
-import { addDays, daysBetween } from "./rules.ts";
+import { addDays, daysBetween, estaEnMora } from "./rules.ts";
 import { formatFecha } from "../format.ts";
 
 const formatMoneyCorto = (n: number) =>
@@ -70,7 +70,7 @@ function niveles(c: QueueClient, hoy: string): Nivel[] {
 export function buildQueue(clientes: QueueClient[], umbral: number, hoy: string): QueueItem[] {
   const items: QueueItem[] = [];
   for (const c of clientes) {
-    const enMora = c.totalVencido >= umbral;
+    const enMora = estaEnMora(c.totalVencido, c.maxAntiguedad, umbral);
     if (!enMora && !c.alertas.includes("promesa_incumplida")) continue;
 
     const extras = c.telefonoValido ? [] : ["Sin teléfono válido para WhatsApp: corregir en SIAC"];

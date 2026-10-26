@@ -1,7 +1,7 @@
 // Resumen de la cartera a partir de la foto del día. Función pura, sin base de
 // datos, para poder probarla con `node --test`.
 
-import { BUCKETS, addDays, bucketFor, daysBetween, type Bucket } from "./rules.ts";
+import { BUCKETS, addDays, bucketFor, daysBetween, estaEnMora, type Bucket } from "./rules.ts";
 
 export interface PhotoRow {
   creditId: string;
@@ -62,7 +62,7 @@ export function summarizePortfolio(rows: PhotoRow[], umbral: number, fechaCorte:
   const adeudo = rows.reduce((s, r) => s + r.totalAdeudo, 0);
   const vencido = rows.reduce((s, r) => s + r.totalVencido, 0);
   const par = (dias: number) => ratio(rows.filter((r) => r.antiguedad > dias).reduce((s, r) => s + r.totalAdeudo, 0), adeudo);
-  const enMora = [...porCliente.values()].filter((c) => c.vencido >= umbral);
+  const enMora = [...porCliente.values()].filter((c) => estaEnMora(c.vencido, c.maxAntiguedad, umbral));
 
   const aging = BUCKETS.map((bucket) => {
     const suyos = rows.filter((r) => bucketFor(r.antiguedad) === bucket);
