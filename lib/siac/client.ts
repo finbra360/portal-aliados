@@ -40,6 +40,9 @@ export class SiacError extends Error {
 
 const TIMEOUT_MS = 60_000;
 const REINTENTOS = 2;
+/** Listado Personalizado: registros por página (más que toda la cartera) y tope de páginas por foto. */
+const REGISTROS_POR_PAGINA = 1000;
+const MAX_PAGINAS_LISTADO = 5;
 
 // ListadoCobranzaJSON escribe el parámetro "Autentificacion" (con "fi");
 // el resto de los servicios usan "ClaveAutenticacion".
@@ -164,21 +167,48 @@ export class SiacClient {
   }
 
   /**
-   * Listado Cobranza Personalizado: lo mismo que listadoCobranza más datos del
-   * contrato, avales y, desde 2026-10-21, MontoSiguienteVencimiento (la cuota
-   * del próximo vencimiento). Viene paginado (RegistrosPorPagina / NoPagina).
-   * `filtro` permite probar la forma del Contenido: SIAC documentó el filtro
-   * en XML y no confirmó su equivalente en JSON.
+   * Listado Cobranza Personalizado: lo mismo que listadoCobranza (mismo filtro y
+   * los mismos campos) más MontoSiguienteVencimiento, TotalGlobal y el plazo.
+   * Viene paginado (RegistrosPorPagina / NoPagina).
    */
-  listadoCobranzaPersonalizado(p: { corteFecha: string; pagina: number; porPagina: number; filtro?: "listado" | "anidado" }) {
-    const f = { CorteFecha: p.corteFecha, NoControl: "", Cliente: "", TipoCredito: "", Cobrador: "", Sucursal: "", Estado: "", Municipio: "" };
-    const contenido =
-      p.filtro === "anidado" ? { FiltroCobranzaPersonalizado: { ListadoFiltroCobranza: { FiltradoCobranza: f } } } : { ListadoFiltroCobranza: [f] };
-    return this.call<SiacEnvelope & Record<string, unknown>>("ListadoCobranzaPersonalizado", {
+  listadoCobranzaPersonalizado(p: { corteFecha: string; pagina: number; porPagina: number }) {
+    const contenido = {
+      ListadoFiltroCobranza: [
+        { CorteFecha: p.corteFecha, NoControl: "", Cliente: "", TipoCredito: "", Cobrador: "", Sucursal: "", Estado: "", Municipio: "" },
+      ],
+    };
+    return this.call<ListadoCobranzaResponse & { PaginasTotales?: number | string }>("ListadoCobranzaPersonalizado", {
       Contenido: JSON.stringify(contenido),
       RegistrosPorPagina: String(p.porPagina),
       NoPagina: String(p.pagina),
     });
+  }
+
+  /**
+   * La foto del día para la sincronización. Usa el Listado Personalizado (trae
+   * MontoSiguienteVencimiento; mismos campos que el estándar, probado el
+   * 2026-10-26 con los 50 créditos de pruebas) con 1,000 registros por página:
+   * normalmente es una sola llamada. Si el Personalizado no está habilitado
+   * (error que no se resuelve reintentando), cae a ListadoCobranzaJSON para no
+   * dejar el día sin foto, y lo avisa.
+   */
+  async listadoDelDia(corteFecha: string): Promise<{ respuesta: ListadoCobranzaResponse; origen: "personalizado" | "estandar"; aviso: string | null }> {
+    try {
+      const paginas: ListadoCobranzaResponse[] = [];
+      let total = 1;
+      for (let pagina = 1; pagina <= total && pagina <= MAX_PAGINAS_LISTADO; pagina++) {
+        const r = await this.listadoCobranzaPersonalizado({ corteFecha, pagina, porPagina: REGISTROS_POR_PAGINA });
+        paginas.push(r);
+        total = Number(r.PaginasTotales) || 1;
+      }
+      const cobranza = paginas.flatMap((p) => p.vListEntCredito?.flatMap((v) => v.Cobranza ?? []) ?? []);
+      const aviso = total > MAX_PAGINAS_LISTADO ? `El Listado Personalizado trae ${total} páginas; solo se leyeron ${MAX_PAGINAS_LISTADO}` : null;
+      return { respuesta: { Detalle: "CORRECTO", vListEntCredito: [{ Cobranza: cobranza }] }, origen: "personalizado", aviso };
+    } catch (e) {
+      if (!(e instanceof SiacError) || e.reintentable) throw e;
+      const respuesta = await this.listadoCobranza(corteFecha);
+      return { respuesta, origen: "estandar", aviso: `No se pudo usar el Listado Personalizado (${e.message}); la foto salió del listado estándar, sin el monto de la siguiente cuota` };
+    }
   }
 
   /**

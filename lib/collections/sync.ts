@@ -124,8 +124,10 @@ export async function runDailySync(opts: {
   const siac = new SiacClient(config, siacCallRecorder(runId));
 
   try {
-    // 1. La única llamada a SIAC del día.
-    const { creditos, descartados } = parseListado(await siac.listadoCobranza(fechaCorte));
+    // 1. La única llamada a SIAC del día (Listado Personalizado; ver listadoDelDia).
+    const listado = await siac.listadoDelDia(fechaCorte);
+    if (listado.aviso) result.avisos.push(listado.aviso);
+    const { creditos, descartados } = parseListado(listado.respuesta);
     for (const d of descartados) {
       result.avisos.push(`Crédito sin NoCredito o NumeroCliente en el listado: ${JSON.stringify(d.InformacionGeneral ?? {}).slice(0, 120)}`);
     }
@@ -345,6 +347,7 @@ async function writeDailyPhoto(
       dias_sin_movimiento: f.diasSinMovimiento,
       proximo_vencimiento: f.proximoVencimiento,
       monto_por_vencer: f.montoPorVencer,
+      monto_siguiente_vencimiento: f.montoSiguienteVencimiento,
       intereses_moratorios: f.interesesMoratorios,
       iva_vencido: f.ivaVencido,
       total_vencido: f.totalVencido,

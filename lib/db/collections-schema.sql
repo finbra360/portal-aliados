@@ -275,6 +275,12 @@ CREATE TABLE IF NOT EXISTS col_credit_snapshots (
   UNIQUE (credit_id, fecha_corte)
 );
 
+-- Lo que debe pagar en su siguiente vencimiento, con lo ya vencido
+-- (MontoSiguienteVencimiento del Listado Personalizado de SIAC, desde 2026-10).
+-- Si el vencimiento cae el día de la foto, es el de ese día. NULL si la foto
+-- vino del listado estándar, que no lo llena.
+ALTER TABLE col_credit_snapshots ADD COLUMN IF NOT EXISTS monto_siguiente_vencimiento NUMERIC(14, 2);
+
 CREATE INDEX IF NOT EXISTS idx_col_snapshots_fecha ON col_credit_snapshots(fecha_corte);
 CREATE INDEX IF NOT EXISTS idx_col_snapshots_mora ON col_credit_snapshots(fecha_corte) WHERE antiguedad > 0;
 

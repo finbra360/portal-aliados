@@ -8,6 +8,7 @@ import {
   daysBetween,
   deriveClientAlerts,
   deriveCreditEvents,
+  estaEnMora,
   fechaMexico,
   normalizePhoneMx,
   photoFreshness,
@@ -153,4 +154,15 @@ test("promesas con los pagos de ConsultarPagos", () => {
     { fecha: "2026-10-07", monto: 20_000 }, // después de la gracia: no cuenta
   ];
   assert.deepEqual(resolvePromiseConPagos(p, pagos, "2026-10-07"), { estado: "parcial", montoPagado: 5_000 });
+});
+
+test("el día del vencimiento todavía no es mora (SIAC ya cuenta la cuota de hoy como vencida, con 0 días)", () => {
+  assert.equal(estaEnMora(36289, 0, 1000), false, "vence hoy");
+  assert.equal(estaEnMora(36289, 1, 1000), true, "un día después sin pagar");
+  assert.equal(estaEnMora(950, 30, 1000), false, "residuo bajo el umbral");
+  const prev = aggregateClient([credito({ totalVencido: 0, antiguedad: 0 })]);
+  const venceHoy = aggregateClient([credito({ fechaCorte: "2026-10-26", totalVencido: 36289, antiguedad: 0 })]);
+  assert.deepEqual(deriveClientAlerts(prev, venceHoy, "k1", 1000, "2026-10-26"), [], "sin alerta de entrada a mora el día de pago");
+  const alDiaSiguiente = aggregateClient([credito({ fechaCorte: "2026-10-27", totalVencido: 36310, antiguedad: 1 })]);
+  assert.deepEqual(deriveClientAlerts(venceHoy, alDiaSiguiente, "k1", 1000, "2026-10-27").map((a) => a.tipo), ["entrada_mora"]);
 });
