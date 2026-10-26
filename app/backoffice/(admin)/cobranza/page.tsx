@@ -11,6 +11,7 @@ import { IconCoins, IconListChecks, IconWallet, IconTrendingUp } from "@/compone
 import PhotoBanner from "./PhotoBanner";
 import { codigoDeError } from "@/lib/collections/errors";
 import BotonReporte from "./BotonReporte";
+import BotonProbarPersonalizado from "./BotonProbarPersonalizado";
 
 const BUCKET_LABEL: Record<Bucket, string> = {
   al_corriente: "Al corriente",
@@ -76,6 +77,7 @@ export default async function CobranzaInicioPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <h1 className="text-2xl font-bold">Cobranza</h1>
         <div className="flex flex-wrap items-start gap-2">
+          {esSuperAdmin && <BotonProbarPersonalizado />}
           {esSuperAdmin && <BotonReporte />}
           <Link
             href="/backoffice/cobranza/cola"
