@@ -68,9 +68,10 @@ test("permisos: comercial opera, finanzas solo consulta, super_admin todo", () =
   assert.deepEqual(CH_EDITAN_POLITICAS, ["super_admin"]);
 });
 
-test("el origen distingue sitio web, eventos y demostraciones", () => {
-  assert.equal(origenLabel(null), "Sitio web");
-  assert.equal(origenLabel("diagnostico"), "Sitio web");
+test("el origen distingue acceso directo, finbra.com, eventos y demostraciones", () => {
+  assert.equal(origenLabel(null), "Directo a health.finbra.com");
+  assert.equal(origenLabel("diagnostico"), "Directo a health.finbra.com");
+  assert.equal(origenLabel("web:finbra-inicio"), "finbra.com: finbra-inicio");
   assert.equal(origenLabel("demo"), "Demostración");
   assert.equal(origenLabel("evento:expo-pyme-2026"), "Evento: expo-pyme-2026");
 });
