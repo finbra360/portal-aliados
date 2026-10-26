@@ -164,6 +164,24 @@ export class SiacClient {
   }
 
   /**
+   * Listado Cobranza Personalizado: lo mismo que listadoCobranza más datos del
+   * contrato, avales y, desde 2026-10-21, MontoSiguienteVencimiento (la cuota
+   * del próximo vencimiento). Viene paginado (RegistrosPorPagina / NoPagina).
+   * `filtro` permite probar la forma del Contenido: SIAC documentó el filtro
+   * en XML y no confirmó su equivalente en JSON.
+   */
+  listadoCobranzaPersonalizado(p: { corteFecha: string; pagina: number; porPagina: number; filtro?: "listado" | "anidado" }) {
+    const f = { CorteFecha: p.corteFecha, NoControl: "", Cliente: "", TipoCredito: "", Cobrador: "", Sucursal: "", Estado: "", Municipio: "" };
+    const contenido =
+      p.filtro === "anidado" ? { FiltroCobranzaPersonalizado: { ListadoFiltroCobranza: { FiltradoCobranza: f } } } : { ListadoFiltroCobranza: [f] };
+    return this.call<SiacEnvelope & Record<string, unknown>>("ListadoCobranzaPersonalizado", {
+      Contenido: JSON.stringify(contenido),
+      RegistrosPorPagina: String(p.porPagina),
+      NoPagina: String(p.pagina),
+    });
+  }
+
+  /**
    * Historia de pagos de UN crédito. Es un servicio individual: nunca en lote
    * para toda la cartera (ver lib/collections/payments.ts).
    */
