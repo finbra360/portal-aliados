@@ -27,26 +27,36 @@ export type DedupRoute =
   | "bajo";
 
 export const UMBRAL_ALTO = 0.85;
-export const UMBRAL_GRIS = 0.5;
+/** Similitud de nombre mínima para que valga la pena el tiempo de una persona. */
+export const UMBRAL_NOMBRE_REVISION = 0.8;
 
 /**
- * La ubicación decide cuándo el parecido de nombre amerita revisión humana.
+ * El teléfono es el discriminador; la ubicación no lo es.
  *
  * DENUE lista ESTABLECIMIENTOS, no razones sociales, y con frecuencia usa la
- * descripción del giro como nombre ("acarreo de materiales", "agencia de mercado
- * libre", "mensajería y paquetería"). Sobre esos nombres el trigram produce
- * falsos positivos en masa: de los primeros 105 casos que llegaron a la cola de
- * revisión, 96 tenían municipio o estado distinto y ninguno compartía teléfono
- * — eran negocios diferentes con nombre genérico parecido.
+ * descripción del giro como nombre ("acarreo de materiales", "mensajería y
+ * paquetería"). Sobre esos nombres el trigram produce falsos positivos en masa.
  *
- * Dos establecimientos con nombre similar en municipios distintos son dos
- * establecimientos, cada uno con su domicilio y teléfono: dos leads legítimos.
- * Por eso, cuando el único indicio es el nombre, se exige que la ubicación
- * coincida. Un match de dominio o de teléfono es prueba suficiente por sí solo
- * y no necesita el respaldo de la ubicación.
+ * La primera versión de esta regla exigía que coincidiera la ubicación antes de
+ * mandar un caso a revisión. Funcionó mientras la base era chica y dejó de
+ * funcionar al crecer: de los 222 casos acumulados en la cola, **219 compartían
+ * municipio y estado**. En una ciudad con cientos de transportistas, compartir
+ * municipio no distingue nada.
  *
- * Ubicación desconocida no cuenta como coincidencia: sin ese dato el nombre
- * genérico vuelve a ser la única señal, que es justo lo que no alcanza.
+ * Lo que sí distingue es el teléfono. De esos mismos 222 casos:
+ *
+ * - 14 compartían teléfono, y los 14 eran el mismo negocio — casi todos erratas
+ *   de captura de DENUE (`FSI EXPRESS` / `FSI EXPRES`, `SINDICATO DE
+ *   TRASPORTISTAS` / `SINDICATO DE TRANSPORTISTAS`), uno de ellos con similitud
+ *   de nombre 0.00.
+ * - 37 tenían teléfonos distintos, y eran empresas distintas con el mismo
+ *   prefijo del giro (`AUTO TANQUES SAGA` / `AUTO TANQUES MOYA`).
+ * - 0 compartían dominio o dirección; el campo `direccion` viene vacío.
+ *
+ * De ahí las tres reglas: teléfono igual decide por sí solo, teléfono distinto
+ * descarta el duplicado aunque el nombre sea casi idéntico (dos sucursales son
+ * dos establecimientos, o sea dos leads legítimos), y solo llega a revisión lo
+ * que tiene nombres casi iguales sin teléfono que desempate.
  */
 function laUbicacionRespalda(candidate: DedupCandidate, match: DedupMatch): boolean {
   const conocida = Boolean(candidate.municipio && match.municipio);
@@ -63,23 +73,31 @@ export function calcularMatch(
   }
 
   const domainMatch = Boolean(candidate.domain && match.domain && candidate.domain === match.domain);
-  const phoneMatch = Boolean(
-    candidate.telefonoE164 && match.telefonoE164 && candidate.telefonoE164 === match.telefonoE164,
-  );
 
-  // El dominio es la señal más fuerte; el teléfono le sigue. El nombre nunca
-  // llega solo al umbral alto (0.9 máximo contra un umbral de 0.85 requiere
-  // similitud casi perfecta).
+  const telefonosComparables = Boolean(candidate.telefonoE164 && match.telefonoE164);
+  const phoneMatch = telefonosComparables && candidate.telefonoE164 === match.telefonoE164;
+  const phoneConflict = telefonosComparables && !phoneMatch;
+
+  // Dominio y teléfono son prueba dura. El nombre por sí solo nunca llega al
+  // umbral alto salvo que sea prácticamente idéntico (0.944 × 0.9 = 0.85).
   let score = 0;
-  if (domainMatch) score = 1;
-  if (phoneMatch) score = Math.max(score, 0.75);
+  if (domainMatch || phoneMatch) score = 1;
   score = Math.max(score, match.nameSim * 0.9);
 
   let route: DedupRoute = "bajo";
-  if (score >= UMBRAL_ALTO) {
+  if (domainMatch || phoneMatch) {
     route = "alto";
-  } else if (score >= UMBRAL_GRIS) {
-    route = domainMatch || phoneMatch || laUbicacionRespalda(candidate, match) ? "gris" : "bajo";
+  } else if (phoneConflict) {
+    // Ambos tienen teléfono y son distintos: establecimientos distintos.
+    route = "bajo";
+  } else if (score >= UMBRAL_ALTO) {
+    route = "alto";
+  } else if (match.nameSim >= UMBRAL_NOMBRE_REVISION && laUbicacionRespalda(candidate, match)) {
+    // Única zona que amerita ojo humano: nombres casi iguales, misma ciudad, y
+    // sin teléfono en alguno de los dos. Ahí conviven erratas reales
+    // (`LOGISTICA TRRRESTRE` / `LOGISTICA TERRESTRE`) con artefactos del trigram
+    // (`BODEGA DE ADMEX` / `ALMACENADORA Y DISTRIBUIDORA MEX`).
+    route = "gris";
   }
 
   return { matchCompanyId: match.id, score, route };
