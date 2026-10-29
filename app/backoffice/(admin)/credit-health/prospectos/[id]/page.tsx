@@ -38,6 +38,7 @@ const EVENTOS: Record<string, string> = {
 
 const CONSENTIMIENTOS: Record<string, string> = {
   privacy_notice: "Aviso de privacidad",
+  legal_notice: "Aviso legal",
   share_with_finbra: "Compartir con Finbra",
   marketing: "Comunicaciones comerciales",
 };
