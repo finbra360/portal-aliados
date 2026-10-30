@@ -9,6 +9,7 @@ import {
   deriveClientAlerts,
   deriveCreditEvents,
   estaEnMora,
+  explicarErrorSiac,
   fechaMexico,
   normalizePhoneMx,
   photoFreshness,
@@ -165,4 +166,18 @@ test("el día del vencimiento todavía no es mora (SIAC ya cuenta la cuota de ho
   assert.deepEqual(deriveClientAlerts(prev, venceHoy, "k1", 1000, "2026-10-26"), [], "sin alerta de entrada a mora el día de pago");
   const alDiaSiguiente = aggregateClient([credito({ fechaCorte: "2026-10-27", totalVencido: 36310, antiguedad: 1 })]);
   assert.deepEqual(deriveClientAlerts(venceHoy, alDiaSiguiente, "k1", 1000, "2026-10-27").map((a) => a.tipo), ["entrada_mora"]);
+});
+
+test("explicarErrorSiac: NO ENCONTRADO del listado se explica como foto no guardada por la TIIE", () => {
+  const siacError = (operacion: string, detalle: string | null) =>
+    Object.assign(new Error(`SIAC ${operacion}: ${detalle}`), { operacion, detalle });
+  const texto = explicarErrorSiac(siacError("ListadoCobranzaJSON", "NO ENCONTRADO"), "2026-10-29");
+  assert.match(texto, /foto de cartera del 2026-10-29/);
+  assert.match(texto, /TIIE 28 días/);
+
+  const otro = siacError("ListadoCobranzaJSON", "Falta el parámetro: Contenido");
+  assert.equal(explicarErrorSiac(otro, "2026-10-29"), otro.message);
+  const pagos = siacError("ConsultarPagos", "NO ENCONTRADO");
+  assert.equal(explicarErrorSiac(pagos, "2026-10-29"), pagos.message, "solo aplica al listado");
+  assert.equal(explicarErrorSiac(new Error("se cayó la red"), "2026-10-29"), "se cayó la red");
 });
