@@ -34,7 +34,8 @@ export const INTENCION_LABELS: Record<string, string> = {
 };
 
 export const ELEGIBILIDAD_LABELS: Record<string, string> = {
-  potencialmente_elegible: "Potencialmente elegible",
+  // Igual que en Credit Health: se evita «elegible» porque el diagnóstico no es preaprobación.
+  potencialmente_elegible: "Perfil preliminar favorable",
   requiere_revision: "Requiere revisión",
   no_elegible: "No elegible bajo criterios actuales",
   informacion_insuficiente: "Información insuficiente",
