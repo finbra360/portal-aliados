@@ -72,6 +72,26 @@ export function estaEnMora(totalVencido: number, diasAtraso: number, umbral: num
   return totalVencido >= umbral && diasAtraso >= 1;
 }
 
+/**
+ * Texto del error de la foto diaria para el equipo (Slack, alerta, reporte).
+ * El listado responde "NO ENCONTRADO" cuando el Monitor de Servicios de SIAC
+ * no guardó la foto de esa fecha a las 00:00; en producción fue porque faltaba
+ * la TIIE 28 días de algún día en su catálogo de tasas (27 al 30 de octubre de
+ * 2026). Recibe el SiacError por su forma para no depender del cliente HTTP.
+ */
+export function explicarErrorSiac(e: unknown, fechaCorte: string): string {
+  const { operacion, detalle } = (e ?? {}) as { operacion?: unknown; detalle?: unknown };
+  if (typeof operacion === "string" && operacion.startsWith("ListadoCobranza") && typeof detalle === "string" && detalle.trim().toUpperCase() === "NO ENCONTRADO") {
+    return (
+      `SIAC no tiene guardada la foto de cartera del ${fechaCorte} (respondió NO ENCONTRADO). ` +
+      "Casi siempre es porque falta capturar la TIIE 28 días de algún día en el SIAC de producción " +
+      "(Catálogos → Generales → Tasas de interés): sin ella el Monitor de las 00:00 no guarda la foto. " +
+      "Al capturarla, la foto sale a partir de la siguiente medianoche; la de este día no se recupera."
+    );
+  }
+  return e instanceof Error ? e.message : String(e);
+}
+
 /** Bucket de aging a partir de `Antiguedad` (días de atraso de SIAC). */
 export function bucketFor(antiguedad: number): Bucket {
   if (antiguedad < 1) return "al_corriente";

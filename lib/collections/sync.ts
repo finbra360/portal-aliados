@@ -9,6 +9,7 @@ import {
   campoTelefonoPrincipal,
   deriveClientAlerts,
   deriveCreditEvents,
+  explicarErrorSiac,
   fechaMexico,
   normalizePhoneMx,
   photoFreshness,
@@ -192,7 +193,7 @@ export async function runDailySync(opts: {
     }
   } catch (e) {
     result.status = "error";
-    result.errores.push((e as Error).message);
+    result.errores.push(explicarErrorSiac(e, fechaCorte));
   }
 
   result.llamadasSiac = siac.llamadas;
