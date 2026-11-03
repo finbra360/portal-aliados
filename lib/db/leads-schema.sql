@@ -323,3 +323,11 @@ CREATE TABLE IF NOT EXISTS lead_api_usage (
 );
 
 CREATE INDEX IF NOT EXISTS idx_lead_api_usage_source_date ON lead_api_usage(source, called_at);
+
+-- Gravamen de las unidades. El crédito se otorga contra la flota, así que una
+-- flota ya pignorada no sirve como garantía por más que cumpla el tamaño. Es el
+-- tercer dato que el agente de prospección confirma en el primer contacto,
+-- junto con unidades_flota_estimado y ventas_estimado_mxn, que ya tienen
+-- columna. NULL significa "no preguntado todavía", que no es lo mismo que
+-- "sí tiene gravamen": un NULL deja el lead en conversación, no lo descarta.
+ALTER TABLE lead_companies ADD COLUMN IF NOT EXISTS unidades_libres_gravamen BOOLEAN;
