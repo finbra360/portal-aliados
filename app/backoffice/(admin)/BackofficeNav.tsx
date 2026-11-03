@@ -54,7 +54,10 @@ const NAV: NavEntry[] = [
     type: "group",
     label: "Leads",
     icon: <IconTarget />,
-    items: [{ href: "/backoffice/leads", label: "Leads" }],
+    items: [
+      { href: "/backoffice/leads/conversaciones", label: "Conversaciones", exact: true },
+      { href: "/backoffice/leads", label: "Leads", excluir: ["/backoffice/leads/conversaciones"] },
+    ],
   },
   {
     type: "group",
