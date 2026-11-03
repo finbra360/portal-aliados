@@ -13,7 +13,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import { IconFlame, IconTarget, IconTrendingUp, IconListChecks } from "@/components/ui/icons";
 import CategoriaPill from "./CategoriaPill";
 import EstatusSelect from "./EstatusSelect";
-import { updateLeadEstatusAction, resolveHitlReviewAction } from "./actions";
+import { updateLeadEstatusAction, resolveHitlReviewAction, resolverDedupAction } from "./actions";
 
 const TABS: { value: string | undefined; label: string }[] = [
   { value: undefined, label: "Todos" },
@@ -310,46 +310,85 @@ export default async function LeadsPage({
       )}
 
       <div>
-        <h2 className="mb-3 text-lg font-bold">Revisión pendiente (HITL)</h2>
+        <h2 className="mb-1 text-lg font-bold">Revisión pendiente (HITL)</h2>
+        <p className="mb-3 text-sm text-finbra-gray">
+          Pares que el dedup no pudo decidir solo. «Son la misma» fusiona: la de mayor score se queda
+          con los datos de contacto que le falten y la otra se marca como duplicada.
+        </p>
         {hitlReviews.length === 0 ? (
           <EmptyState title="Sin revisiones pendientes" description="Todo lo ambiguo del pipeline ya fue resuelto." />
         ) : (
-          <Card className="overflow-x-auto p-0">
-            <table className="w-full min-w-[700px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th scope="col" className="px-6 py-3">Empresa</th>
-                  <th scope="col" className="px-6 py-3">Motivo</th>
-                  <th scope="col" className="px-6 py-3">Resolución</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hitlReviews.map((item) => (
-                  <tr key={item.id} className="border-b border-black/5 last:border-0 align-top">
-                    <td className="px-6 py-4">
+          <div className="space-y-4">
+            {hitlReviews.map((item) => (
+              <Card key={item.id} className="space-y-4">
+                {item.lados ? (
+                  <>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {item.lados.map((lado, i) => (
+                        <div key={lado.id} className={`rounded-xl p-3 ${i === 0 ? "bg-black/[0.03]" : "bg-finbra-purple/5"}`}>
+                          <p className="font-semibold">{lado.nombre}</p>
+                          <dl className="mt-2 space-y-0.5 text-xs text-finbra-gray">
+                            <div>{[lado.municipio, lado.estado].filter(Boolean).join(", ") || "sin ubicación"}</div>
+                            <div>{lado.telefono ?? "sin teléfono"}</div>
+                            <div className="truncate" title={lado.correo ?? undefined}>{lado.correo ?? "sin correo"}</div>
+                            <div>{lado.domain ?? "sin sitio"}</div>
+                            <div>{lado.totalScore != null ? `score ${lado.totalScore}` : "sin score"}</div>
+                          </dl>
+                        </div>
+                      ))}
+                    </div>
+
+                    <form action={resolverDedupAction} className="flex flex-wrap items-center gap-2">
+                      <input type="hidden" name="id" value={item.id} />
+                      <input
+                        name="nota"
+                        placeholder="Por qué (opcional)…"
+                        className="min-w-[160px] flex-1 rounded-lg border border-black/10 px-3 py-2 text-sm"
+                      />
+                      <button
+                        type="submit"
+                        name="decision"
+                        value="misma"
+                        className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-bold text-white hover:opacity-90"
+                      >
+                        Son la misma
+                      </button>
+                      <button
+                        type="submit"
+                        name="decision"
+                        value="distintas"
+                        className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold hover:bg-black/5"
+                      >
+                        Son distintas
+                      </button>
+                    </form>
+                  </>
+                ) : (
+                  // Sin contraparte legible no se puede fusionar nada, así que
+                  // queda la resolución de siempre: dejar constancia y seguir.
+                  <>
+                    <div>
                       <p className="font-semibold">{item.companyNombre}</p>
                       <CategoriaPill categoria={item.companyCategoria} />
-                    </td>
-                    <td className="px-6 py-4 max-w-xs text-xs text-finbra-gray">{item.reason}</td>
-                    <td className="px-6 py-4">
-                      <form action={resolveHitlReviewAction} className="flex gap-2">
-                        <input type="hidden" name="id" value={item.id} />
-                        <input
-                          name="resolutionNotes"
-                          required
-                          placeholder="Nota de resolución…"
-                          className="rounded-lg border border-black/10 px-2 py-1 text-xs"
-                        />
-                        <button type="submit" className="rounded-lg bg-finbra-purple px-3 py-1 text-xs font-bold text-white">
-                          Resolver
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
+                      <p className="mt-1 text-xs text-finbra-gray">{item.reason}</p>
+                    </div>
+                    <form action={resolveHitlReviewAction} className="flex flex-wrap gap-2">
+                      <input type="hidden" name="id" value={item.id} />
+                      <input
+                        name="resolutionNotes"
+                        required
+                        placeholder="Nota de resolución…"
+                        className="min-w-[160px] flex-1 rounded-lg border border-black/10 px-3 py-2 text-sm"
+                      />
+                      <button type="submit" className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-bold text-white">
+                        Resolver
+                      </button>
+                    </form>
+                  </>
+                )}
+              </Card>
+            ))}
+          </div>
         )}
       </div>
     </div>
