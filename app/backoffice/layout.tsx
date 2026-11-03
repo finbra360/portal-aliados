@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 // que es lo que se ve en la pestaña al entrar por backoffice.finbra.com.
 // El robots noindex del layout raíz se hereda.
 export const metadata: Metadata = {
-  title: "Finbra Backoffice",
+  title: { absolute: "Finbra Backoffice" },
   description: "Panel interno de administración de Finbra.",
 };
 
