@@ -331,3 +331,26 @@ CREATE INDEX IF NOT EXISTS idx_lead_api_usage_source_date ON lead_api_usage(sour
 -- columna. NULL significa "no preguntado todavía", que no es lo mismo que
 -- "sí tiene gravamen": un NULL deja el lead en conversación, no lo descarta.
 ALTER TABLE lead_companies ADD COLUMN IF NOT EXISTS unidades_libres_gravamen BOOLEAN;
+
+-- Resend es la cuarta API externa del motor, junto a DENUE, SerpAPI y
+-- Anthropic, pero el CHECK de arriba se escribió antes de que existiera. El
+-- nodo que registra «hoy no se mandaron correos» inserta source='resend', así
+-- que reventaba siempre que corría: la única rama que avisa de un problema de
+-- configuración estaba rota por un problema de configuración.
+--
+-- El nombre del constraint se busca en el catálogo en vez de asumirlo: si lo
+-- creó Postgres se llama lead_api_usage_source_check, pero una migración
+-- anterior pudo haberle puesto otro.
+DO $mig$
+DECLARE nombre text;
+BEGIN
+  SELECT conname INTO nombre FROM pg_constraint
+   WHERE conrelid = 'lead_api_usage'::regclass AND contype = 'c'
+     AND pg_get_constraintdef(oid) ILIKE '%source%';
+  IF nombre IS NOT NULL THEN
+    EXECUTE format('ALTER TABLE lead_api_usage DROP CONSTRAINT %I', nombre);
+  END IF;
+  ALTER TABLE lead_api_usage
+    ADD CONSTRAINT lead_api_usage_source_check
+    CHECK (source IN ('serpapi', 'anthropic', 'resend'));
+END $mig$;
