@@ -88,10 +88,11 @@ export function calcularMatch(
 
   // El correo es la segunda señal dura, y la regla la estaba ignorando aunque
   // el dato ya estaba en la tabla. De los 93 casos que seguían en la cola de
-  // revisión, 7 traían el MISMO correo exacto en los dos lados —
-  // `AUTO TRANSPORTES NACIONALES VIGA` y `AUTO TRANSPORTE NACIONALES VIGA`
-  // comparten `sofiaantuna.viga@gmail.com` — y 11 traían correos distintos,
-  // que es evidencia en contra. Dieciocho de 93 se decidían solas.
+  // revisión, 7 traían el MISMO correo exacto en los dos lados — típicamente
+  // dos variantes de captura del mismo nombre (`AUTO TRANSPORTES NACIONALES X`
+  // y `AUTO TRANSPORTE NACIONALES X`) apuntando al mismo buzón — y 11 traían
+  // correos distintos, que es evidencia en contra. Dieciocho de 93 se
+  // decidían solas.
   //
   // Se trata igual que el teléfono y por el mismo motivo: una PyME de
   // transporte tiene un buzón, no uno por sucursal.
