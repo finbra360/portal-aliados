@@ -46,9 +46,16 @@ test("filtros y conteos", () => {
   const r = buildClientList(ROWS, CONTACTOS, 1000, { filtro: "todos", q: "" });
   assert.equal(r.total, 4);
   assert.deepEqual(r.conteos, { todos: 4, mora: 1, corriente: 2, sin_whatsapp: 1, sin_cuenta: 1 });
-  assert.deepEqual(r.items.map((i) => i.clientId), ["a", "b", "c", "d"], "mayor vencido primero, luego mayor adeudo");
+  assert.deepEqual(r.items.map((i) => i.clientId), ["c", "a", "d", "b"], "por omisión, de la A a la Z sin importar acentos ni mayúsculas");
   assert.deepEqual(buildClientList(ROWS, CONTACTOS, 1000, { filtro: "sin_whatsapp", q: "" }).items.map((i) => i.clientId), ["b"]);
   assert.deepEqual(buildClientList(ROWS, CONTACTOS, 1000, { filtro: "sin_cuenta", q: "" }).items.map((i) => i.clientId), ["b"], "sin créditos activos no cuenta");
+});
+
+test("ordenar por vencido, adeudo o atraso", () => {
+  const orden = (o: "vencido" | "adeudo" | "atraso") => buildClientList(ROWS, CONTACTOS, 1000, { filtro: "todos", q: "", orden: o }).items.map((i) => i.clientId);
+  assert.deepEqual(orden("vencido"), ["a", "b", "c", "d"], "mayor vencido primero, luego mayor adeudo");
+  assert.deepEqual(orden("adeudo"), ["c", "a", "b", "d"]);
+  assert.deepEqual(orden("atraso"), ["a", "b", "c", "d"], "empates de atraso: mayor vencido primero");
 });
 
 test("búsqueda por nombre sin acentos o por número de cliente", () => {

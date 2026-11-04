@@ -21,6 +21,7 @@ export interface ClientListRow {
 }
 
 export type ClientFilter = "todos" | "mora" | "corriente" | "sin_whatsapp" | "sin_cuenta";
+export type ClientOrder = "nombre" | "vencido" | "adeudo" | "atraso";
 
 export interface ClientListItem extends ClientListRow {
   enMora: boolean;
@@ -35,6 +36,22 @@ export const FILTROS: { value: ClientFilter; label: string }[] = [
   { value: "sin_cuenta", label: "Sin cuenta de pago" },
 ];
 
+/** Nombre de la A a la Z; los montos y el atraso, el mayor primero. */
+export const ORDENES: { value: ClientOrder; label: string }[] = [
+  { value: "nombre", label: "Nombre (A–Z)" },
+  { value: "vencido", label: "Mayor vencido" },
+  { value: "adeudo", label: "Mayor adeudo" },
+  { value: "atraso", label: "Más días de atraso" },
+];
+
+const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" });
+const COMPARAR: Record<ClientOrder, (a: ClientListItem, b: ClientListItem) => number> = {
+  nombre: porNombre,
+  vencido: (a, b) => b.vencido - a.vencido || b.adeudo - a.adeudo || porNombre(a, b),
+  adeudo: (a, b) => b.adeudo - a.adeudo || porNombre(a, b),
+  atraso: (a, b) => b.maxAtraso - a.maxAtraso || b.vencido - a.vencido || porNombre(a, b),
+};
+
 const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /**
@@ -46,7 +63,7 @@ export function buildClientList(
   rows: ClientListRow[],
   contactos: (ContactLike & { clientId: string; valor: string; nombre: string | null })[],
   umbral: number,
-  opts: { filtro: ClientFilter; q: string },
+  opts: { filtro: ClientFilter; q: string; orden?: ClientOrder },
 ): { items: ClientListItem[]; conteos: Record<ClientFilter, number>; total: number } {
   const porCliente = new Map<string, typeof contactos>();
   for (const k of contactos) porCliente.set(k.clientId, [...(porCliente.get(k.clientId) ?? []), k]);
@@ -78,6 +95,6 @@ export function buildClientList(
 
   const items = buscados
     .filter(pasa[opts.filtro])
-    .sort((a, b) => b.vencido - a.vencido || b.adeudo - a.adeudo || a.nombre.localeCompare(b.nombre));
+    .sort(COMPARAR[opts.orden ?? "nombre"]);
   return { items, conteos, total: todos.length };
 }
