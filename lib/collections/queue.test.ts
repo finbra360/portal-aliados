@@ -69,6 +69,12 @@ test("en espera: promesa vigente o pausa; jurídico aparte", () => {
   assert.equal(q.find((i) => i.clientId === "promete")!.motivos[0], "Prometió pagar $5,000.00 el 2 oct 2026");
 });
 
+test("extrajudicial: sigue en la cola, solo se identifica", () => {
+  const [i] = buildQueue([cliente({ etapaManual: "extrajudicial" })], 1000, HOY);
+  assert.equal(i.lugar, "cola");
+  assert.ok(i.motivos.includes("En cobranza extrajudicial"));
+});
+
 test("sin teléfono válido: se avisa y la acción es por llamada", () => {
   const [i] = buildQueue([cliente({ telefonoValido: false })], 1000, HOY);
   assert.ok(i.motivos.includes("Sin teléfono válido para WhatsApp: corregir en SIAC"));

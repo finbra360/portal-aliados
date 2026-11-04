@@ -227,7 +227,8 @@ CREATE TABLE IF NOT EXISTS col_credits (
   asignado_a TEXT,
   -- NULL = la etapa (preventiva/temprana/tardía) se calcula con reglas.
   -- Un valor aquí es una decisión humana que manda sobre las reglas.
-  etapa_manual TEXT CHECK (etapa_manual IN ('juridico', 'reestructura', 'pausado')),
+  -- extrajudicial solo identifica; no detiene recordatorios (jurídico y reestructura sí).
+  etapa_manual TEXT CHECK (etapa_manual IN ('juridico', 'reestructura', 'pausado', 'extrajudicial')),
   etapa_manual_por TEXT,
   etapa_manual_at TIMESTAMPTZ,
   raw JSONB NOT NULL,
@@ -237,6 +238,11 @@ CREATE TABLE IF NOT EXISTS col_credits (
 
 -- Columna agregada después de la versión del 29-sep-2026.
 ALTER TABLE col_credits ADD COLUMN IF NOT EXISTS pagos_sincronizados_at TIMESTAMPTZ;
+
+-- Bases creadas antes del 2026-11-04: su CHECK no incluía 'extrajudicial'.
+ALTER TABLE col_credits DROP CONSTRAINT IF EXISTS col_credits_etapa_manual_check;
+ALTER TABLE col_credits ADD CONSTRAINT col_credits_etapa_manual_check
+  CHECK (etapa_manual IN ('juridico', 'reestructura', 'pausado', 'extrajudicial'));
 
 CREATE INDEX IF NOT EXISTS idx_col_credits_client ON col_credits(client_id);
 CREATE INDEX IF NOT EXISTS idx_col_credits_listado ON col_credits(ambiente) WHERE en_listado;

@@ -56,7 +56,7 @@ export function EtapaSelect({ clientId, creditId, etapa }: { clientId: string; c
       <label className="sr-only" htmlFor={`etapa-${creditId}`}>Etapa</label>
       <select
         id={`etapa-${creditId}`}
-        value={etapa === "juridico" || etapa === "reestructura" ? etapa : ""}
+        value={etapa !== null && etapa in ETAPAS ? etapa : ""}
         disabled={pending}
         onChange={(e) => correr(() => cambiarEtapaAction(clientId, creditId, e.target.value))}
         className="rounded-lg border border-black/10 bg-white px-2 py-1 text-xs"

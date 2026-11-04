@@ -27,7 +27,7 @@ export interface QueueClient {
   /** Tiene un teléfono principal del titular que sirve para WhatsApp. */
   telefonoValido: boolean;
   pausaHasta: string | null;
-  etapaManual: "juridico" | "reestructura" | "pausado" | null;
+  etapaManual: "juridico" | "reestructura" | "pausado" | "extrajudicial" | null;
 }
 
 export type Nivel = 1 | 2 | 3 | 4 | 5 | 6;
@@ -73,7 +73,10 @@ export function buildQueue(clientes: QueueClient[], umbral: number, hoy: string)
     const enMora = estaEnMora(c.totalVencido, c.maxAntiguedad, umbral);
     if (!enMora && !c.alertas.includes("promesa_incumplida")) continue;
 
-    const extras = c.telefonoValido ? [] : ["Sin teléfono válido para WhatsApp: corregir en SIAC"];
+    const extras = [
+      ...(c.etapaManual === "extrajudicial" ? ["En cobranza extrajudicial"] : []),
+      ...(c.telefonoValido ? [] : ["Sin teléfono válido para WhatsApp: corregir en SIAC"]),
+    ];
 
     if (c.etapaManual === "juridico") {
       items.push({ ...c, lugar: "juridico", nivel: null, motivos: ["En jurídico", ...extras], accion: "Seguimiento de jurídico" });

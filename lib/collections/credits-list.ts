@@ -14,7 +14,7 @@ export interface CreditListRow {
   fechaMinistracion: string | null;
   /** false = salió del listado de SIAC (liquidado o dado de baja). */
   enListado: boolean;
-  etapaManual: "juridico" | "reestructura" | "pausado" | null;
+  etapaManual: "juridico" | "reestructura" | "pausado" | "extrajudicial" | null;
   /** Montos de la última foto completa; null si el crédito no viene en ella. */
   adeudo: number | null;
   vencido: number | null;
@@ -27,7 +27,7 @@ export interface CreditListRow {
   ultimoPago: string | null;
 }
 
-export type CreditFilter = "activos" | "mora" | "corriente" | "proximos" | "juridico" | "fuera";
+export type CreditFilter = "activos" | "mora" | "corriente" | "proximos" | "extrajudicial" | "juridico" | "fuera";
 export type CreditOrder = "credito" | "cliente" | "vencido" | "adeudo" | "atraso" | "proximo";
 
 export interface CreditListItem extends CreditListRow {
@@ -39,6 +39,7 @@ export const FILTROS_CREDITO: { value: CreditFilter; label: string }[] = [
   { value: "mora", label: "En mora" },
   { value: "corriente", label: "Al corriente" },
   { value: "proximos", label: "Pagan en 7 días" },
+  { value: "extrajudicial", label: "Extrajudicial" },
   { value: "juridico", label: "Jurídico" },
   { value: "fuera", label: "Salieron de SIAC" },
 ];
@@ -95,6 +96,7 @@ export function buildCreditList(
     mora: (c) => c.enMora,
     corriente: (c) => c.enListado && !c.enMora,
     proximos: (c) => c.enListado && !c.enMora && c.proximoVencimiento !== null && dias(hoy, c.proximoVencimiento) >= 0 && dias(hoy, c.proximoVencimiento) <= 7,
+    extrajudicial: (c) => c.enListado && c.etapaManual === "extrajudicial",
     juridico: (c) => c.enListado && c.etapaManual === "juridico",
     fuera: (c) => !c.enListado,
   };
