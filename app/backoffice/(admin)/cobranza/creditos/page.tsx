@@ -142,7 +142,13 @@ export default async function CobranzaCreditosPage({ searchParams }: { searchPar
                   <td className={`px-4 py-3 text-right tabular-nums ${c.enMora ? "font-semibold text-red-700" : ""}`}>{dinero(c.vencido)}</td>
                   <td className="whitespace-nowrap px-4 py-3">{c.atraso === null ? "—" : c.atraso > 0 ? `${c.atraso} ${c.atraso === 1 ? "día" : "días"}` : "Al corriente"}</td>
                   <td className="whitespace-nowrap px-4 py-3">
-                    {c.proximoVencimiento ? formatFecha(c.proximoVencimiento) : "—"}
+                    {c.proximoVencimiento ? (
+                      formatFecha(c.proximoVencimiento)
+                    ) : c.plazoTerminado ? (
+                      <span title="Ya vencieron todas sus mensualidades; solo queda cobrar lo vencido">Plazo terminado</span>
+                    ) : (
+                      "—"
+                    )}
                     {c.montoSiguiente !== null && <span className="block text-xs text-finbra-gray">{formatMoney(c.montoSiguiente)}</span>}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3">
