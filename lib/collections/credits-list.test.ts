@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildCreditList, type CreditListRow } from "./credits-list.ts";
+import { buildCreditList, plazoTerminado, type CreditListRow } from "./credits-list.ts";
 
 const HOY = "2026-11-04";
 
@@ -65,4 +65,14 @@ test("búsqueda por cliente, número de crédito o número de cliente", () => {
   const r = buildCreditList(ROWS, 1000, HOY, { filtro: "mora", q: "norte" });
   assert.deepEqual(r.items.map((i) => i.creditId), ["a"]);
   assert.equal(r.conteos.activos, 1);
+});
+
+test("plazo terminado: sin próxima fecha y con todas las mensualidades pagadas o vencidas", () => {
+  assert.equal(plazoTerminado(fila({ proximoVencimiento: null, vencimientos: 12, cubiertos: 9, vencidos: 3 })), true);
+  assert.equal(plazoTerminado(fila({ proximoVencimiento: null, vencimientos: 15, cubiertos: 14, vencidos: 1 })), true);
+  assert.equal(plazoTerminado(fila({ proximoVencimiento: null, vencimientos: 12, cubiertos: 8, vencidos: 2 })), false, "faltan mensualidades: dato incompleto, no plazo terminado");
+  assert.equal(plazoTerminado(fila({ proximoVencimiento: "2026-11-20" })), false);
+  assert.equal(plazoTerminado(fila({ proximoVencimiento: null, vencimientos: null })), false);
+  const [i] = buildCreditList([fila({ proximoVencimiento: null, vencimientos: 12, cubiertos: 12, vencidos: 0 })], 1000, HOY, { filtro: "activos", q: "" }).items;
+  assert.equal(i.plazoTerminado, true);
 });

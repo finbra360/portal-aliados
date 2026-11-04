@@ -32,6 +32,14 @@ export type CreditOrder = "credito" | "cliente" | "vencido" | "adeudo" | "atraso
 
 export interface CreditListItem extends CreditListRow {
   enMora: boolean;
+  /** Ya vencieron todas sus mensualidades: no hay próxima fecha, solo queda cobrar lo vencido. */
+  plazoTerminado: boolean;
+}
+
+/** SIAC no trae próxima fecha cuando todas las mensualidades ya están pagadas o vencidas. */
+export function plazoTerminado(r: Pick<CreditListRow, "proximoVencimiento" | "vencimientos" | "cubiertos" | "vencidos">): boolean {
+  if (r.proximoVencimiento !== null || !r.vencimientos || r.cubiertos === null) return false;
+  return r.cubiertos + (r.vencidos ?? 0) >= r.vencimientos;
 }
 
 export const FILTROS_CREDITO: { value: CreditFilter; label: string }[] = [
@@ -78,7 +86,11 @@ export function buildCreditList(
   hoy: string,
   opts: { filtro: CreditFilter; q: string; orden?: CreditOrder },
 ): { items: CreditListItem[]; conteos: Record<CreditFilter, number>; total: number } {
-  const todos: CreditListItem[] = rows.map((r) => ({ ...r, enMora: r.enListado && estaEnMora(r.vencido ?? 0, r.atraso ?? 0, umbral) }));
+  const todos: CreditListItem[] = rows.map((r) => ({
+    ...r,
+    enMora: r.enListado && estaEnMora(r.vencido ?? 0, r.atraso ?? 0, umbral),
+    plazoTerminado: r.enListado && plazoTerminado(r),
+  }));
 
   const q = sinAcentos(opts.q.trim());
   const digitos = q.replace(/\D/g, "");
