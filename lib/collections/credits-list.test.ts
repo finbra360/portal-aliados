@@ -40,7 +40,7 @@ const ids = (opts: Parameters<typeof buildCreditList>[3]) => buildCreditList(ROW
 test("filtros y conteos", () => {
   const r = buildCreditList(ROWS, 1000, HOY, { filtro: "activos", q: "" });
   assert.equal(r.total, 4, "los que salieron de SIAC no cuentan como activos");
-  assert.deepEqual(r.conteos, { activos: 4, mora: 2, corriente: 2, proximos: 2, juridico: 1, fuera: 1 });
+  assert.deepEqual(r.conteos, { activos: 4, mora: 2, corriente: 2, proximos: 2, extrajudicial: 0, juridico: 1, fuera: 1 });
   assert.deepEqual(ids({ filtro: "mora", q: "" }), ["b", "a"], "los $300 de la clínica son residuo, no mora");
   assert.deepEqual(ids({ filtro: "proximos", q: "" }), ["d", "c"], "al corriente (o con residuo) y pagan en 7 días o menos");
   assert.deepEqual(ids({ filtro: "fuera", q: "" }), ["e"]);

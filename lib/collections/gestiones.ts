@@ -26,7 +26,8 @@ export type Resultado = keyof typeof RESULTADOS;
 export const CANALES_PROMESA = { llamada: "Llamada", whatsapp: "WhatsApp", correo: "Correo", visita: "Visita", otro: "Otro" } as const;
 export type CanalPromesa = keyof typeof CANALES_PROMESA;
 
-export const ETAPAS = { juridico: "Jurídico", reestructura: "Reestructura" } as const;
+/** Extrajudicial solo identifica al crédito: sigue en la cola y recibe recordatorios. Jurídico y Reestructura los detienen. */
+export const ETAPAS = { extrajudicial: "Cobranza extrajudicial", juridico: "Jurídico", reestructura: "Reestructura" } as const;
 export type Etapa = keyof typeof ETAPAS;
 
 /** Más allá de esto, una promesa o una pausa deja de ser seguimiento y es otra cosa (reestructura). */
