@@ -2,36 +2,40 @@ import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { getClientsList, getPhotoStatus } from "@/lib/db/collections";
-import { FILTROS, type ClientFilter } from "@/lib/collections/clients-list";
+import { FILTROS, ORDENES, type ClientFilter, type ClientOrder } from "@/lib/collections/clients-list";
 import { formatFecha, formatMoney, formatTelefono } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import { IconListChecks } from "@/components/ui/icons";
 import PhotoBanner from "../PhotoBanner";
+import OrdenTh from "../OrdenTh";
 import { codigoDeError } from "@/lib/collections/errors";
 
 const BASE = "/backoffice/cobranza/clientes";
 const esFiltro = (f: string | undefined): f is ClientFilter => FILTROS.some((x) => x.value === f);
+const esOrden = (o: string | undefined): o is ClientOrder => ORDENES.some((x) => x.value === o);
 
-function href(params: { filtro?: string; q?: string }) {
+function href(params: { filtro?: string; q?: string; orden?: ClientOrder }) {
   const s = new URLSearchParams();
   if (params.filtro && params.filtro !== "todos") s.set("filtro", params.filtro);
   if (params.q) s.set("q", params.q);
+  if (params.orden && params.orden !== "nombre") s.set("orden", params.orden);
   const qs = s.toString();
   return qs ? `${BASE}?${qs}` : BASE;
 }
 
-export default async function CobranzaClientesPage({ searchParams }: { searchParams: Promise<{ filtro?: string; q?: string }> }) {
+export default async function CobranzaClientesPage({ searchParams }: { searchParams: Promise<{ filtro?: string; q?: string; orden?: string }> }) {
   if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
   const sp = await searchParams;
   const filtro: ClientFilter = esFiltro(sp.filtro) ? sp.filtro : "todos";
   const q = (sp.q ?? "").slice(0, 100);
+  const orden: ClientOrder = esOrden(sp.orden) ? sp.orden : "nombre";
 
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   let data: Awaited<ReturnType<typeof getClientsList>>;
   try {
     status = await getPhotoStatus();
-    data = await getClientsList(status.fechaCorte, { filtro, q });
+    data = await getClientsList(status.fechaCorte, { filtro, q, orden });
   } catch (e) {
     const c = codigoDeError("clientes", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar la lista de clientes en este momento. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -39,11 +43,16 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Clientes</h1>
-        <p className="mt-1 text-sm text-finbra-gray">
-          Todos los clientes registrados en SIAC ({data.total}). Da clic en un cliente para ver su perfil y elegir a quién se le mandan los recordatorios.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold">Clientes</h1>
+          <p className="mt-1 text-sm text-finbra-gray">
+            Todos los clientes registrados en SIAC ({data.total}). Da clic en un cliente para ver su perfil y elegir a quién se le mandan los recordatorios.
+          </p>
+        </div>
+        <Link href={`${BASE}/importar`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
+          Carga masiva de contactos
+        </Link>
       </div>
       <PhotoBanner status={status} />
 
@@ -52,7 +61,7 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
           {FILTROS.map((f) => (
             <Link
               key={f.value}
-              href={href({ filtro: f.value, q })}
+              href={href({ filtro: f.value, q, orden })}
               className={`rounded-full px-4 py-1.5 text-sm font-medium ${
                 filtro === f.value ? "bg-finbra-purple text-white" : "bg-black/5 text-finbra-gray hover:bg-black/10"
               }`}
@@ -63,6 +72,7 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
         </div>
         <form action={BASE} method="get" className="flex gap-2">
           {filtro !== "todos" && <input type="hidden" name="filtro" value={filtro} />}
+          {orden !== "nombre" && <input type="hidden" name="orden" value={orden} />}
           <label htmlFor="buscar-cliente" className="sr-only">Buscar cliente</label>
           <input
             id="buscar-cliente"
@@ -75,7 +85,7 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
             Buscar
           </button>
           {q && (
-            <Link href={href({ filtro })} className="rounded-lg px-3 py-1.5 text-sm text-finbra-gray hover:bg-black/5">
+            <Link href={href({ filtro, orden })} className="rounded-lg px-3 py-1.5 text-sm text-finbra-gray hover:bg-black/5">
               Limpiar
             </Link>
           )}
@@ -93,11 +103,11 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th scope="col" className="px-4 py-3">Cliente</th>
+                <OrdenTh label="Cliente" titulo="nombre, de la A a la Z" direccion="asc" activo={orden === "nombre"} href={href({ filtro, q })} />
                 <th scope="col" className="px-4 py-3 text-right">Créditos</th>
-                <th scope="col" className="px-4 py-3 text-right">Adeudo</th>
-                <th scope="col" className="px-4 py-3 text-right">Vencido</th>
-                <th scope="col" className="px-4 py-3">Atraso</th>
+                <OrdenTh label="Adeudo" titulo="mayor adeudo" direccion="desc" alinear="right" activo={orden === "adeudo"} href={href({ filtro, q, orden: "adeudo" })} />
+                <OrdenTh label="Vencido" titulo="mayor vencido" direccion="desc" alinear="right" activo={orden === "vencido"} href={href({ filtro, q, orden: "vencido" })} />
+                <OrdenTh label="Atraso" titulo="más días de atraso" direccion="desc" activo={orden === "atraso"} href={href({ filtro, q, orden: "atraso" })} />
                 <th scope="col" className="px-4 py-3">Recordatorios a</th>
                 <th scope="col" className="px-4 py-3">Último pago</th>
               </tr>

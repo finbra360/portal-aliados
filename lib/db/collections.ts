@@ -7,7 +7,8 @@ import { getSetting, tieneDestinatarioValido } from "@/lib/collections/store";
 import { UMBRAL_MORA_DEFAULT, fechaMexico } from "@/lib/collections/rules";
 import { summarizeCollected, summarizePortfolio, type PhotoRow } from "@/lib/collections/portfolio";
 import { buildQueue, type QueueClient } from "@/lib/collections/queue";
-import { buildClientList, type ClientFilter } from "@/lib/collections/clients-list";
+import { buildClientList, type ClientFilter, type ClientOrder } from "@/lib/collections/clients-list";
+import { buildCreditList, type CreditFilter, type CreditOrder } from "@/lib/collections/credits-list";
 
 export type Ambiente = "pruebas" | "produccion";
 
@@ -172,7 +173,7 @@ export async function getWorkQueue(fechaCorte: string) {
  * Todos los clientes del ambiente, con los totales de su última foto completa
  * (o en cero si todavía no hay foto) y sus contactos, para la lista de clientes.
  */
-export async function getClientsList(fechaCorte: string | null, opts: { filtro: ClientFilter; q: string }) {
+export async function getClientsList(fechaCorte: string | null, opts: { filtro: ClientFilter; q: string; orden: ClientOrder }) {
   const ambiente = ambienteActual();
   const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
   const [rows, contactos] = await Promise.all([
@@ -226,6 +227,55 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
       nombre: k.nombre_contacto,
     })),
     umbral,
+    opts,
+  );
+  return { umbral, ...lista };
+}
+
+/**
+ * Todos los créditos del ambiente con los montos de la última foto completa
+ * (null si el crédito no viene en ella), para la lista de créditos.
+ */
+export async function getCreditsList(fechaCorte: string | null, opts: { filtro: CreditFilter; q: string; orden: CreditOrder }) {
+  const ambiente = ambienteActual();
+  const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
+  const rows = await sql`
+    SELECT cr.id, cr.client_id, c.nombre, c.numero_cliente, cr.no_credito, cr.tipo_credito, cr.monto_credito,
+           to_char(cr.fecha_ministracion, 'YYYY-MM-DD') AS fecha_ministracion, cr.en_listado, cr.etapa_manual, cr.vencimientos,
+           s.total_adeudo, s.total_vencido, s.antiguedad, s.monto_siguiente_vencimiento,
+           s.vencimientos_cubiertos, s.vencimientos_vencidos,
+           to_char(s.proximo_vencimiento, 'YYYY-MM-DD') AS proximo_vencimiento,
+           to_char(s.fecha_ultimo_pago, 'YYYY-MM-DD') AS fecha_ultimo_pago
+    FROM col_credits cr
+    JOIN col_clients c ON c.id = cr.client_id
+    LEFT JOIN col_credit_snapshots s ON s.credit_id = cr.id AND s.fecha_corte = ${fechaCorte}::date
+    WHERE cr.ambiente = ${ambiente}
+  `;
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const lista = buildCreditList(
+    rows.map((r) => ({
+      creditId: r.id,
+      clientId: r.client_id,
+      cliente: r.nombre,
+      numeroCliente: r.numero_cliente,
+      noCredito: r.no_credito,
+      tipoCredito: r.tipo_credito,
+      montoCredito: num(r.monto_credito),
+      fechaMinistracion: r.fecha_ministracion,
+      enListado: r.en_listado,
+      etapaManual: r.etapa_manual,
+      adeudo: num(r.total_adeudo),
+      vencido: num(r.total_vencido),
+      atraso: num(r.antiguedad),
+      proximoVencimiento: r.proximo_vencimiento,
+      montoSiguiente: num(r.monto_siguiente_vencimiento),
+      vencimientos: num(r.vencimientos),
+      cubiertos: num(r.vencimientos_cubiertos),
+      vencidos: num(r.vencimientos_vencidos),
+      ultimoPago: r.fecha_ultimo_pago,
+    })),
+    umbral,
+    fechaMexico(),
     opts,
   );
   return { umbral, ...lista };

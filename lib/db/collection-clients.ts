@@ -15,6 +15,7 @@ import {
   type TipoContacto,
 } from "@/lib/collections/contacts";
 import type { Tx } from "@/lib/collections/store";
+import { revisarContactos, type FilaContacto } from "@/lib/collections/contacts-import";
 
 export interface ProfileContact extends ContactLike {
   origen: "siac" | "manual";
@@ -378,4 +379,95 @@ export async function addManualContact(p: {
   });
   await logAudit({ actorEmail: p.actor, action: "cobranza_contacto_alta", entityType: "col_contact", entityId: contactId, metadata: { clientId: p.clientId, tipo: p.tipoContacto, usarParaRecordatorios: p.usarParaRecordatorios } });
   return contactId;
+}
+
+// ---------------------------------------------------------------- carga masiva
+
+/** Clientes, créditos y contactos del ambiente, para revisar una carga masiva. */
+async function datosParaImportar(q: Tx) {
+  const ambiente = ambienteActual();
+  const [clientes, creditos, contactos] = await Promise.all([
+    q`SELECT id, numero_cliente, nombre FROM col_clients WHERE ambiente = ${ambiente}`,
+    q`SELECT no_credito, client_id FROM col_credits WHERE ambiente = ${ambiente}`,
+    q`SELECT k.client_id, k.valor_original, k.telefono_whatsapp FROM col_contacts k JOIN col_clients c ON c.id = k.client_id WHERE c.ambiente = ${ambiente}`,
+  ]);
+  return {
+    clientes: clientes.map((c) => ({ id: c.id as string, numeroCliente: c.numero_cliente as string, nombre: c.nombre as string })),
+    creditos: creditos.map((c) => ({ noCredito: c.no_credito as string, clientId: c.client_id as string })),
+    existentes: contactos.map((k) => ({ clientId: k.client_id as string, valor: k.valor_original as string, telefonoWhatsapp: k.telefono_whatsapp as string | null })),
+  };
+}
+
+export async function previsualizarContactos(texto: string): Promise<{ filas: FilaContacto[] } | { error: string }> {
+  const d = await datosParaImportar(sql);
+  return revisarContactos(texto, d.clientes, d.creditos, d.existentes);
+}
+
+/**
+ * Guarda la carga masiva de contactos. Se vuelve a revisar contra la base
+ * dentro de la transacción (no se confía en la vista previa), con la tabla
+ * bloqueada para que un alta al mismo tiempo no duplique. Los que tienen error
+ * o ya existen se omiten.
+ */
+export async function importarContactos(texto: string, actor: string) {
+  const resultado = await transaccion(async (tx) => {
+    await tx`LOCK TABLE col_contacts IN SHARE ROW EXCLUSIVE MODE`;
+    const d = await datosParaImportar(tx);
+    const r = revisarContactos(texto, d.clientes, d.creditos, d.existentes);
+    if ("error" in r) throw new ContactError(r.error);
+    const nuevos = r.filas.filter((f) => f.estado === "nuevo" && f.clientId && f.medio);
+    const conteo = { creados: nuevos.length, recordatorios: 0, existentes: r.filas.filter((f) => f.estado === "existe").length, errores: r.filas.filter((f) => f.estado === "error").length };
+    if (!nuevos.length) return conteo;
+
+    const filas = nuevos.map((f) => {
+      const tipo = TIPOS_CONTACTO[f.tipoContacto];
+      return {
+        client_id: f.clientId,
+        origen: "manual",
+        relacion: tipo.relacion,
+        rol: tipo.rol,
+        tipo: f.medio,
+        valor_original: f.valor,
+        telefono_whatsapp: f.telefonoWhatsapp,
+        nombre_contacto: f.nombre,
+        notas: f.notas,
+        created_by: actor,
+        updated_by: actor,
+      };
+    });
+    const insertados = await tx`
+      INSERT INTO col_contacts ${tx(filas, "client_id", "origen", "relacion", "rol", "tipo", "valor_original", "telefono_whatsapp", "nombre_contacto", "notas", "created_by", "updated_by")}
+      RETURNING id, client_id, valor_original
+    `;
+    const idDe = new Map(insertados.map((k) => [`${k.client_id}|${k.valor_original}`, k.id as string]));
+
+    const actividades = nuevos.map((f) => {
+      const quien = f.nombre ? `${f.nombre} (${f.valor})` : f.valor;
+      return {
+        client_id: f.clientId,
+        descripcion: `Se agregó el contacto ${quien} como "${TIPOS_CONTACTO[f.tipoContacto].label}" (carga masiva)`,
+        metadata: { contactId: idDe.get(`${f.clientId}|${f.valor}`), tipo: f.tipoContacto, cargaMasiva: true },
+      };
+    });
+    await tx`
+      INSERT INTO col_activities (client_id, tipo, descripcion, metadata, actor)
+      SELECT x.client_id, 'cambio_contacto', x.descripcion, x.metadata, ${actor}
+      FROM json_to_recordset(${JSON.stringify(actividades)}::text::json) AS x(client_id uuid, descripcion text, metadata jsonb)
+    `;
+
+    for (const f of nuevos.filter((n) => n.usarParaRecordatorios)) {
+      const contactId = idDe.get(`${f.clientId}|${f.valor}`);
+      if (!contactId || !f.clientId) continue;
+      await tx`
+        UPDATE col_clients SET contacto_cobranza_id = ${contactId}, contacto_cobranza_por = ${actor}, contacto_cobranza_at = now()
+        WHERE id = ${f.clientId}
+      `;
+      await activity(tx, f.clientId, `Los recordatorios de cobranza ahora van a ${f.nombre ? `${f.nombre} (${f.valor})` : f.valor}`, actor, { contactoNuevo: contactId, cargaMasiva: true });
+      await closePhoneAlertIfFixed(tx, f.clientId, actor);
+      conteo.recordatorios++;
+    }
+    return conteo;
+  });
+  await logAudit({ actorEmail: actor, action: "cobranza_contactos_carga_masiva", entityType: "col_contact", metadata: resultado });
+  return resultado;
 }
