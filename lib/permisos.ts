@@ -6,19 +6,23 @@
 // Como en rbac.ts: se revisa SIEMPRE en el servidor (página y acción). Ocultar
 // un botón es solo para no ofrecer lo que no se puede hacer.
 //
-// Por ahora cubre cartera y cobranza; los demás módulos siguen con sus listas
+// Por ahora cubre clientes, cartera y cobranza; los demás módulos siguen con sus listas
 // de roles (brokers/roles.ts, credit-health/roles.ts…) hasta que se migren.
 
 import type { AdminRole } from "./db/admin-users.ts";
 import type { AdminSessionPayload } from "./admin-auth.ts";
 import { ForbiddenError } from "./rbac.ts";
 
-export type Permiso = "cartera.ver" | "cobranza.operar" | "cobranza.configurar";
+export type Permiso = "cartera.ver" | "clientes.editar" | "cobranza.operar" | "cobranza.configurar";
 
 export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly AdminRole[] }> = {
   "cartera.ver": {
     descripcion:
       "Ver clientes, créditos, saldos, semáforo de pago, cola de trabajo y conversaciones de WhatsApp, sin cambiar nada. Comercial lo tiene desde el 2026-11-05 (decisión de Santiago).",
+    roles: ["super_admin", "finanzas", "comercial"],
+  },
+  "clientes.editar": {
+    descripcion: "Editar los datos de la empresa en Clientes: nombre, razón social, RFC, industria, ejecutivo y notas. No toca nada de SIAC.",
     roles: ["super_admin", "finanzas", "comercial"],
   },
   "cobranza.operar": {

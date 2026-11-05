@@ -88,6 +88,16 @@ export function IconUsers({ className }: IconProps) {
   );
 }
 
+export function IconBuilding({ className }: IconProps) {
+  return (
+    <svg aria-hidden="true" {...base} className={className}>
+      <rect x="4" y="3" width="11" height="18" rx="1" />
+      <path d="M15 9h4a1 1 0 0 1 1 1v11" />
+      <path d="M8 7h3M8 11h3M8 15h3M3 21h18" />
+    </svg>
+  );
+}
+
 export function IconSettings({ className }: IconProps) {
   return (
     <svg aria-hidden="true" {...base} className={className}>
