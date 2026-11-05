@@ -1,6 +1,7 @@
 import { sql, transaccion } from "@/lib/db";
 import { SiacClient, getSiacConfig, type SiacAmbiente } from "@/lib/siac/client";
 import { parseListado, type ListadoCredito } from "@/lib/siac/parse";
+import { vincularEmpresasNuevas } from "@/lib/db/empresas";
 import { notifySlack } from "./notify";
 import { fetchAndStorePayments, pausa, type PaymentCredit } from "./payments";
 import {
@@ -285,6 +286,9 @@ async function writeDailyPhoto(
       `;
     }
   }
+
+  // Cada cliente nuevo recibe su empresa (Clientes 360) en esta misma transacción.
+  await vincularEmpresasNuevas(tx, ambiente);
 
   // Créditos, fotos y eventos.
   const vistos = new Set<string>();
