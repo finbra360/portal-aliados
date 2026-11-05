@@ -7,17 +7,10 @@ import { codigoDeError } from "@/lib/collections/errors";
 import { formatFecha, formatFechaHora, formatMoney, formatTelefono } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import { CrearPlantillas, EnviarAhora, EnviarPrueba, EnvioToggle, PlantillaToggle, RevisarConMeta } from "./WhatsAppControls";
+import UltimosEnvios from "./UltimosEnvios";
 
 /** "Sin WhatsApp válido" → "sin WhatsApp válido": solo la primera letra, para no perder siglas (SIAC, CLABE). */
 const minusculaInicial = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
-
-const ESTADO: Record<string, { label: string; clase: string }> = {
-  pendiente: { label: "Pendiente", clase: "bg-black/5 text-finbra-gray" },
-  enviado: { label: "Enviado", clase: "bg-emerald-100 text-emerald-700" },
-  entregado: { label: "Entregado", clase: "bg-emerald-100 text-emerald-700" },
-  leido: { label: "Leído", clase: "bg-emerald-100 text-emerald-700" },
-  fallido: { label: "Falló", clase: "bg-red-100 text-red-700" },
-};
 
 const ESTADO_META: Record<string, { label: string; clase: string }> = {
   pendiente: { label: "Pendiente en Meta", clase: "bg-black/5 text-finbra-gray" },
@@ -218,42 +211,7 @@ export default async function WhatsAppMoraPage() {
         {p.filas.length === 0 && <p className="px-6 pb-5 text-sm text-finbra-gray">No hay clientes en mora en la última foto.</p>}
       </Card>
 
-      <Card className="p-0">
-        <h2 className="px-6 pt-5 text-lg font-bold">Últimos envíos</h2>
-        {p.ultimos.length === 0 ? (
-          <p className="px-6 pb-5 pt-2 text-sm text-finbra-gray">Todavía no se ha enviado ningún recordatorio de mora.</p>
-        ) : (
-          <div className="mt-3 overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th scope="col" className="px-4 py-2">Cuándo</th>
-                  <th scope="col" className="px-4 py-2">Cliente</th>
-                  <th scope="col" className="px-4 py-2">Teléfono</th>
-                  <th scope="col" className="px-4 py-2">Plantilla</th>
-                  <th scope="col" className="px-4 py-2">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {p.ultimos.map((m) => (
-                  <tr key={m.id} className="border-b border-black/5 align-top last:border-0">
-                    <td className="whitespace-nowrap px-4 py-2">{formatFechaHora(m.at)}</td>
-                    <td className="px-4 py-2">
-                      {m.clientId ? <Link href={`/backoffice/cobranza/clientes/${m.clientId}`} className="hover:text-finbra-purple hover:underline">{m.cliente}</Link> : <span className="text-finbra-gray">{m.cliente}</span>}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2">{formatTelefono(m.telefono)}</td>
-                    <td className="px-4 py-2 font-mono text-xs">{m.plantilla}</td>
-                    <td className="px-4 py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${ESTADO[m.estado]?.clase ?? ""}`}>{ESTADO[m.estado]?.label ?? m.estado}</span>
-                      {m.error && <span className="mt-1 block text-xs text-red-700">{m.error}</span>}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+      <UltimosEnvios envios={p.ultimos} vacio="Todavía no se ha enviado ningún recordatorio de mora." />
     </div>
   );
 }

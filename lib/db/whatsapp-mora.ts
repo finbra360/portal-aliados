@@ -194,14 +194,7 @@ export async function previewMora(): Promise<MoraPreview> {
         .sort((a, b) => Number(b.decision.enviar) - Number(a.decision.enviar) || b.totalVencido - a.totalVencido)
     : [];
 
-  const ultimos = await sql`
-    SELECT m.id, m.client_id, c.nombre, m.telefono, t.nombre AS plantilla, m.estado, m.error->>'mensaje' AS error, m.created_at
-    FROM col_wa_messages m
-    LEFT JOIN col_clients c ON c.id = m.client_id
-    LEFT JOIN col_wa_templates t ON t.id = m.template_id
-    WHERE m.origen IN ('recordatorio_mora', 'backoffice_manual')
-    ORDER BY m.created_at DESC LIMIT 50
-  `;
+  const ultimos = await ultimosEnvios(["recordatorio_mora", "backoffice_manual"]);
   return {
     ambiente: status.ambiente,
     activado: ajuste.activo === true,
@@ -213,18 +206,33 @@ export async function previewMora(): Promise<MoraPreview> {
     bloqueosManual,
     plantillas,
     filas,
-    ultimos: ultimos.map((m) => ({
-      id: Number(m.id),
-      clientId: m.client_id,
-      cliente: m.client_id ? m.nombre : "Envío de prueba",
-      telefono: m.telefono,
-      plantilla: m.plantilla,
-      estado: m.estado,
-      error: m.error,
-      at: (m.created_at as Date).toISOString(),
-    })),
+    ultimos,
     revisionMeta,
   };
+}
+
+export type EnvioReciente = MoraPreview["ultimos"][number];
+
+/** Los últimos 50 mensajes salientes de esos orígenes, con el estado que reportó Meta (enviado → entregado → leído, o fallido). */
+export async function ultimosEnvios(origenes: string[]): Promise<EnvioReciente[]> {
+  const rows = await sql`
+    SELECT m.id, m.client_id, c.nombre, m.telefono, t.nombre AS plantilla, m.estado, m.error->>'mensaje' AS error, m.created_at
+    FROM col_wa_messages m
+    LEFT JOIN col_clients c ON c.id = m.client_id
+    LEFT JOIN col_wa_templates t ON t.id = m.template_id
+    WHERE m.origen = ANY(${origenes}::text[])
+    ORDER BY m.created_at DESC LIMIT 50
+  `;
+  return rows.map((m) => ({
+    id: Number(m.id),
+    clientId: m.client_id,
+    cliente: m.client_id ? m.nombre : "Envío de prueba",
+    telefono: m.telefono,
+    plantilla: m.plantilla,
+    estado: m.estado,
+    error: m.error,
+    at: (m.created_at as Date).toISOString(),
+  }));
 }
 
 export interface MoraRunResult {
