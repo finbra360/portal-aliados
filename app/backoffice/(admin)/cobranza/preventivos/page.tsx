@@ -8,6 +8,7 @@ import { codigoDeError } from "@/lib/collections/errors";
 import { formatFecha, formatTelefono } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import { ConsultarMontos, CrearPlantillas, EnviarAhora, EnvioToggle, PlantillaToggle } from "../whatsapp/WhatsAppControls";
+import UltimosEnvios from "../whatsapp/UltimosEnvios";
 
 /** "Sin WhatsApp válido" → "sin WhatsApp válido": solo la primera letra, para no perder siglas (SIAC, CLABE). */
 const minusculaInicial = (t: string) => t.charAt(0).toLowerCase() + t.slice(1);
@@ -205,6 +206,7 @@ export default async function PreventivosPage() {
         </Card>
       )}
 
+      <UltimosEnvios envios={p.ultimos} vacio="Todavía no se ha enviado ningún recordatorio preventivo desde el backoffice." />
     </div>
   );
 }

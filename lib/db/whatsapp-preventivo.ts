@@ -21,7 +21,7 @@ import {
   type UmbralesSemaforo,
 } from "@/lib/collections/preventivos";
 import { getWhatsAppConfig } from "@/lib/whatsapp/client";
-import { enviarLote, plantillasDe, type MoraRunResult, type PlantillaMora } from "@/lib/db/whatsapp-mora";
+import { enviarLote, plantillasDe, ultimosEnvios, type EnvioReciente, type MoraRunResult, type PlantillaMora } from "@/lib/db/whatsapp-mora";
 import { consultarSaldoAlDia } from "@/lib/db/collection-gestiones";
 
 const VENTANA_DEFAULT = { desde: "09:00", hasta: "19:00" };
@@ -172,17 +172,19 @@ export interface PreventivosPreview {
   filas: { creditId: string; clientId: string; nombre: string; noCredito: string; proximoVencimiento: string; decision: PreventivoDecision }[];
   /** Los que vencen en 2 a 4 días: hoy no les toca, se muestran para planear. */
   proximos: { creditId: string; clientId: string; nombre: string; noCredito: string; proximoVencimiento: string; semaforo: Semaforo }[];
+  ultimos: EnvioReciente[];
 }
 
 export async function previewPreventivos(): Promise<PreventivosPreview> {
   const hoy = fechaMexico();
-  const [status, umbralMora, ajuste, ventana, plantillas, umbrales] = await Promise.all([
+  const [status, umbralMora, ajuste, ventana, plantillas, umbrales, ultimos] = await Promise.all([
     getPhotoStatus(),
     getSetting("umbral_mora", UMBRAL_MORA_DEFAULT),
     getSetting<{ activo?: boolean }>("whatsapp_preventivo", {}),
     getSetting("ventana_envio", VENTANA_DEFAULT),
     plantillasDe("preventiva"),
     umbralesSemaforo(),
+    ultimosEnvios(["recordatorio_preventivo"]),
   ]);
   const activas = plantillas.filter((t) => t.activa).map((t) => t.nombre);
   const condiciones = {
@@ -217,6 +219,7 @@ export async function previewPreventivos(): Promise<PreventivosPreview> {
     plantillas,
     filas: filas.sort((a, b) => Number(b.decision.enviar) - Number(a.decision.enviar) || a.proximoVencimiento.localeCompare(b.proximoVencimiento)),
     proximos,
+    ultimos,
   };
 }
 
