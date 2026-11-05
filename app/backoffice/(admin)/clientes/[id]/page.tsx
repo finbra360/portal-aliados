@@ -1,0 +1,330 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import type { ReactNode } from "react";
+import { getAdminSession } from "@/lib/get-admin-session";
+import { puede } from "@/lib/permisos";
+import { getPhotoStatus } from "@/lib/db/collections";
+import { getEmpresa, listEjecutivos, type FichaCredito } from "@/lib/db/empresas";
+import { ETAPAS } from "@/lib/collections/gestiones";
+import { codigoDeError } from "@/lib/collections/errors";
+import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
+import Card from "@/components/ui/Card";
+import EmptyState from "@/components/ui/EmptyState";
+import ProgressBar from "@/components/ui/ProgressBar";
+import PhotoBanner from "../../cobranza/PhotoBanner";
+import SemaforoPill from "../../cobranza/SemaforoPill";
+import EtapaChip from "../EtapaChip";
+import EditarEmpresa from "./EditarEmpresa";
+
+const BASE = "/backoffice/clientes";
+const PESTANAS = [
+  { value: "resumen", label: "Resumen" },
+  { value: "creditos", label: "Créditos" },
+  { value: "datos", label: "Datos de la empresa" },
+] as const;
+type Pestana = (typeof PESTANAS)[number]["value"];
+
+const dinero = (v: number | null) => (v === null ? "—" : formatMoney(v));
+const etapaManual = (e: string | null) => (e && e in ETAPAS ? ETAPAS[e as keyof typeof ETAPAS] : null);
+
+function Avance({ c }: { c: FichaCredito }) {
+  if (c.cubiertos === null || !c.vencimientos) return <>—</>;
+  return (
+    <span className="block w-32">
+      <span className="text-xs">{c.cubiertos} de {c.vencimientos} pagadas</span>
+      <ProgressBar percent={(c.cubiertos / c.vencimientos) * 100} label={`${c.cubiertos} de ${c.vencimientos} mensualidades pagadas`} />
+      {!!c.vencidos && <span className="block text-xs text-red-700">{c.vencidos === 1 ? "1 vencida" : `${c.vencidos} vencidas`}</span>}
+    </span>
+  );
+}
+
+function Estado({ c }: { c: FichaCredito }) {
+  if (!c.enListado) return <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs text-finbra-gray">Salió de SIAC</span>;
+  const manual = etapaManual(c.etapaManual);
+  return (
+    <span className="flex flex-col items-start gap-1">
+      {c.atraso ? <span className="text-xs font-semibold text-red-700">{c.atraso} {c.atraso === 1 ? "día" : "días"} de atraso</span> : <span className="text-xs text-emerald-700">Al corriente</span>}
+      {manual && <span className="rounded-full bg-black/5 px-2 py-0.5 text-xs text-finbra-gray">{manual}</span>}
+    </span>
+  );
+}
+
+function FinPlazo({ fecha, hoy }: { fecha: string | null; hoy: string }) {
+  if (!fecha) return <>—</>;
+  const d = Math.round((Date.parse(fecha) - Date.parse(hoy)) / 86_400_000);
+  return (
+    <>
+      {formatFecha(fecha)}
+      <span className={`block text-xs ${d >= 0 && d <= 90 ? "font-semibold text-finbra-purple-700" : "text-finbra-gray"}`}>
+        {d < 0 ? "ya terminó" : d === 0 ? "termina hoy" : `en ${d} ${d === 1 ? "día" : "días"}`}
+      </span>
+    </>
+  );
+}
+
+function Dato({ etiqueta, children }: { etiqueta: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-1 sm:grid-cols-[170px_1fr]">
+      <dt className="text-finbra-gray">{etiqueta}</dt>
+      <dd className="min-w-0 break-words">{children || <span className="text-finbra-gray">—</span>}</dd>
+    </div>
+  );
+}
+
+export default async function FichaClientePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
+  const session = await getAdminSession();
+  if (!puede(session, "cartera.ver")) {
+    return <EmptyState title="No tienes acceso a Clientes" description="Tu rol no puede ver la cartera. Si la necesitas, pídele a un Super Admin que cambie tu rol en Usuarios." />;
+  }
+  const puedeEditar = puede(session, "clientes.editar");
+  const { id } = await params;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
+  const { tab } = await searchParams;
+  const pestana: Pestana = PESTANAS.some((p) => p.value === tab) ? (tab as Pestana) : "resumen";
+
+  let ficha: Awaited<ReturnType<typeof getEmpresa>>;
+  let status: Awaited<ReturnType<typeof getPhotoStatus>>;
+  let ejecutivos: Awaited<ReturnType<typeof listEjecutivos>> = [];
+  try {
+    [ficha, status, ejecutivos] = await Promise.all([
+      getEmpresa(id),
+      getPhotoStatus(),
+      pestana === "datos" && puedeEditar ? listEjecutivos() : Promise.resolve([]),
+    ]);
+  } catch (e) {
+    const c = codigoDeError("ficha de cliente", e);
+    return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar la ficha del cliente. <span className="text-sm opacity-70">(código {c})</span></div>;
+  }
+  if (!ficha) notFound();
+
+  const { empresa: e, clientes, creditos, resumen: r } = ficha;
+  const vigentes = creditos.filter((c) => c.enListado);
+  const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(new Date());
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <Link href={BASE} className="text-sm text-finbra-purple hover:underline">← Clientes</Link>
+        <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0 space-y-1">
+            <h1 className="text-2xl font-bold">{e.nombre}</h1>
+            <p className="text-sm text-finbra-gray">
+              {e.razonSocial && e.razonSocial !== e.nombre && <>{e.razonSocial} · </>}
+              {e.rfc ? <span className="font-mono">{e.rfc}</span> : <span className="text-amber-800">Sin RFC</span>}
+              {e.industria && <> · {e.industria}</>}
+            </p>
+            <div className="flex flex-wrap items-start gap-2 pt-1">
+              <EtapaChip etapa={r.etapa} />
+              <SemaforoPill semaforo={r.semaforo} historial={r.historial} detalle />
+            </div>
+          </div>
+          <div className="space-y-2 text-sm sm:text-right">
+            <p>
+              <span className="text-finbra-gray">Ejecutivo: </span>
+              {e.ejecutivoNombre ?? <span className="text-amber-800">Sin asignar</span>}
+            </p>
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              {clientes.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/backoffice/cobranza/clientes/${c.id}`}
+                  className="rounded-lg border border-finbra-purple/30 px-3 py-1.5 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5"
+                >
+                  Expediente de cobranza{clientes.length > 1 ? ` ${c.numeroCliente}` : ""}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <PhotoBanner status={status} />
+
+      <nav aria-label="Secciones de la ficha" className="flex flex-wrap gap-1 border-b border-black/10">
+        {PESTANAS.map((p) => (
+          <Link
+            key={p.value}
+            href={p.value === "resumen" ? `${BASE}/${id}` : `${BASE}/${id}?tab=${p.value}`}
+            aria-current={pestana === p.value ? "page" : undefined}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${pestana === p.value ? "border-finbra-purple text-finbra-purple-700" : "border-transparent text-finbra-gray hover:text-black"}`}
+          >
+            {p.label}
+            {p.value === "creditos" && <span className="font-normal"> ({creditos.length})</span>}
+          </Link>
+        ))}
+      </nav>
+
+      {pestana === "resumen" && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+            <Card>
+              <p className="text-sm text-finbra-gray">Adeudo total</p>
+              <p className="mt-1 break-words text-xl font-bold tabular-nums xl:text-2xl text-finbra-purple">{formatMoney(r.adeudo)}</p>
+              <p className="mt-1 text-xs text-finbra-gray">{r.creditosVigentes} {r.creditosVigentes === 1 ? "crédito vigente" : "créditos vigentes"}</p>
+            </Card>
+            <Card>
+              <p className="text-sm text-finbra-gray">Vencido</p>
+              <p className={`mt-1 break-words text-xl font-bold tabular-nums xl:text-2xl ${r.vencido > 0 ? "text-red-700" : "text-finbra-purple"}`}>{formatMoney(r.vencido)}</p>
+              <p className="mt-1 text-xs text-finbra-gray">{r.maxAtraso ? `${r.maxAtraso} días de atraso` : r.creditosVigentes ? "Al corriente" : "—"}</p>
+            </Card>
+            <Card>
+              <p className="text-sm text-finbra-gray">Próximo pago</p>
+              <p className="mt-1 break-words text-xl font-bold tabular-nums xl:text-2xl text-finbra-purple">{r.proximoPago ? formatFecha(r.proximoPago.fecha) : "—"}</p>
+              <p className="mt-1 text-xs text-finbra-gray">{r.proximoPago?.monto != null ? formatMoney(r.proximoPago.monto) : "Monto pendiente de SIAC"}</p>
+            </Card>
+            <Card>
+              <p className="text-sm text-finbra-gray">Monto original vigente</p>
+              <p className="mt-1 break-words text-xl font-bold tabular-nums xl:text-2xl text-finbra-purple">{formatMoney(r.montoOriginal)}</p>
+              <p className="mt-1 text-xs text-finbra-gray">{r.finPlazo ? `Primer fin de plazo: ${formatFecha(r.finPlazo.fecha)}` : "Sin fin de plazo próximo"}</p>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+            <Card className="overflow-x-auto p-0">
+              <div className="flex items-baseline justify-between px-6 pt-5">
+                <h2 className="text-lg font-bold">Créditos vigentes</h2>
+                <Link href={`${BASE}/${id}?tab=creditos`} className="text-sm text-finbra-purple hover:underline">Ver todos →</Link>
+              </div>
+              {vigentes.length === 0 ? (
+                <p className="px-6 py-5 text-sm text-finbra-gray">{creditos.length ? "Ya no tiene créditos en el listado de SIAC." : "Todavía no tiene créditos en SIAC."}</p>
+              ) : (
+                <table className="mt-3 w-full min-w-[600px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
+                      <th scope="col" className="px-6 py-2">Crédito</th>
+                      <th scope="col" className="px-4 py-2 text-right">Adeudo</th>
+                      <th scope="col" className="px-4 py-2">Avance</th>
+                      <th scope="col" className="px-4 py-2">Fin de plazo</th>
+                      <th scope="col" className="px-4 py-2">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vigentes.map((c) => (
+                      <tr key={c.creditId} className="border-b border-black/5 align-top last:border-0">
+                        <td className="px-6 py-2">
+                          <span className="font-mono font-semibold">{c.noCredito}</span>
+                          <span className="block text-xs text-finbra-gray">{dinero(c.montoCredito)}</span>
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums">{dinero(c.adeudo)}</td>
+                        <td className="px-4 py-2"><Avance c={c} /></td>
+                        <td className="whitespace-nowrap px-4 py-2"><FinPlazo fecha={c.fechaTermino} hoy={hoy} /></td>
+                        <td className="px-4 py-2"><Estado c={c} /></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+
+            <Card>
+              <div className="mb-3 flex items-baseline justify-between">
+                <h2 className="text-lg font-bold">Datos de la empresa</h2>
+                {puedeEditar && <Link href={`${BASE}/${id}?tab=datos`} className="text-sm text-finbra-purple hover:underline">Editar</Link>}
+              </div>
+              <dl className="space-y-2 text-sm">
+                <Dato etiqueta="Nombre comercial">{e.nombreComercial}</Dato>
+                <Dato etiqueta="Sitio web">{e.sitioWeb}</Dato>
+                <Dato etiqueta="Números de cliente">{e.numerosCliente.length ? <span className="font-mono">{e.numerosCliente.join(", ")}</span> : null}</Dato>
+                <Dato etiqueta="Notas">{e.notas && <span className="whitespace-pre-line">{e.notas}</span>}</Dato>
+              </dl>
+            </Card>
+          </div>
+        </>
+      )}
+
+      {pestana === "creditos" && (
+        <Card className="overflow-x-auto p-0">
+          {creditos.length === 0 ? (
+            <p className="p-6 text-sm text-finbra-gray">Todavía no tiene créditos en SIAC.</p>
+          ) : (
+            <table className="w-full min-w-[1100px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
+                  <th scope="col" className="px-4 py-3">Crédito</th>
+                  <th scope="col" className="px-4 py-3 text-right">Otorgado</th>
+                  <th scope="col" className="px-4 py-3 text-right">Adeudo</th>
+                  <th scope="col" className="px-4 py-3 text-right">Vencido</th>
+                  <th scope="col" className="px-4 py-3">Estado</th>
+                  <th scope="col" className="px-4 py-3">Próximo pago</th>
+                  <th scope="col" className="px-4 py-3">Mensualidades</th>
+                  <th scope="col" className="px-4 py-3">Fin de plazo</th>
+                  <th scope="col" className="px-4 py-3">Último pago</th>
+                </tr>
+              </thead>
+              <tbody>
+                {creditos.map((c) => (
+                  <tr key={c.creditId} className={`border-b border-black/5 align-top last:border-0 ${c.enListado ? "" : "text-finbra-gray"}`}>
+                    <td className="px-4 py-3">
+                      <p className="font-mono font-semibold">{c.noCredito}</p>
+                      <p className="text-xs text-finbra-gray">
+                        {c.tipoCredito ?? "—"}
+                        {clientes.length > 1 && <> · cliente {c.numeroCliente}</>}
+                      </p>
+                      {c.promotor && <p className="text-xs text-finbra-gray">Promotor: {c.promotor}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">
+                      {dinero(c.montoCredito)}
+                      {c.fechaMinistracion && <span className="block text-xs text-finbra-gray">{formatFecha(c.fechaMinistracion)}</span>}
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums">{dinero(c.adeudo)}</td>
+                    <td className={`px-4 py-3 text-right tabular-nums ${(c.vencido ?? 0) > 0 ? "font-semibold text-red-700" : ""}`}>{dinero(c.vencido)}</td>
+                    <td className="px-4 py-3"><Estado c={c} /></td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {c.proximoVencimiento ? formatFecha(c.proximoVencimiento) : "—"}
+                      {c.montoSiguiente !== null && <span className="block text-xs text-finbra-gray">{formatMoney(c.montoSiguiente)}</span>}
+                    </td>
+                    <td className="px-4 py-3"><Avance c={c} /></td>
+                    <td className="whitespace-nowrap px-4 py-3"><FinPlazo fecha={c.fechaTermino} hoy={hoy} /></td>
+                    <td className="whitespace-nowrap px-4 py-3 text-finbra-gray">{formatFecha(c.ultimoPago)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="px-4 pb-4 pt-2 text-xs text-finbra-gray">
+            Montos de la foto más reciente de SIAC de cada crédito. Los que salieron del listado conservan su historia pero ya no suman.
+          </p>
+        </Card>
+      )}
+
+      {pestana === "datos" && (
+        <Card>
+          <h2 className="mb-1 text-lg font-bold">Datos de la empresa</h2>
+          <p className="mb-4 text-sm text-finbra-gray">
+            Los captura el equipo; SIAC no los trae ni los cambia. Cada cambio queda en la bitácora.
+          </p>
+          {puedeEditar ? (
+            <EditarEmpresa
+              empresa={{
+                id: e.empresaId,
+                nombre: e.nombre,
+                razonSocial: e.razonSocial,
+                rfc: e.rfc,
+                nombreComercial: e.nombreComercial,
+                industria: e.industria,
+                sitioWeb: e.sitioWeb,
+                ejecutivoEmail: e.ejecutivoEmail,
+                notas: e.notas,
+              }}
+              ejecutivos={ejecutivos}
+            />
+          ) : (
+            <dl className="space-y-2 text-sm">
+              <Dato etiqueta="Nombre">{e.nombre}</Dato>
+              <Dato etiqueta="Razón social">{e.razonSocial}</Dato>
+              <Dato etiqueta="RFC">{e.rfc && <span className="font-mono">{e.rfc}</span>}</Dato>
+              <Dato etiqueta="Nombre comercial">{e.nombreComercial}</Dato>
+              <Dato etiqueta="Industria">{e.industria}</Dato>
+              <Dato etiqueta="Sitio web">{e.sitioWeb}</Dato>
+              <Dato etiqueta="Ejecutivo">{e.ejecutivoNombre}</Dato>
+              <Dato etiqueta="Notas">{e.notas && <span className="whitespace-pre-line">{e.notas}</span>}</Dato>
+            </dl>
+          )}
+          <p className="mt-4 text-xs text-finbra-gray">
+            {e.origen === "siac" ? "Se creó desde SIAC" : "Se dio de alta a mano"} el {formatFechaHora(e.createdAt)}
+            {e.updatedBy && <> · última edición de {e.updatedBy} el {formatFechaHora(e.updatedAt)}</>}
+          </p>
+        </Card>
+      )}
+    </div>
+  );
+}

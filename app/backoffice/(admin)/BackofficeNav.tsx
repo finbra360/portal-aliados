@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { AdminRole } from "@/lib/db/admin-users";
 import { PERMISOS, rolPuede, type Permiso } from "@/lib/permisos";
 import FinbraLogo from "@/components/ui/FinbraLogo";
-import { IconHome, IconLogout, IconSettings, IconTarget, IconTrendingUp, IconUsers, IconWallet } from "@/components/ui/icons";
+import { IconBuilding, IconHome, IconLogout, IconSettings, IconTarget, IconTrendingUp, IconUsers, IconWallet } from "@/components/ui/icons";
 import { CH_VEN } from "@/lib/credit-health/roles";
 
 // exact: solo se marca activo en esa ruta exacta (no en sus subrutas).
@@ -21,6 +21,13 @@ type NavEntry =
 
 const NAV: NavEntry[] = [
   { type: "link", href: "/backoffice/inicio", label: "Inicio", icon: <IconHome /> },
+  {
+    type: "group",
+    label: "Clientes",
+    icon: <IconBuilding />,
+    roles: PERMISOS["cartera.ver"].roles,
+    items: [{ href: "/backoffice/clientes", label: "Todos los clientes" }],
+  },
   {
     type: "group",
     label: "Brokers",

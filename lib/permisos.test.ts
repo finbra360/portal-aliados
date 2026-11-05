@@ -10,9 +10,9 @@ test("matriz de permisos de cartera y cobranza", () => {
     (["super_admin", "finanzas", "comercial"] as const).map((r) => [r, (Object.keys(PERMISOS) as Permiso[]).filter((p) => rolPuede(r, p))]),
   );
   assert.deepEqual(matriz, {
-    super_admin: ["cartera.ver", "cobranza.operar", "cobranza.configurar"],
-    finanzas: ["cartera.ver", "cobranza.operar"],
-    comercial: ["cartera.ver"],
+    super_admin: ["cartera.ver", "clientes.editar", "cobranza.operar", "cobranza.configurar"],
+    finanzas: ["cartera.ver", "clientes.editar", "cobranza.operar"],
+    comercial: ["cartera.ver", "clientes.editar"],
   });
 });
 
