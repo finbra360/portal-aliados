@@ -16,7 +16,8 @@ idempotentes se pueden volver a correr sin riesgo.
 | 6 | `portal-login-schema.sql` | Intentos de login para los límites por correo y por conexión. Idempotente. |
 | 7 | `anuncios-seguimiento-schema.sql` | Anuncios leídos, historial de etapas de cada solicitud y mensaje para el broker. Idempotente. |
 | 8 | `concursos-periodo-schema.sql` | Cierre de concursos: fecha y ganadores fijados. Idempotente. |
-| 9 | `security.sql` | **Siempre al final de cada tanda.** Activa RLS y quita permisos a `anon`/`authenticated` en todas las tablas de `public`. |
+| 9 | `crm-schema.sql` | Clientes 360 (tablas `crm_*`): empresas, personas, actividades comerciales, tareas y ajustes; liga cada cliente de SIAC a su empresa (`col_clients.empresa_id`). Idempotente. |
+| 10 | `security.sql` | **Siempre al final de cada tanda.** Activa RLS y quita permisos a `anon`/`authenticated` en todas las tablas de `public`. |
 
 `seeds/` trae datos iniciales (paquetes de verticales del motor de leads). `fix-json-texto.sql` fue una reparación
 única del 2026-10-14; no hace falta volver a correrla.
