@@ -3,6 +3,7 @@
 
 import { chooseRecipient, type ContactLike } from "./contacts.ts";
 import { estaEnMora } from "./rules.ts";
+import { UMBRALES_SEMAFORO_DEFAULT, semaforo, type Semaforo, type UmbralesSemaforo } from "./preventivos.ts";
 
 export interface ClientListRow {
   clientId: string;
@@ -18,6 +19,11 @@ export interface ClientListRow {
   contactoCobranzaId: string | null;
   /** null = sin cuenta de pago: no recibe recordatorios. */
   cuentaPagoId: string | null;
+  /**
+   * Historial de SIAC, lo peor de sus créditos vigentes en la última foto
+   * (NumeroVecesMora y Atrasomaximo). null si no tiene créditos en la foto.
+   */
+  historial: { vecesMora: number; atrasoMaximo: number } | null;
 }
 
 export type ClientFilter = "todos" | "mora" | "corriente" | "sin_whatsapp" | "sin_cuenta";
@@ -26,6 +32,8 @@ export type ClientOrder = "nombre" | "vencido" | "adeudo" | "atraso";
 export interface ClientListItem extends ClientListRow {
   enMora: boolean;
   recordatorios: { telefono: string | null; nombre: string | null; origen: "equipo" | "siac" | null };
+  /** Comportamiento de pago con el mismo semáforo de los preventivos; null sin historial. */
+  semaforo: Semaforo | null;
 }
 
 export const FILTROS: { value: ClientFilter; label: string }[] = [
@@ -64,6 +72,7 @@ export function buildClientList(
   contactos: (ContactLike & { clientId: string; valor: string; nombre: string | null })[],
   umbral: number,
   opts: { filtro: ClientFilter; q: string; orden?: ClientOrder },
+  umbralesSemaforo: UmbralesSemaforo = UMBRALES_SEMAFORO_DEFAULT,
 ): { items: ClientListItem[]; conteos: Record<ClientFilter, number>; total: number } {
   const porCliente = new Map<string, typeof contactos>();
   for (const k of contactos) porCliente.set(k.clientId, [...(porCliente.get(k.clientId) ?? []), k]);
@@ -76,6 +85,7 @@ export function buildClientList(
       ...r,
       enMora: estaEnMora(r.vencido, r.maxAtraso, umbral),
       recordatorios: { telefono: k?.valor ?? null, nombre: k?.nombre ?? null, origen: rec.origen },
+      semaforo: r.historial ? semaforo(r.historial, umbralesSemaforo) : null,
     };
   });
 

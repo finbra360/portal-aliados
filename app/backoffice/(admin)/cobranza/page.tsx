@@ -91,7 +91,7 @@ export default async function CobranzaInicioPage() {
         <StatCard
           label="Adeudo total"
           value={formatMoney(r.adeudo)}
-          sublabel={`${r.creditos} créditos · colocado ${formatMoney(r.colocado)}`}
+          sublabel={`${r.creditos} créditos · monto original ${formatMoney(r.montoOriginal)}`}
           icon={<IconWallet />}
         />
         <StatCard
@@ -119,6 +119,21 @@ export default async function CobranzaInicioPage() {
           todavía sin monto de ConsultarPagos: lo cobrado puede ser mayor.
         </p>
       )}
+      <details className="-mt-2 text-sm text-finbra-gray">
+        <summary className="cursor-pointer select-none font-medium text-finbra-purple">Qué incluye cada cifra</summary>
+        <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-[180px_1fr]">
+          <dt className="font-semibold text-black">Adeudo total</dt>
+          <dd>Suma de TotalAdeudo de SIAC de los créditos vigentes en la última foto. SIAC todavía no confirma qué incluye frente a TotalGlobal.</dd>
+          <dt className="font-semibold text-black">Monto original</dt>
+          <dd>Lo que se prestó a los créditos que siguen vigentes (MontoCredito). No es lo colocado en la historia ni en el mes: los créditos liquidados ya no vienen en el listado de SIAC.</dd>
+          <dt className="font-semibold text-black">Vencido</dt>
+          <dd>Suma de TotalVencido de SIAC, con moratorios e IVA. El porcentaje es sobre el adeudo total.</dd>
+          <dt className="font-semibold text-black">Clientes en mora</dt>
+          <dd>Clientes cuyo vencido es de {formatMoney(umbral)} o más. Lo que queda por debajo se trata como residuo.</dd>
+          <dt className="font-semibold text-black">Cobrado</dt>
+          <dd>Pagos aplicados según ConsultarPagos de SIAC. Solo incluye los pagos detectados desde que corre la sincronización diaria.</dd>
+        </dl>
+      </details>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

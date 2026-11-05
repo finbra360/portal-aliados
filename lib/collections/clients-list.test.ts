@@ -16,6 +16,7 @@ const fila = (over: Partial<ClientListRow>): ClientListRow => ({
   juridico: false,
   contactoCobranzaId: null,
   cuentaPagoId: "cuenta-1",
+  historial: { vecesMora: 0, atrasoMaximo: 0 },
   ...over,
 });
 
@@ -72,4 +73,17 @@ test("muestra a quién le llegan los recordatorios, respetando la elección del 
   assert.deepEqual(c.recordatorios, { telefono: "5533334444", nombre: "Contador", origen: "equipo" });
   const a = buildClientList(rows, CONTACTOS, 1000, { filtro: "todos", q: "" }).items.find((i) => i.clientId === "a")!;
   assert.equal(a.recordatorios.origen, "siac");
+});
+
+test("semáforo de pago con el historial de SIAC y los umbrales configurados", () => {
+  const rows = [
+    fila({ clientId: "v" }),
+    fila({ clientId: "am", historial: { vecesMora: 1, atrasoMaximo: 12 } }),
+    fila({ clientId: "r", historial: { vecesMora: 3, atrasoMaximo: 5 } }),
+    fila({ clientId: "x", creditosActivos: 0, historial: null }),
+  ];
+  const ver = (u?: { rojoVeces: number; rojoAtraso: number }) =>
+    Object.fromEntries(buildClientList(rows, [], 1000, { filtro: "todos", q: "" }, u).items.map((i) => [i.clientId, i.semaforo]));
+  assert.deepEqual(ver(), { v: "verde", am: "amarillo", r: "rojo", x: null }, "sin créditos en la foto no hay semáforo");
+  assert.equal(ver({ rojoVeces: 1, rojoAtraso: 30 }).am, "rojo", "los umbrales de col_settings mandan");
 });

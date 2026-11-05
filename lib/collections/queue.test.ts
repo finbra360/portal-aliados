@@ -109,7 +109,7 @@ test("resumen de cartera: totales, mora por cliente, PAR y aging", () => {
   );
   assert.equal(s.creditos, 4);
   assert.equal(s.clientes, 3);
-  assert.equal(s.colocado, 400_000);
+  assert.equal(s.montoOriginal, 400_000);
   assert.equal(s.adeudo, 200_000);
   assert.equal(s.vencido, 35_600);
   assert.equal(s.clientesEnMora, 2, "c1 tiene 600 vencidos: residuo");

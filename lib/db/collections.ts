@@ -8,7 +8,8 @@ import { UMBRAL_MORA_DEFAULT, fechaMexico } from "@/lib/collections/rules";
 import { summarizeCollected, summarizePortfolio, type PhotoRow } from "@/lib/collections/portfolio";
 import { buildQueue, type QueueClient } from "@/lib/collections/queue";
 import { buildClientList, type ClientFilter, type ClientOrder } from "@/lib/collections/clients-list";
-import { buildCreditList, type CreditFilter, type CreditOrder } from "@/lib/collections/credits-list";
+import { UMBRALES_SEMAFORO_DEFAULT, type UmbralesSemaforo } from "@/lib/collections/preventivos";
+import { buildCreditList, type CreditFilter, type CreditOrder, type VentanaTermino } from "@/lib/collections/credits-list";
 
 export type Ambiente = "pruebas" | "produccion";
 
@@ -169,6 +170,12 @@ export async function getWorkQueue(fechaCorte: string) {
   return { umbral, items: buildQueue(clientes, umbral, fechaMexico()) };
 }
 
+/** Umbrales del semáforo de pago (col_settings.semaforo), los mismos que usan los preventivos. */
+export async function getUmbralesSemaforo(): Promise<UmbralesSemaforo> {
+  const s = await getSetting<{ rojo_veces?: number; rojo_atraso?: number }>("semaforo", {});
+  return { rojoVeces: s.rojo_veces ?? UMBRALES_SEMAFORO_DEFAULT.rojoVeces, rojoAtraso: s.rojo_atraso ?? UMBRALES_SEMAFORO_DEFAULT.rojoAtraso };
+}
+
 /**
  * Todos los clientes del ambiente, con los totales de su última foto completa
  * (o en cero si todavía no hay foto) y sus contactos, para la lista de clientes.
@@ -176,10 +183,13 @@ export async function getWorkQueue(fechaCorte: string) {
 export async function getClientsList(fechaCorte: string | null, opts: { filtro: ClientFilter; q: string; orden: ClientOrder }) {
   const ambiente = ambienteActual();
   const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
-  const [rows, contactos] = await Promise.all([
+  const [rows, contactos, umbralesSemaforo] = await Promise.all([
     sql`
       SELECT c.id, c.nombre, c.numero_cliente, to_char(c.pausa_hasta, 'YYYY-MM-DD') AS pausa_hasta, c.contacto_cobranza_id, c.cuenta_pago_id,
              count(cr.id) FILTER (WHERE cr.en_listado)::int AS creditos_activos,
+             count(s.id) FILTER (WHERE cr.en_listado)::int AS creditos_en_foto,
+             coalesce(max(s.numero_veces_mora) FILTER (WHERE cr.en_listado), 0) AS veces_mora,
+             coalesce(max(s.atraso_maximo) FILTER (WHERE cr.en_listado), 0) AS atraso_maximo,
              coalesce(sum(s.total_adeudo) FILTER (WHERE cr.en_listado), 0) AS adeudo,
              coalesce(sum(s.total_vencido) FILTER (WHERE cr.en_listado), 0) AS vencido,
              coalesce(max(s.antiguedad) FILTER (WHERE cr.en_listado), 0) AS max_atraso,
@@ -197,6 +207,7 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
       FROM col_contacts k JOIN col_clients c ON c.id = k.client_id
       WHERE c.ambiente = ${ambiente}
     `,
+    getUmbralesSemaforo(),
   ]);
   const lista = buildClientList(
     rows.map((r) => ({
@@ -212,6 +223,7 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
       juridico: r.juridico,
       contactoCobranzaId: r.contacto_cobranza_id,
       cuentaPagoId: r.cuenta_pago_id,
+      historial: r.creditos_en_foto > 0 ? { vecesMora: Number(r.veces_mora), atrasoMaximo: Number(r.atraso_maximo) } : null,
     })),
     contactos.map((k) => ({
       id: k.id,
@@ -228,6 +240,7 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
     })),
     umbral,
     opts,
+    umbralesSemaforo,
   );
   return { umbral, ...lista };
 }
@@ -236,12 +249,16 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
  * Todos los créditos del ambiente con los montos de la última foto completa
  * (null si el crédito no viene en ella), para la lista de créditos.
  */
-export async function getCreditsList(fechaCorte: string | null, opts: { filtro: CreditFilter; q: string; orden: CreditOrder }) {
+export async function getCreditsList(
+  fechaCorte: string | null,
+  opts: { filtro: CreditFilter; q: string; orden: CreditOrder; ventana?: VentanaTermino },
+) {
   const ambiente = ambienteActual();
   const umbral = await getSetting("umbral_mora", UMBRAL_MORA_DEFAULT);
   const rows = await sql`
     SELECT cr.id, cr.client_id, c.nombre, c.numero_cliente, cr.no_credito, cr.tipo_credito, cr.monto_credito,
            to_char(cr.fecha_ministracion, 'YYYY-MM-DD') AS fecha_ministracion, cr.en_listado, cr.etapa_manual, cr.vencimientos,
+           to_char(cr.fecha_termino_contrato, 'YYYY-MM-DD') AS fecha_termino_contrato, cr.nombre_promotor,
            s.total_adeudo, s.total_vencido, s.antiguedad, s.monto_siguiente_vencimiento,
            s.vencimientos_cubiertos, s.vencimientos_vencidos,
            to_char(s.proximo_vencimiento, 'YYYY-MM-DD') AS proximo_vencimiento,
@@ -273,6 +290,8 @@ export async function getCreditsList(fechaCorte: string | null, opts: { filtro: 
       cubiertos: num(r.vencimientos_cubiertos),
       vencidos: num(r.vencimientos_vencidos),
       ultimoPago: r.fecha_ultimo_pago,
+      fechaTermino: r.fecha_termino_contrato,
+      promotor: r.nombre_promotor?.trim() || null,
     })),
     umbral,
     fechaMexico(),

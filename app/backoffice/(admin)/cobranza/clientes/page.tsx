@@ -9,6 +9,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import { IconListChecks } from "@/components/ui/icons";
 import PhotoBanner from "../PhotoBanner";
 import OrdenTh from "../OrdenTh";
+import SemaforoPill from "../SemaforoPill";
 import { codigoDeError } from "@/lib/collections/errors";
 
 const BASE = "/backoffice/cobranza/clientes";
@@ -100,7 +101,7 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
         />
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[900px] text-left text-sm">
+          <table className="w-full min-w-[1020px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                 <OrdenTh label="Cliente" titulo="nombre, de la A a la Z" direccion="asc" activo={orden === "nombre"} href={href({ filtro, q })} />
@@ -108,6 +109,7 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
                 <OrdenTh label="Adeudo" titulo="mayor adeudo" direccion="desc" alinear="right" activo={orden === "adeudo"} href={href({ filtro, q, orden: "adeudo" })} />
                 <OrdenTh label="Vencido" titulo="mayor vencido" direccion="desc" alinear="right" activo={orden === "vencido"} href={href({ filtro, q, orden: "vencido" })} />
                 <OrdenTh label="Atraso" titulo="más días de atraso" direccion="desc" activo={orden === "atraso"} href={href({ filtro, q, orden: "atraso" })} />
+                <th scope="col" className="px-4 py-3">Historial de pago</th>
                 <th scope="col" className="px-4 py-3">Recordatorios a</th>
                 <th scope="col" className="px-4 py-3">Último pago</th>
               </tr>
@@ -129,6 +131,9 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
                   <td className="px-4 py-3 text-right tabular-nums">{formatMoney(c.adeudo)}</td>
                   <td className={`px-4 py-3 text-right tabular-nums ${c.enMora ? "font-semibold text-red-700" : ""}`}>{formatMoney(c.vencido)}</td>
                   <td className="whitespace-nowrap px-4 py-3">{c.maxAtraso ? `${c.maxAtraso} días` : c.creditosActivos ? "Al corriente" : "—"}</td>
+                  <td className="px-4 py-3">
+                    <SemaforoPill semaforo={c.semaforo} historial={c.historial} />
+                  </td>
                   <td className="px-4 py-3">
                     {c.recordatorios.telefono ? (
                       <>
