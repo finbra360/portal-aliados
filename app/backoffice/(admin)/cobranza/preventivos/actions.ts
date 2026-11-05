@@ -2,14 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { requireRole } from "@/lib/rbac";
+import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { obtenerMontosPreventivos, runPreventivos, setEnvioPreventivoActivo } from "@/lib/db/whatsapp-preventivo";
 import type { WhatsAppActionResult } from "../whatsapp/actions";
 
 // Prender el envío o mandar a mano le escribe a clientes reales: solo Super Admin.
 async function run(fn: (actor: string) => Promise<string | void>): Promise<WhatsAppActionResult> {
-  const admin = requireRole(await getAdminSession(), ["super_admin"]);
+  const admin = requierePermiso(await getAdminSession(), "cobranza.configurar");
   let mensaje: string | void;
   try {
     mensaje = await fn(admin.email);

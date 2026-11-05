@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { getPhotoStatus, getWorkQueue } from "@/lib/db/collections";
 import type { QueueItem } from "@/lib/collections/queue";
 import { formatFecha, formatMoney } from "@/lib/format";
@@ -89,7 +89,7 @@ function Tabla({ items, conNivel }: { items: QueueItem[]; conNivel: boolean }) {
 }
 
 export default async function CobranzaColaPage() {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
+  if (!puede(await getAdminSession(), "cartera.ver")) return null;
 
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   let items: QueueItem[] = [];

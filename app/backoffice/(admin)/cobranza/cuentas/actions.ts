@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, requireRole } from "@/lib/rbac";
+import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import {
   PaymentAccountError,
@@ -15,7 +15,7 @@ import {
 export type CuentaActionResult = { ok: true; mensaje?: string } | { ok: false; error: string };
 
 async function run(fn: (actor: string) => Promise<string | void>): Promise<CuentaActionResult> {
-  const admin = requireRole(await getAdminSession(), COBRANZA_ROLES);
+  const admin = requierePermiso(await getAdminSession(), "cobranza.operar");
   let mensaje: string | void;
   try {
     mensaje = await fn(admin.email);

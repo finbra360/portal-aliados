@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { conversacion, listarConversaciones, marcarLeida, plantillaContacto, type MensajeChat } from "@/lib/db/whatsapp-chat";
 import { EJEMPLO_CONTACTO, PLANTILLA_CONTACTO } from "@/lib/collections/chat";
 import { codigoDeError } from "@/lib/collections/errors";
@@ -62,8 +62,11 @@ function Burbuja({ m }: { m: MensajeChat }) {
 
 export default async function ChatPage({ searchParams }: { searchParams: Promise<{ t?: string; todos?: string }> }) {
   const session = await getAdminSession();
-  if (!hasRole(session, COBRANZA_ROLES)) return null;
-  const esSuperAdmin = session.role === "super_admin";
+  if (!puede(session, "cartera.ver")) return null;
+  const esSuperAdmin = puede(session, "cobranza.configurar");
+  // Quien solo consulta (Comercial) lee las conversaciones sin contestar ni
+  // marcarlas como leídas: el «sin leer» es la cola del equipo de cobranza.
+  const puedeOperar = puede(session, "cobranza.operar");
   const sp = await searchParams;
   const telefono = sp.t && /^\d{10,15}$/.test(sp.t) ? sp.t : null;
   const todos = sp.todos === "1";
@@ -72,8 +75,8 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
   let abierta: Awaited<ReturnType<typeof conversacion>> = null;
   let contacto: Awaited<ReturnType<typeof plantillaContacto>> = null;
   try {
-    // Abrir la conversación es leerla.
-    if (telefono) await marcarLeida(telefono);
+    // Abrir la conversación es leerla (solo para el equipo de cobranza).
+    if (telefono && puedeOperar) await marcarLeida(telefono);
     [lista, abierta, contacto] = await Promise.all([
       listarConversaciones({ soloConRespuesta: !todos }),
       telefono ? conversacion(telefono) : Promise.resolve(null),
@@ -185,7 +188,7 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
                       Perfil y promesas
                     </Link>
                   )}
-                  {abierta.cliente && <BajaToggle telefono={abierta.telefono} dadoDeBaja={abierta.dadoDeBaja} />}
+                  {puedeOperar && abierta.cliente && <BajaToggle telefono={abierta.telefono} dadoDeBaja={abierta.dadoDeBaja} />}
                 </div>
               </div>
 
@@ -197,7 +200,9 @@ export default async function ChatPage({ searchParams }: { searchParams: Promise
               </div>
 
               <div className="border-t border-black/5 px-4 py-3">
-                {abierta.ventana.abierta ? (
+                {!puedeOperar ? (
+                  <p className="text-xs text-finbra-gray">Vista de consulta: contesta el equipo de cobranza (Finanzas o Super Admin).</p>
+                ) : abierta.ventana.abierta ? (
                   <div className="space-y-1">
                     <Responder telefono={abierta.telefono} />
                     <p className="text-[11px] text-finbra-gray">Puedes escribir libremente hasta el {formatFechaHora(abierta.ventana.cierraAt!)} (24 h después de su último mensaje).</p>

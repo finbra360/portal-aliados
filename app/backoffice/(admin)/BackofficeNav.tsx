@@ -4,19 +4,20 @@ import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { AdminRole } from "@/lib/db/admin-users";
-import { COBRANZA_ROLES } from "@/lib/rbac";
+import { PERMISOS, rolPuede, type Permiso } from "@/lib/permisos";
 import FinbraLogo from "@/components/ui/FinbraLogo";
 import { IconHome, IconLogout, IconSettings, IconTarget, IconTrendingUp, IconUsers, IconWallet } from "@/components/ui/icons";
 import { CH_VEN } from "@/lib/credit-health/roles";
 
 // exact: solo se marca activo en esa ruta exacta (no en sus subrutas).
 // excluir: subrutas que tienen su propio elemento en el menú.
-type NavLink = { href: string; label: string; exact?: boolean; excluir?: string[] };
+// permiso: si se indica, el elemento solo se muestra a quien lo tiene.
+type NavLink = { href: string; label: string; exact?: boolean; excluir?: string[]; permiso?: Permiso };
 // roles: si se indica, el grupo solo se muestra a esos roles. Es solo para no
 // mostrar lo que no se puede abrir: el permiso real se revisa en el servidor.
 type NavEntry =
   | { type: "link"; href: string; label: string; icon: ReactNode }
-  | { type: "group"; label: string; icon: ReactNode; items: NavLink[]; roles?: AdminRole[] };
+  | { type: "group"; label: string; icon: ReactNode; items: NavLink[]; roles?: readonly AdminRole[] };
 
 const NAV: NavEntry[] = [
   { type: "link", href: "/backoffice/inicio", label: "Inicio", icon: <IconHome /> },
@@ -39,14 +40,14 @@ const NAV: NavEntry[] = [
     type: "group",
     label: "Cobranza",
     icon: <IconWallet />,
-    roles: COBRANZA_ROLES,
+    roles: PERMISOS["cartera.ver"].roles,
     items: [
       { href: "/backoffice/cobranza", label: "Inicio", exact: true },
       { href: "/backoffice/cobranza/cola", label: "Cola de trabajo" },
       { href: "/backoffice/cobranza/clientes", label: "Clientes" },
       { href: "/backoffice/cobranza/creditos", label: "Créditos" },
       { href: "/backoffice/cobranza/chat", label: "Chat" },
-      { href: "/backoffice/cobranza/cuentas", label: "Cuentas de pago" },
+      { href: "/backoffice/cobranza/cuentas", label: "Cuentas de pago", permiso: "cobranza.operar" },
       { href: "/backoffice/cobranza/preventivos", label: "Preventivos" },
       { href: "/backoffice/cobranza/whatsapp", label: "WhatsApp" },
     ],
@@ -117,7 +118,9 @@ const iniciales = (nombre: string) =>
 export default function BackofficeNav({ nombre, role }: { nombre: string; role: AdminRole }) {
   const pathname = usePathname();
   const router = useRouter();
-  const nav = NAV.filter((entry) => entry.type === "link" || !entry.roles || entry.roles.includes(role));
+  const nav = NAV.filter((entry) => entry.type === "link" || !entry.roles || entry.roles.includes(role)).map((entry) =>
+    entry.type === "group" ? { ...entry, items: entry.items.filter((item) => !item.permiso || rolPuede(role, item.permiso)) } : entry,
+  );
 
   // Al cargar: abierto el grupo de la página actual. Después se suman los que el
   // usuario dejó abiertos (se leen en el navegador, ya montado, para no romper la hidratación).

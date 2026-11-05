@@ -1,18 +1,19 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { getClientProfile } from "@/lib/db/collection-clients";
 import { getPhotoStatus, getUmbralesSemaforo } from "@/lib/db/collections";
 import { semaforo } from "@/lib/collections/preventivos";
 import SemaforoPill from "../../SemaforoPill";
 import { listCuentasActivas } from "@/lib/db/payment-accounts";
 import { bucketFor, fechaMexico } from "@/lib/collections/rules";
-import { CANALES_PROMESA } from "@/lib/collections/gestiones";
+import { CANALES_PROMESA, ETAPAS } from "@/lib/collections/gestiones";
 import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import PhotoBanner from "../../PhotoBanner";
 import ContactsPanel from "./ContactsPanel";
+import ContactosLectura from "./ContactosLectura";
 import GestionesPanel from "./GestionesPanel";
 import CuentaPagoPanel from "./CuentaPagoPanel";
 import { AlertActions, EtapaSelect, PromiseActions, SaldoAlDiaButton } from "./RowActions";
@@ -61,7 +62,10 @@ const ESTADO_PROMESA: Record<string, string> = {
 };
 
 export default async function ClientePerfilPage({ params }: { params: Promise<{ id: string }> }) {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
+  const session = await getAdminSession();
+  if (!puede(session, "cartera.ver")) return null;
+  // Quien solo consulta (Comercial) ve todo, sin los controles de cobranza.
+  const puedeOperar = puede(session, "cobranza.operar");
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
@@ -124,6 +128,11 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
         </div>
       </div>
       <PhotoBanner status={status} />
+      {!puedeOperar && (
+        <p className="rounded-lg bg-finbra-purple/5 px-4 py-2 text-sm text-finbra-purple-700">
+          Vista de consulta: las gestiones, promesas, contactos y cuentas de pago los registran Finanzas o Super Admin.
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
@@ -170,10 +179,14 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
                   <td className="px-4 py-2">{formatFecha(c.proximoVencimiento)}</td>
                   <td className="px-4 py-2">{formatFecha(c.fechaUltimoPago)}</td>
                   <td className="px-4 py-2">
-                    {c.enListado ? <SaldoAlDiaButton clientId={perfil.id} creditId={c.id} ultimo={c.saldoAlDia} /> : "—"}
+                    {c.enListado ? <SaldoAlDiaButton clientId={perfil.id} creditId={c.id} ultimo={c.saldoAlDia} soloLectura={!puedeOperar} /> : "—"}
                   </td>
                   <td className="px-4 py-2">
-                    <EtapaSelect clientId={perfil.id} creditId={c.id} etapa={c.etapaManual} />
+                    {puedeOperar ? (
+                      <EtapaSelect clientId={perfil.id} creditId={c.id} etapa={c.etapaManual} />
+                    ) : (
+                      <span className="text-xs">{c.etapaManual && c.etapaManual in ETAPAS ? ETAPAS[c.etapaManual as keyof typeof ETAPAS] : "Cobranza normal"}</span>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -181,7 +194,9 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
           </table>
         </div>
         <p className="px-6 pb-4 pt-2 text-xs text-finbra-gray">
-          "Saldo al día" le pregunta a SIAC el saldo de ese crédito a hoy; se puede consultar una vez cada 10 minutos por crédito.
+          {puedeOperar
+            ? `"Saldo al día" le pregunta a SIAC el saldo de ese crédito a hoy; se puede consultar una vez cada 10 minutos por crédito.`
+            : `"Saldo al día" muestra la última consulta a SIAC que hizo el equipo de cobranza.`}
         </p>
       </Card>
 
@@ -189,21 +204,36 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
         <div className="space-y-6">
           <Card>
             <h2 className="mb-1 text-lg font-bold">Contactos</h2>
-            <p className="mb-4 text-sm text-finbra-gray">
-              Define el tipo de cada contacto y a quién se le mandan los recordatorios de cobranza. Tu elección se respeta aunque SIAC cambie sus datos.
-            </p>
-            <ContactsPanel
-              clientId={perfil.id}
-              contactos={perfil.contactos}
-              recipient={perfil.recipient}
-              elegidoPor={{ por: perfil.contactoCobranza.por, at: perfil.contactoCobranza.at }}
-            />
+            {puedeOperar ? (
+              <>
+                <p className="mb-4 text-sm text-finbra-gray">
+                  Define el tipo de cada contacto y a quién se le mandan los recordatorios de cobranza. Tu elección se respeta aunque SIAC cambie sus datos.
+                </p>
+                <ContactsPanel
+                  clientId={perfil.id}
+                  contactos={perfil.contactos}
+                  recipient={perfil.recipient}
+                  elegidoPor={{ por: perfil.contactoCobranza.por, at: perfil.contactoCobranza.at }}
+                />
+              </>
+            ) : (
+              <ContactosLectura contactos={perfil.contactos} destinatarioId={perfil.recipient.contactId} />
+            )}
           </Card>
 
           <Card>
             <h2 className="mb-1 text-lg font-bold">Cuenta de pago</h2>
             <p className="mb-4 text-sm text-finbra-gray">A qué cuenta de Finbra transfiere este cliente. Va en sus recordatorios, con el número de crédito como concepto.</p>
-            <CuentaPagoPanel clientId={perfil.id} actual={perfil.cuentaPago} cuentas={cuentas} creditos={enListado.map((c) => c.noCredito)} />
+            {puedeOperar ? (
+              <CuentaPagoPanel clientId={perfil.id} actual={perfil.cuentaPago} cuentas={cuentas} creditos={enListado.map((c) => c.noCredito)} />
+            ) : perfil.cuentaPago ? (
+              <p className="text-sm">
+                <strong>{perfil.cuentaPago.alias}</strong> · {perfil.cuentaPago.banco} · {perfil.cuentaPago.beneficiario}
+                <span className="block font-mono text-xs text-finbra-gray">CLABE {perfil.cuentaPago.clabe}</span>
+              </p>
+            ) : (
+              <p className="text-sm text-amber-800">Sin cuenta de pago: no recibe recordatorios.</p>
+            )}
           </Card>
 
           <Card className="overflow-x-auto p-0">
@@ -234,16 +264,18 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="space-y-6">
-          <Card>
-            <h2 className="mb-3 text-lg font-bold">Gestionar</h2>
-            <GestionesPanel
-              clientId={perfil.id}
-              hoy={hoy}
-              telefonos={telefonos}
-              creditos={enListado.map((c) => ({ id: c.id, noCredito: c.noCredito }))}
-              pausa={{ hasta: perfil.pausaHasta, motivo: perfil.pausaMotivo }}
-            />
-          </Card>
+          {puedeOperar && (
+            <Card>
+              <h2 className="mb-3 text-lg font-bold">Gestionar</h2>
+              <GestionesPanel
+                clientId={perfil.id}
+                hoy={hoy}
+                telefonos={telefonos}
+                creditos={enListado.map((c) => ({ id: c.id, noCredito: c.noCredito }))}
+                pausa={{ hasta: perfil.pausaHasta, motivo: perfil.pausaMotivo }}
+              />
+            </Card>
+          )}
 
           {perfil.alertas.length > 0 && (
             <Card>
@@ -255,7 +287,7 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
                       <span className={a.severidad === "critica" ? "font-semibold text-red-700" : ""}>{ALERTA[a.tipo] ?? a.tipo}</span>
                       <span className="block text-xs text-finbra-gray">{formatFechaHora(a.createdAt)}</span>
                     </span>
-                    <AlertActions clientId={perfil.id} alertId={a.id} />
+                    {puedeOperar && <AlertActions clientId={perfil.id} alertId={a.id} />}
                   </li>
                 ))}
               </ul>
@@ -278,7 +310,7 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
                       </span>
                       {p.notas && <span className="block text-xs text-finbra-gray">{p.notas}</span>}
                     </span>
-                    {p.estado === "vigente" && <PromiseActions clientId={perfil.id} promiseId={p.id} />}
+                    {puedeOperar && p.estado === "vigente" && <PromiseActions clientId={perfil.id} promiseId={p.id} />}
                   </li>
                 ))}
               </ul>

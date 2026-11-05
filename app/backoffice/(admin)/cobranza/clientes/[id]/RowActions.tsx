@@ -75,10 +75,13 @@ export function SaldoAlDiaButton({
   clientId,
   creditId,
   ultimo,
+  soloLectura = false,
 }: {
   clientId: string;
   creditId: string;
   ultimo: { fechaCorte: string; saldoVencido: number; totalPagar: number; consultadoAt: string } | null;
+  /** Muestra la última consulta sin los botones para consultar a SIAC. */
+  soloLectura?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +97,7 @@ export function SaldoAlDiaButton({
     });
   // Una consulta a otra fecha (por ejemplo, el próximo vencimiento) se marca para no confundirla con el saldo de hoy.
   const diaConsulta = saldo ? new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(new Date(saldo.consultadoAt)) : null;
+  if (soloLectura && !saldo) return <span className="text-finbra-gray">—</span>;
   return (
     <span className="flex flex-col items-start gap-1">
       {saldo && (
@@ -105,7 +109,7 @@ export function SaldoAlDiaButton({
           <span className="block text-finbra-gray">{formatFechaHora(saldo.consultadoAt)}</span>
         </span>
       )}
-      <span className="flex items-center gap-1">
+      {!soloLectura && <span className="flex items-center gap-1">
         <button
           type="button"
           disabled={pending}
@@ -118,8 +122,8 @@ export function SaldoAlDiaButton({
         <button type="button" onClick={() => setOtraFecha((v) => !v)} className={`${chico} text-finbra-gray hover:bg-black/5`} title="Consultar lo que deberá a otra fecha">
           Otra fecha
         </button>
-      </span>
-      {otraFecha && (
+      </span>}
+      {!soloLectura && otraFecha && (
         <span className="flex items-center gap-1">
           <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} className="rounded border border-black/10 px-1 py-0.5 text-xs" aria-label="Fecha de corte" />
           <button type="button" disabled={pending || !fecha} onClick={() => consultar(fecha)} className={`${chico} bg-finbra-purple/10 text-finbra-purple-700 hover:bg-finbra-purple/20`}>

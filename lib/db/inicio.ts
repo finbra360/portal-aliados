@@ -4,7 +4,7 @@
 import { sql } from "@/lib/db";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { fechaMexico } from "@/lib/collections/rules";
-import { COBRANZA_ROLES } from "@/lib/rbac";
+import { rolPuede } from "@/lib/permisos";
 import type { AdminRole } from "@/lib/db/admin-users";
 
 export type Tono = "normal" | "atencion" | "urgente";
@@ -93,7 +93,7 @@ async function pendientesComercial(): Promise<AreaPendientes[]> {
 export async function pendientesDeHoy(role: AdminRole): Promise<AreaPendientes[]> {
   const [comercial, cobranza] = await Promise.all([
     COMERCIAL_ROLES.includes(role) ? pendientesComercial() : Promise.resolve([]),
-    COBRANZA_ROLES.includes(role) ? pendientesCobranza() : Promise.resolve(null),
+    rolPuede(role, "cobranza.operar") ? pendientesCobranza() : Promise.resolve(null),
   ]);
   return [...comercial, ...(cobranza ? [cobranza] : [])];
 }

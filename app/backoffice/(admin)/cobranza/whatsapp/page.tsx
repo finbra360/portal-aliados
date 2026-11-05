@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { previewMora } from "@/lib/db/whatsapp-mora";
 import { EJEMPLO_MORA, PLANTILLAS_MORA, VARIABLES_MORA, motivoNoActivable, renderPlantilla } from "@/lib/collections/whatsapp-mora";
 import { codigoDeError } from "@/lib/collections/errors";
@@ -32,8 +32,8 @@ const ETIQUETA_VARIABLE: Record<(typeof VARIABLES_MORA)[number], string> = {
 
 export default async function WhatsAppMoraPage() {
   const session = await getAdminSession();
-  if (!hasRole(session, COBRANZA_ROLES)) return null;
-  const esSuperAdmin = session.role === "super_admin";
+  if (!puede(session, "cartera.ver")) return null;
+  const esSuperAdmin = puede(session, "cobranza.configurar");
 
   let p: Awaited<ReturnType<typeof previewMora>>;
   try {
