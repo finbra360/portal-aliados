@@ -5,8 +5,19 @@ import { getAdminSession } from "@/lib/get-admin-session";
 import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { importarHubspot, previsualizarHubspot, type VistaPreviaHubspot } from "@/lib/db/importar-hubspot";
+import { NUEVA, type Elecciones } from "@/lib/clientes/importar-hubspot";
 
 const MAX = 2_000_000;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Solo pares clave → id de empresa (UUID) o «nueva»; lo demás se descarta. */
+function limpiarElecciones(v: unknown): Elecciones {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
+  const pares = Object.entries(v as Record<string, unknown>)
+    .filter(([k, x]) => k.length <= 300 && typeof x === "string" && (x === NUEVA || UUID.test(x)))
+    .slice(0, 1000);
+  return Object.fromEntries(pares) as Elecciones;
+}
 
 export async function previsualizarHubspotAction(texto: string): Promise<({ ok: true } & VistaPreviaHubspot) | { ok: false; error: string }> {
   requierePermiso(await getAdminSession(), "clientes.importar");
@@ -20,11 +31,11 @@ export async function previsualizarHubspotAction(texto: string): Promise<({ ok: 
   }
 }
 
-export async function importarHubspotAction(texto: string): Promise<{ ok: true; mensaje: string } | { ok: false; error: string }> {
+export async function importarHubspotAction(texto: string, elecciones: Elecciones = {}): Promise<{ ok: true; mensaje: string } | { ok: false; error: string }> {
   const admin = requierePermiso(await getAdminSession(), "clientes.importar");
   if (texto.length > MAX) return { ok: false, error: "El archivo es demasiado grande." };
   try {
-    const r = await importarHubspot(texto, admin.email);
+    const r = await importarHubspot(texto, admin.email, limpiarElecciones(elecciones));
     revalidatePath("/backoffice/clientes", "layout");
     const partes = [
       `${r.negocios} negocios importados`,

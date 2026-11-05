@@ -38,7 +38,7 @@ export interface EmpresaExistente {
 }
 
 export type Destino =
-  | { tipo: "existente"; empresaId: string; nombre: string; motivo: "numero_cliente" | "hubspot" | "nombre" }
+  | { tipo: "existente"; empresaId: string; nombre: string; motivo: "manual" | "numero_cliente" | "hubspot" | "nombre" }
   | { tipo: "nueva" }
   | { tipo: "error"; error: string };
 
@@ -162,8 +162,18 @@ export function leerNegocios(texto: string): { filas: FilaNegocio[]; errores: { 
   return { filas, errores };
 }
 
-/** Agrupa los negocios por empresa y decide a qué empresa existente va cada grupo (o si es nueva). */
-export function planearImportacion(filas: FilaNegocio[], existentes: EmpresaExistente[]): PlanEmpresa[] {
+/** Lo que eligió una persona en la vista previa para un grupo: una empresa existente (su id) o NUEVA. */
+export const NUEVA = "nueva";
+export type Elecciones = Record<string, string>;
+
+/**
+ * Agrupa los negocios por empresa y decide a qué empresa existente va cada
+ * grupo (o si es nueva). `elecciones` (clave del grupo → id de empresa o NUEVA)
+ * es lo que eligió una persona en la vista previa y manda sobre todo lo demás;
+ * una elección por una empresa que no existe se ignora.
+ */
+export function planearImportacion(filas: FilaNegocio[], existentes: EmpresaExistente[], elecciones: Elecciones = {}): PlanEmpresa[] {
+  const porId = new Map(existentes.map((e) => [e.empresaId, e]));
   const grupos = new Map<string, FilaNegocio[]>();
   for (const f of filas) {
     const clave = normalizarNombreEmpresa(f.empresa);
@@ -190,7 +200,13 @@ export function planearImportacion(filas: FilaNegocio[], existentes: EmpresaExis
       const hubspotEmpresaId = hubspotIds.length === 1 ? hubspotIds[0] : null;
 
       let destino: Destino;
-      if (numeros.length > 1) {
+      const elegida = elecciones[clave];
+      if (elegida === NUEVA) {
+        destino = { tipo: "nueva" };
+      } else if (elegida && porId.has(elegida)) {
+        const e = porId.get(elegida)!;
+        destino = { tipo: "existente", empresaId: e.empresaId, nombre: e.nombre, motivo: "manual" };
+      } else if (numeros.length > 1) {
         destino = { tipo: "error", error: `Los negocios de esta empresa traen números de cliente distintos (${numeros.join(", ")}).` };
       } else if (numeros.length === 1) {
         const e = porNumero.get(numeros[0].replace(/^0+/, ""));
