@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import ContactosImportarPanel from "./ContactosImportarPanel";
 
 export default async function ImportarContactosPage() {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
+  if (!puede(await getAdminSession(), "cobranza.operar")) return null;
   return (
     <div className="space-y-6">
       <div>

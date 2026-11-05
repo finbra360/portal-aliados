@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, requireRole } from "@/lib/rbac";
+import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { ChatError, responder, retomar, setBaja } from "@/lib/db/whatsapp-chat";
 
@@ -10,7 +10,7 @@ export type ChatActionResult = { ok: true } | { ok: false; error: string };
 
 // Todos los de cobranza (Super Admin y Finanzas) pueden responder.
 async function run(fn: (actor: string) => Promise<unknown>): Promise<ChatActionResult> {
-  const admin = requireRole(await getAdminSession(), COBRANZA_ROLES);
+  const admin = requierePermiso(await getAdminSession(), "cobranza.operar");
   try {
     await fn(admin.email);
   } catch (e) {

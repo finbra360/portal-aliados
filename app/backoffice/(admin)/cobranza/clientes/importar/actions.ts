@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, requireRole } from "@/lib/rbac";
+import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { ContactError, importarContactos, previsualizarContactos } from "@/lib/db/collection-clients";
 import { MAX_FILAS_CONTACTOS, type FilaContacto } from "@/lib/collections/contacts-import";
@@ -10,7 +10,7 @@ import { MAX_FILAS_CONTACTOS, type FilaContacto } from "@/lib/collections/contac
 const MAX_TEXTO = MAX_FILAS_CONTACTOS * 400;
 
 export async function previsualizarContactosAction(texto: string): Promise<{ ok: true; filas: FilaContacto[] } | { ok: false; error: string }> {
-  requireRole(await getAdminSession(), COBRANZA_ROLES);
+  requierePermiso(await getAdminSession(), "cobranza.operar");
   if (texto.length > MAX_TEXTO) return { ok: false, error: "El archivo es demasiado grande" };
   try {
     const r = await previsualizarContactos(texto);
@@ -22,7 +22,7 @@ export async function previsualizarContactosAction(texto: string): Promise<{ ok:
 }
 
 export async function importarContactosAction(texto: string): Promise<{ ok: true; mensaje: string } | { ok: false; error: string }> {
-  const admin = requireRole(await getAdminSession(), COBRANZA_ROLES);
+  const admin = requierePermiso(await getAdminSession(), "cobranza.operar");
   if (texto.length > MAX_TEXTO) return { ok: false, error: "El archivo es demasiado grande" };
   let r: Awaited<ReturnType<typeof importarContactos>>;
   try {

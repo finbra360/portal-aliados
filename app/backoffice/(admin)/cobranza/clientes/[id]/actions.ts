@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { codigoDeError } from "@/lib/collections/errors";
-import { COBRANZA_ROLES, requireRole } from "@/lib/rbac";
+import { requierePermiso } from "@/lib/permisos";
 import {
   ContactError,
   addManualContact,
@@ -30,7 +30,7 @@ import { PaymentAccountError, asignarCuenta } from "@/lib/db/payment-accounts";
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
 async function run(clientId: string, fn: (actor: string) => Promise<unknown>): Promise<ActionResult> {
-  const admin = requireRole(await getAdminSession(), COBRANZA_ROLES);
+  const admin = requierePermiso(await getAdminSession(), "cobranza.operar");
   try {
     await fn(admin.email);
   } catch (e) {

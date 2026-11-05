@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { previewPreventivos } from "@/lib/db/whatsapp-preventivo";
 import { ETAPAS, EJEMPLO_PREVENTIVA, MOTIVO_FALTA_MONTO, PLANTILLAS_PREVENTIVAS, type Semaforo } from "@/lib/collections/preventivos";
 import { motivoNoActivable, renderPlantilla } from "@/lib/collections/whatsapp-mora";
@@ -28,8 +28,8 @@ const ESTADO_META: Record<string, string> = {
 
 export default async function PreventivosPage() {
   const session = await getAdminSession();
-  if (!hasRole(session, COBRANZA_ROLES)) return null;
-  const esSuperAdmin = session.role === "super_admin";
+  if (!puede(session, "cartera.ver")) return null;
+  const esSuperAdmin = puede(session, "cobranza.configurar");
 
   let p: Awaited<ReturnType<typeof previewPreventivos>>;
   try {

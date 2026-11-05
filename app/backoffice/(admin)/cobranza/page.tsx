@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { getCollectionsOverview, getPhotoStatus } from "@/lib/db/collections";
 import type { Bucket } from "@/lib/collections/rules";
 import { formatFecha, formatMoney, formatRatio } from "@/lib/format";
@@ -36,8 +36,8 @@ function ErrorBox({ children }: { children: React.ReactNode }) {
 
 export default async function CobranzaInicioPage() {
   const session = await getAdminSession();
-  if (!hasRole(session, COBRANZA_ROLES)) return null;
-  const esSuperAdmin = session.role === "super_admin";
+  if (!puede(session, "cartera.ver")) return null;
+  const esSuperAdmin = puede(session, "cobranza.configurar");
 
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   try {

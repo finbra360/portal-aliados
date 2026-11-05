@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { ChatError, archivoDeMensaje } from "@/lib/db/whatsapp-chat";
 import { codigoDeError } from "@/lib/collections/errors";
 
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  * guarda copia.
  */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) {
+  if (!puede(await getAdminSession(), "cartera.ver")) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   }
   const { id } = await params;

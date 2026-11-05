@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { listCuentas } from "@/lib/db/payment-accounts";
 import { codigoDeError } from "@/lib/collections/errors";
 import Card from "@/components/ui/Card";
 import CuentasPanel from "./CuentasPanel";
 
 export default async function CuentasPagoPage() {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
+  if (!puede(await getAdminSession(), "cobranza.operar")) return null;
 
   let data: Awaited<ReturnType<typeof listCuentas>>;
   try {

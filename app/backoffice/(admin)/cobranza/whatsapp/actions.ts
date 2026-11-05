@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { requireRole } from "@/lib/rbac";
+import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { WhatsAppError } from "@/lib/whatsapp/client";
 import { WhatsAppMoraError, crearPlantillasEnMeta, enviarPrueba, revisarConMeta, runMoraReminders, setEnvioMoraActivo, setPlantillaActiva } from "@/lib/db/whatsapp-mora";
@@ -12,7 +12,7 @@ export type WhatsAppActionResult = { ok: true; mensaje?: string } | { ok: false;
 // Prender el envío, activar plantillas y mandar a mano le escriben a
 // clientes reales: solo Super Admin.
 async function run(fn: (actor: string) => Promise<string | void>): Promise<WhatsAppActionResult> {
-  const admin = requireRole(await getAdminSession(), ["super_admin"]);
+  const admin = requierePermiso(await getAdminSession(), "cobranza.configurar");
   let mensaje: string | void;
   try {
     mensaje = await fn(admin.email);

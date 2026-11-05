@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { getCreditsList, getPhotoStatus } from "@/lib/db/collections";
 import {
   FILTROS_CREDITO,
@@ -58,7 +58,7 @@ export default async function CobranzaCreditosPage({
 }: {
   searchParams: Promise<{ filtro?: string; q?: string; orden?: string; ventana?: string }>;
 }) {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
+  if (!puede(await getAdminSession(), "cartera.ver")) return null;
   const sp = await searchParams;
   const filtro: CreditFilter = esFiltro(sp.filtro) ? sp.filtro : "activos";
   const q = (sp.q ?? "").slice(0, 100);

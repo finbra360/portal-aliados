@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
-import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
+import { puede } from "@/lib/permisos";
 import { getClientsList, getPhotoStatus } from "@/lib/db/collections";
 import { FILTROS, ORDENES, type ClientFilter, type ClientOrder } from "@/lib/collections/clients-list";
 import { formatFecha, formatMoney, formatTelefono } from "@/lib/format";
@@ -26,7 +26,9 @@ function href(params: { filtro?: string; q?: string; orden?: ClientOrder }) {
 }
 
 export default async function CobranzaClientesPage({ searchParams }: { searchParams: Promise<{ filtro?: string; q?: string; orden?: string }> }) {
-  if (!hasRole(await getAdminSession(), COBRANZA_ROLES)) return null;
+  const session = await getAdminSession();
+  if (!puede(session, "cartera.ver")) return null;
+  const puedeOperar = puede(session, "cobranza.operar");
   const sp = await searchParams;
   const filtro: ClientFilter = esFiltro(sp.filtro) ? sp.filtro : "todos";
   const q = (sp.q ?? "").slice(0, 100);
@@ -51,9 +53,11 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
             Todos los clientes registrados en SIAC ({data.total}). Da clic en un cliente para ver su perfil y elegir a quién se le mandan los recordatorios.
           </p>
         </div>
-        <Link href={`${BASE}/importar`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
-          Carga masiva de contactos
-        </Link>
+        {puedeOperar && (
+          <Link href={`${BASE}/importar`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
+            Carga masiva de contactos
+          </Link>
+        )}
       </div>
       <PhotoBanner status={status} />
 
