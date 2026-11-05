@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS crm_empresas (
   -- Responsable de la relación. NULL = sin asignar.
   ejecutivo_email TEXT REFERENCES admin_users(email) ON UPDATE CASCADE,
   -- De dónde salió el registro. Los demás orígenes llegan con el CRM.
-  origen TEXT NOT NULL CHECK (origen IN ('siac', 'manual')),
+  origen TEXT NOT NULL CHECK (origen IN ('siac', 'manual', 'hubspot')),
   -- Cliente de SIAC con el que nació (origen = 'siac'). Es la llave para que
   -- vincular sea idempotente: un cliente nunca genera dos empresas.
   creada_desde_cliente UUID UNIQUE REFERENCES col_clients(id) ON DELETE SET NULL,
@@ -62,6 +62,15 @@ CREATE TABLE IF NOT EXISTS crm_empresas (
 );
 
 CREATE INDEX IF NOT EXISTS idx_crm_empresas_ejecutivo ON crm_empresas(ejecutivo_email);
+
+-- 2026-11-05: empresas que llegan del historial de HubSpot (clientes que ya
+-- liquidaron antes de la sincronización con SIAC). Bases creadas antes: su
+-- CHECK de origen no incluía 'hubspot'.
+ALTER TABLE crm_empresas DROP CONSTRAINT IF EXISTS crm_empresas_origen_check;
+ALTER TABLE crm_empresas ADD CONSTRAINT crm_empresas_origen_check CHECK (origen IN ('siac', 'manual', 'hubspot'));
+-- ID de la empresa en HubSpot, para que volver a importar no la duplique.
+ALTER TABLE crm_empresas ADD COLUMN IF NOT EXISTS hubspot_company_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_empresas_hubspot ON crm_empresas(ambiente, hubspot_company_id) WHERE hubspot_company_id IS NOT NULL;
 
 -- Vínculo del cliente de SIAC con su empresa. NO ACTION al borrar: una empresa
 -- con clientes ligados no se puede borrar por accidente.
@@ -143,6 +152,32 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_tareas_dedupe ON crm_tareas(dedupe_key
 CREATE INDEX IF NOT EXISTS idx_crm_tareas_pendientes ON crm_tareas(responsable_email, vence_el) WHERE estado = 'abierta';
 CREATE INDEX IF NOT EXISTS idx_crm_tareas_empresa ON crm_tareas(empresa_id);
 
+-- Negocios comerciales de la empresa. Por ahora solo los ganados que se
+-- importan de HubSpot (2026-11-05), para conocer la historia de clientes que ya
+-- liquidaron antes de la sincronización con SIAC. Es la tabla del futuro
+-- pipeline del CRM. El monto es el del negocio en HubSpot, no lo dispuesto:
+-- la fuente oficial de lo prestado sigue siendo SIAC.
+CREATE TABLE IF NOT EXISTS crm_negocios (
+  id BIGSERIAL PRIMARY KEY,
+  empresa_id UUID NOT NULL REFERENCES crm_empresas(id) ON DELETE CASCADE,
+  origen TEXT NOT NULL CHECK (origen IN ('hubspot')),
+  -- Llave de HubSpot: volver a importar actualiza en vez de duplicar.
+  hubspot_deal_id TEXT UNIQUE,
+  nombre TEXT NOT NULL,
+  pipeline TEXT NOT NULL CHECK (pipeline IN ('nuevo', 'renovacion')),
+  -- Etapa tal como venía de HubSpot ("Contrato Ganado", "Contrato ganado Leasing"…).
+  etapa TEXT,
+  producto TEXT,
+  monto NUMERIC(14, 2),
+  fecha_cierre DATE,
+  ganado BOOLEAN NOT NULL DEFAULT true,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_crm_negocios_empresa ON crm_negocios(empresa_id, fecha_cierre DESC);
+
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
 INSERT INTO crm_empresas (ambiente, nombre, razon_social, origen, creada_desde_cliente, ejecutivo_email, created_by)
@@ -166,3 +201,4 @@ ALTER TABLE crm_empresas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_personas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_actividades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_tareas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_negocios ENABLE ROW LEVEL SECURITY;
