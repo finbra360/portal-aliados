@@ -20,8 +20,12 @@ export interface PhotoRow {
 export interface PortfolioSummary {
   creditos: number;
   clientes: number;
-  /** Suma de MontoCredito de los créditos del listado. */
-  colocado: number;
+  /**
+   * Suma de MontoCredito de los créditos del listado: lo que se les prestó a los
+   * créditos que siguen vigentes. NO es la originación histórica ni la del
+   * periodo: los créditos liquidados ya no vienen en el listado.
+   */
+  montoOriginal: number;
   /** Suma de TotalAdeudo. Pendiente de que SIAC confirme qué incluye frente a TotalGlobal. */
   adeudo: number;
   vencido: number;
@@ -95,7 +99,7 @@ export function summarizePortfolio(rows: PhotoRow[], umbral: number, fechaCorte:
   return {
     creditos: rows.length,
     clientes: porCliente.size,
-    colocado: r2(rows.reduce((s, r) => s + (r.montoCredito ?? 0), 0)),
+    montoOriginal: r2(rows.reduce((s, r) => s + (r.montoCredito ?? 0), 0)),
     adeudo: r2(adeudo),
     vencido: r2(vencido),
     moratorios: r2(rows.reduce((s, r) => s + r.interesesMoratorios, 0)),

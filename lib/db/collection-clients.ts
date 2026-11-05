@@ -55,6 +55,9 @@ export interface ClientProfile {
     interesesMoratorios: number | null;
     proximoVencimiento: string | null;
     fechaUltimoPago: string | null;
+    /** NumeroVecesMora y Atrasomaximo de SIAC en su última foto. */
+    vecesMora: number | null;
+    atrasoMaximo: number | null;
     /** Última consulta de "saldo al día" a SIAC, si la hay. */
     saldoAlDia: { fechaCorte: string; saldoVencido: number; totalPagar: number; consultadoAt: string; pedidoPor: string } | null;
   }[];
@@ -113,7 +116,7 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
       SELECT cr.id, cr.no_credito, cr.tipo_credito, cr.monto_credito, cr.en_listado, cr.etapa_manual,
              to_char(s.fecha_corte, 'YYYY-MM-DD') AS fecha_corte, s.antiguedad, s.total_vencido, s.total_adeudo,
              s.intereses_moratorios, to_char(s.proximo_vencimiento, 'YYYY-MM-DD') AS proximo_vencimiento,
-             to_char(s.fecha_ultimo_pago, 'YYYY-MM-DD') AS fecha_ultimo_pago
+             to_char(s.fecha_ultimo_pago, 'YYYY-MM-DD') AS fecha_ultimo_pago, s.numero_veces_mora, s.atraso_maximo
       FROM col_credits cr
       LEFT JOIN LATERAL (
         SELECT * FROM col_credit_snapshots WHERE credit_id = cr.id ORDER BY fecha_corte DESC LIMIT 1
@@ -190,6 +193,8 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
       interesesMoratorios: num(r.intereses_moratorios),
       proximoVencimiento: r.proximo_vencimiento,
       fechaUltimoPago: r.fecha_ultimo_pago,
+      vecesMora: num(r.numero_veces_mora),
+      atrasoMaximo: num(r.atraso_maximo),
       saldoAlDia: (() => {
         const s = saldoPorCredito.get(r.id);
         return s

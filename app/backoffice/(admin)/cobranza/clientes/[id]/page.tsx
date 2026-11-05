@@ -3,7 +3,9 @@ import { notFound } from "next/navigation";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { COBRANZA_ROLES, hasRole } from "@/lib/rbac";
 import { getClientProfile } from "@/lib/db/collection-clients";
-import { getPhotoStatus } from "@/lib/db/collections";
+import { getPhotoStatus, getUmbralesSemaforo } from "@/lib/db/collections";
+import { semaforo } from "@/lib/collections/preventivos";
+import SemaforoPill from "../../SemaforoPill";
 import { listCuentasActivas } from "@/lib/db/payment-accounts";
 import { bucketFor, fechaMexico } from "@/lib/collections/rules";
 import { CANALES_PROMESA } from "@/lib/collections/gestiones";
@@ -66,8 +68,9 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
   let perfil: Awaited<ReturnType<typeof getClientProfile>>;
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   let cuentas: Awaited<ReturnType<typeof listCuentasActivas>>;
+  let umbrales: Awaited<ReturnType<typeof getUmbralesSemaforo>>;
   try {
-    [perfil, status, cuentas] = await Promise.all([getClientProfile(id), getPhotoStatus(), listCuentasActivas()]);
+    [perfil, status, cuentas, umbrales] = await Promise.all([getClientProfile(id), getPhotoStatus(), listCuentasActivas(), getUmbralesSemaforo()]);
   } catch (e) {
     const c = codigoDeError("perfil", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar el perfil del cliente. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -79,6 +82,14 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
   const adeudo = enListado.reduce((s, c) => s + (c.totalAdeudo ?? 0), 0);
   const maxAtraso = enListado.reduce((m, c) => Math.max(m, c.antiguedad ?? 0), 0);
   const juridico = perfil.creditos.some((c) => c.etapaManual === "juridico");
+  // Historial de pago: lo peor de sus créditos vigentes según SIAC (mismo semáforo que los preventivos).
+  const conFoto = enListado.filter((c) => c.fechaCorte !== null);
+  const historial = conFoto.length
+    ? {
+        vecesMora: conFoto.reduce((m, c) => Math.max(m, c.vecesMora ?? 0), 0),
+        atrasoMaximo: conFoto.reduce((m, c) => Math.max(m, c.atrasoMaximo ?? 0), 0),
+      }
+    : null;
   const hoy = fechaMexico();
   const telefonos = perfil.contactos
     .filter((c) => c.tipo === "telefono" && c.estatus !== "invalido")
@@ -95,6 +106,11 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
           <div>
             <h1 className="text-2xl font-bold">{perfil.nombre}</h1>
             <p className="font-mono text-sm text-finbra-gray">Cliente {perfil.numeroCliente}</p>
+            {historial && (
+              <div className="mt-2">
+                <SemaforoPill semaforo={semaforo(historial, umbrales)} historial={historial} detalle />
+              </div>
+            )}
           </div>
           <div className="flex flex-wrap gap-2 text-sm">
             {maxAtraso > 0 ? (

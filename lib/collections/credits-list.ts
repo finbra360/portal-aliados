@@ -25,15 +25,32 @@ export interface CreditListRow {
   cubiertos: number | null;
   vencidos: number | null;
   ultimoPago: string | null;
+  /** FechaTerminoContrato de SIAC: cuándo vence la última mensualidad. */
+  fechaTermino: string | null;
+  /** NombrePromotor de SIAC, tal como viene. */
+  promotor: string | null;
 }
 
-export type CreditFilter = "activos" | "mora" | "corriente" | "proximos" | "extrajudicial" | "juridico" | "fuera";
-export type CreditOrder = "credito" | "cliente" | "vencido" | "adeudo" | "atraso" | "proximo";
+export type CreditFilter = "activos" | "mora" | "corriente" | "proximos" | "por_terminar" | "extrajudicial" | "juridico" | "fuera";
+export type CreditOrder = "credito" | "cliente" | "vencido" | "adeudo" | "atraso" | "proximo" | "termino";
+
+/** Ventanas del filtro «Por terminar»: días que faltan para el fin del plazo. */
+export const VENTANAS_TERMINO = [30, 60, 90] as const;
+export type VentanaTermino = (typeof VENTANAS_TERMINO)[number];
+export const VENTANA_TERMINO_DEFAULT: VentanaTermino = 90;
+
+/**
+ * Etapas que sacan a un crédito de «Por terminar»: no va a terminar de pagar en
+ * su fecha, así que no es candidato a renovar ni a una llamada de cierre.
+ */
+const ETAPAS_SIN_TERMINO = new Set(["juridico", "extrajudicial", "reestructura"]);
 
 export interface CreditListItem extends CreditListRow {
   enMora: boolean;
   /** Ya vencieron todas sus mensualidades: no hay próxima fecha, solo queda cobrar lo vencido. */
   plazoTerminado: boolean;
+  /** Días de hoy al fin del plazo (negativo si ya pasó); null si SIAC no trae la fecha. */
+  diasParaTermino: number | null;
 }
 
 /** SIAC no trae próxima fecha cuando todas las mensualidades ya están pagadas o vencidas. */
@@ -47,6 +64,7 @@ export const FILTROS_CREDITO: { value: CreditFilter; label: string }[] = [
   { value: "mora", label: "En mora" },
   { value: "corriente", label: "Al corriente" },
   { value: "proximos", label: "Pagan en 7 días" },
+  { value: "por_terminar", label: "Por terminar" },
   { value: "extrajudicial", label: "Extrajudicial" },
   { value: "juridico", label: "Jurídico" },
   { value: "fuera", label: "Salieron de SIAC" },
@@ -60,6 +78,7 @@ export const ORDENES_CREDITO: { value: CreditOrder; label: string }[] = [
   { value: "adeudo", label: "Mayor adeudo" },
   { value: "atraso", label: "Más días de atraso" },
   { value: "proximo", label: "Próximo pago" },
+  { value: "termino", label: "Fin del plazo" },
 ];
 
 const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -75,6 +94,8 @@ const COMPARAR: Record<CreditOrder, (a: CreditListItem, b: CreditListItem) => nu
   atraso: (a, b) => n(b.atraso) - n(a.atraso) || n(b.vencido) - n(a.vencido) || porCredito(a, b),
   // Sin fecha al final.
   proximo: (a, b) => (a.proximoVencimiento ?? "9999").localeCompare(b.proximoVencimiento ?? "9999") || porCredito(a, b),
+  // El que termina antes, primero; sin fecha al final.
+  termino: (a, b) => (a.fechaTermino ?? "9999").localeCompare(b.fechaTermino ?? "9999") || porCredito(a, b),
 };
 
 /** Días entre dos fechas YYYY-MM-DD. */
@@ -84,13 +105,15 @@ export function buildCreditList(
   rows: CreditListRow[],
   umbral: number,
   hoy: string,
-  opts: { filtro: CreditFilter; q: string; orden?: CreditOrder },
+  opts: { filtro: CreditFilter; q: string; orden?: CreditOrder; ventana?: VentanaTermino },
 ): { items: CreditListItem[]; conteos: Record<CreditFilter, number>; total: number } {
   const todos: CreditListItem[] = rows.map((r) => ({
     ...r,
     enMora: r.enListado && estaEnMora(r.vencido ?? 0, r.atraso ?? 0, umbral),
     plazoTerminado: r.enListado && plazoTerminado(r),
+    diasParaTermino: r.fechaTermino ? dias(hoy, r.fechaTermino) : null,
   }));
+  const ventana = opts.ventana ?? VENTANA_TERMINO_DEFAULT;
 
   const q = sinAcentos(opts.q.trim());
   const digitos = q.replace(/\D/g, "");
@@ -108,6 +131,12 @@ export function buildCreditList(
     mora: (c) => c.enMora,
     corriente: (c) => c.enListado && !c.enMora,
     proximos: (c) => c.enListado && !c.enMora && c.proximoVencimiento !== null && dias(hoy, c.proximoVencimiento) >= 0 && dias(hoy, c.proximoVencimiento) <= 7,
+    por_terminar: (c) =>
+      c.enListado &&
+      c.diasParaTermino !== null &&
+      c.diasParaTermino >= 0 &&
+      c.diasParaTermino <= ventana &&
+      !(c.etapaManual && ETAPAS_SIN_TERMINO.has(c.etapaManual)),
     extrajudicial: (c) => c.enListado && c.etapaManual === "extrajudicial",
     juridico: (c) => c.enListado && c.etapaManual === "juridico",
     fuera: (c) => !c.enListado,

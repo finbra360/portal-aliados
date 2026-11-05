@@ -5,13 +5,12 @@
 
 import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
-import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
+import { ambienteActual, getPhotoStatus, getUmbralesSemaforo as umbralesSemaforo } from "@/lib/db/collections";
 import { getSetting } from "@/lib/collections/store";
 import { UMBRAL_MORA_DEFAULT, addDays, estaEnMora, fechaMexico } from "@/lib/collections/rules";
 import { bloqueosDeEnvio } from "@/lib/collections/whatsapp-mora";
 import {
   ETAPAS,
-  UMBRALES_SEMAFORO_DEFAULT,
   MOTIVO_FALTA_MONTO,
   decidirPreventivo,
   semaforo,
@@ -59,10 +58,6 @@ async function montosGuardados(creditos: { id: string; proximo_vencimiento: stri
   return montos;
 }
 
-async function umbralesSemaforo(): Promise<UmbralesSemaforo> {
-  const s = await getSetting<{ rojo_veces?: number; rojo_atraso?: number }>("semaforo", {});
-  return { rojoVeces: s.rojo_veces ?? UMBRALES_SEMAFORO_DEFAULT.rojoVeces, rojoAtraso: s.rojo_atraso ?? UMBRALES_SEMAFORO_DEFAULT.rojoAtraso };
-}
 
 /**
  * Créditos de la foto que vencen entre hoy y dentro de 5 días, con todo lo que
