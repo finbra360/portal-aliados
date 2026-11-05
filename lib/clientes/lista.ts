@@ -24,6 +24,10 @@ export interface EmpresaRow {
   ejecutivoNombre: string | null;
   /** Números de cliente de SIAC ligados a la empresa. */
   numerosCliente: string[];
+  /** Negocios ganados en HubSpot (crm_negocios), la historia anterior a SIAC. */
+  negociosGanados: number;
+  /** Cierre del primer negocio ganado, si lo hay. */
+  primerCierre: string | null;
 }
 
 export interface CreditoEmpresaRow {
@@ -50,8 +54,10 @@ export interface CreditoEmpresaRow {
  * - cobranza_especial: algún crédito vigente en jurídico, extrajudicial o reestructura;
  * - por_liquidar: algún crédito vigente termina en los próximos 90 días;
  * - activo: tiene créditos vigentes;
- * - ex_cliente: tuvo créditos y ya ninguno está en el listado;
- * - sin_creditos: todavía no tiene créditos en SIAC.
+ * - ex_cliente: tuvo créditos y ya ninguno está en el listado, o no tiene
+ *   créditos en SIAC pero sí negocios ganados en HubSpot (liquidó antes de la
+ *   sincronización);
+ * - sin_creditos: no tiene créditos en SIAC ni negocios ganados.
  */
 export type EtapaCiclo = "cobranza_especial" | "por_liquidar" | "activo" | "ex_cliente" | "sin_creditos";
 
@@ -165,7 +171,7 @@ export function resumirEmpresa(
       ? "por_liquidar"
       : vigentes.length
         ? "activo"
-        : creditos.length
+        : creditos.length || e.negociosGanados > 0
           ? "ex_cliente"
           : "sin_creditos";
 

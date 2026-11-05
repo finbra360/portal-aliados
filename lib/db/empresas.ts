@@ -31,6 +31,8 @@ function mapEmpresa(r: Record<string, unknown>): EmpresaRow {
     ejecutivoEmail: (r.ejecutivo_email as string) ?? null,
     ejecutivoNombre: (r.ejecutivo_nombre as string) ?? null,
     numerosCliente: (r.numeros as string[]) ?? [],
+    negociosGanados: Number(r.negocios_ganados ?? 0),
+    primerCierre: (r.primer_cierre as string) ?? null,
   };
 }
 
@@ -53,10 +55,17 @@ function mapCredito(r: Record<string, unknown>): CreditoEmpresaRow {
   };
 }
 
+// Negocios ganados de HubSpot de la empresa `e`: cuántos y el primer cierre.
+const negociosResumen = () => sql`
+  (SELECT count(*) FROM crm_negocios n WHERE n.empresa_id = e.id AND n.ganado)::int AS negocios_ganados,
+  (SELECT to_char(min(n.fecha_cierre), 'YYYY-MM-DD') FROM crm_negocios n WHERE n.empresa_id = e.id AND n.ganado) AS primer_cierre
+`;
+
 // Fragmento nuevo en cada consulta: un fragmento de postgres.js no se reutiliza.
 const empresaSelect = () => sql`
   SELECT e.id, e.nombre, e.razon_social, e.rfc, e.industria, e.ejecutivo_email, a.nombre AS ejecutivo_nombre,
-         coalesce(array_agg(c.numero_cliente ORDER BY c.numero_cliente) FILTER (WHERE c.id IS NOT NULL), '{}') AS numeros
+         coalesce(array_agg(c.numero_cliente ORDER BY c.numero_cliente) FILTER (WHERE c.id IS NOT NULL), '{}') AS numeros,
+         ${negociosResumen()}
   FROM crm_empresas e
   LEFT JOIN admin_users a ON a.email = e.ejecutivo_email
   LEFT JOIN col_clients c ON c.empresa_id = e.id
@@ -105,13 +114,14 @@ export async function getEmpresa(id: string) {
   const ambiente = ambienteActual();
   const [e] = await sql`
     SELECT e.*, a.nombre AS ejecutivo_nombre,
-           coalesce((SELECT array_agg(c.numero_cliente ORDER BY c.numero_cliente) FROM col_clients c WHERE c.empresa_id = e.id), '{}') AS numeros
+           coalesce((SELECT array_agg(c.numero_cliente ORDER BY c.numero_cliente) FROM col_clients c WHERE c.empresa_id = e.id), '{}') AS numeros,
+           ${negociosResumen()}
     FROM crm_empresas e LEFT JOIN admin_users a ON a.email = e.ejecutivo_email
     WHERE e.id = ${id} AND e.ambiente = ${ambiente}
   `;
   if (!e) return null;
 
-  const [clientes, creditos, umbral, umbralesSemaforo] = await Promise.all([
+  const [clientes, creditos, umbral, umbralesSemaforo, negocios] = await Promise.all([
     sql`SELECT id, numero_cliente, nombre FROM col_clients WHERE empresa_id = ${id} ORDER BY numero_cliente`,
     sql`
       SELECT c.empresa_id, cr.id, cr.client_id, c.numero_cliente, cr.no_credito, cr.tipo_credito, cr.en_listado, cr.etapa_manual,
@@ -133,6 +143,11 @@ export async function getEmpresa(id: string) {
     `,
     getSetting("umbral_mora", UMBRAL_MORA_DEFAULT),
     getUmbralesSemaforo(),
+    sql`
+      SELECT id, hubspot_deal_id, nombre, pipeline, etapa, producto, monto, to_char(fecha_cierre, 'YYYY-MM-DD') AS fecha_cierre
+      FROM crm_negocios WHERE empresa_id = ${id} AND ganado
+      ORDER BY fecha_cierre DESC NULLS LAST, id DESC
+    `,
   ]);
 
   // Un crédito que ya salió del listado conserva su última foto: sus montos ya no cuentan.
@@ -169,6 +184,19 @@ export async function getEmpresa(id: string) {
     },
     clientes: clientes.map((c) => ({ id: c.id as string, numeroCliente: c.numero_cliente as string, nombre: c.nombre as string })),
     creditos: fichaCreditos,
+    negocios: negocios.map((n) => ({
+      id: String(n.id),
+      hubspotDealId: (n.hubspot_deal_id as string) ?? null,
+      nombre: n.nombre as string,
+      pipeline: n.pipeline as "nuevo" | "renovacion",
+      etapa: (n.etapa as string) ?? null,
+      producto: (n.producto as string) ?? null,
+      monto: num(n.monto),
+      fechaCierre: (n.fecha_cierre as string) ?? null,
+    })),
+    /** Desde cuándo es cliente: el primer negocio ganado o el primer crédito dispuesto en SIAC. */
+    clienteDesde:
+      [mapEmpresa(e).primerCierre, ...fichaCreditos.map((c) => c.fechaMinistracion)].filter((x): x is string => !!x).sort()[0] ?? null,
     resumen: resumirEmpresa(mapEmpresa(e), fichaCreditos, umbral, fechaMexico(), umbralesSemaforo),
   };
 }
