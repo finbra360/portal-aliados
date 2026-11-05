@@ -81,6 +81,21 @@ test("agrupa por la columna Empresa y liga por número de cliente, ID de HubSpot
   assert.equal(por["otra"].destino.tipo, "error", "número de cliente que no existe");
 });
 
+test("lo que se elige en la vista previa manda sobre el cruce automático", () => {
+  const filas = [fila({ dealId: "1", empresa: "Nombre Comercial Distinto" }), fila({ dealId: "2", empresa: "Químicos Ejemplo" }), fila({ dealId: "3", empresa: "Grupo Doble" })];
+  const plan = planearImportacion(filas, EXISTENTES, {
+    "nombre comercial distinto": "e-fin",
+    "quimicos ejemplo": "nueva",
+    "grupo doble": "e-g2",
+  });
+  const por = Object.fromEntries(plan.map((p) => [p.clave, p.destino]));
+  assert.deepEqual(por["nombre comercial distinto"], { tipo: "existente", empresaId: "e-fin", nombre: "FINANCIERA MUESTRA SAPI DE CV SOFOM ENR", motivo: "manual" });
+  assert.deepEqual(por["quimicos ejemplo"], { tipo: "nueva" }, "aunque el nombre coincida, si se eligió nueva es nueva");
+  assert.equal(por["grupo doble"].tipo === "existente" && por["grupo doble"].empresaId, "e-g2", "elegir resuelve un nombre ambiguo");
+  const [p] = planearImportacion([fila({ empresa: "Café Ficticio" })], EXISTENTES, { "cafe ficticio": "no-existe" });
+  assert.deepEqual(p.destino, { tipo: "nueva" }, "una elección por una empresa que no existe se ignora");
+});
+
 test("números de cliente distintos en la misma empresa es un error", () => {
   const [p] = planearImportacion([fila({ dealId: "1", numeroClienteSiac: "101" }), fila({ dealId: "2", numeroClienteSiac: "102" })], EXISTENTES);
   assert.equal(p.destino.tipo, "error");

@@ -3,7 +3,7 @@
 
 import { sql, transaccion, type Tx } from "@/lib/db";
 import { ambienteActual } from "@/lib/db/collections";
-import { leerNegocios, planearImportacion, type EmpresaExistente, type PlanEmpresa } from "@/lib/clientes/importar-hubspot";
+import { leerNegocios, planearImportacion, type Elecciones, type EmpresaExistente, type PlanEmpresa } from "@/lib/clientes/importar-hubspot";
 
 async function existentes(q: typeof sql | Tx): Promise<EmpresaExistente[]> {
   const rows = await q`
@@ -22,12 +22,24 @@ async function existentes(q: typeof sql | Tx): Promise<EmpresaExistente[]> {
   }));
 }
 
-export type VistaPreviaHubspot = { plan: PlanEmpresa[]; errores: { fila: number; error: string }[] };
+export type VistaPreviaHubspot = {
+  plan: PlanEmpresa[];
+  errores: { fila: number; error: string }[];
+  /** Empresas que ya existen, para elegir a mano con cuál se liga cada grupo. */
+  empresas: { empresaId: string; nombre: string; numerosCliente: string[] }[];
+};
 
-export async function previsualizarHubspot(texto: string): Promise<VistaPreviaHubspot | { error: string }> {
+export async function previsualizarHubspot(texto: string, elecciones: Elecciones = {}): Promise<VistaPreviaHubspot | { error: string }> {
   const leido = leerNegocios(texto);
   if ("error" in leido) return leido;
-  return { plan: planearImportacion(leido.filas, await existentes(sql)), errores: leido.errores };
+  const todas = await existentes(sql);
+  return {
+    plan: planearImportacion(leido.filas, todas, elecciones),
+    errores: leido.errores,
+    empresas: todas
+      .map((e) => ({ empresaId: e.empresaId, nombre: e.nombre, numerosCliente: e.numerosCliente }))
+      .sort((a, b) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" })),
+  };
 }
 
 /**
@@ -35,13 +47,13 @@ export async function previsualizarHubspot(texto: string): Promise<VistaPreviaHu
  * se omiten. Volver a importar el mismo archivo no duplica: los negocios se
  * actualizan por su ID de HubSpot y las empresas ya ligadas se reconocen.
  */
-export async function importarHubspot(texto: string, actor: string) {
+export async function importarHubspot(texto: string, actor: string, elecciones: Elecciones = {}) {
   const leido = leerNegocios(texto);
   if ("error" in leido) throw new Error(leido.error);
   const ambiente = ambienteActual();
 
   return transaccion(async (tx) => {
-    const plan = planearImportacion(leido.filas, await existentes(tx));
+    const plan = planearImportacion(leido.filas, await existentes(tx), elecciones);
     const [omision] = await tx`
       SELECT a.email FROM crm_settings s JOIN admin_users a ON a.email = s.value->>'email' AND a.activo
       WHERE s.key = 'ejecutivo_por_omision'
