@@ -53,18 +53,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Clientes</h1>
-          <p className="mt-1 text-sm text-finbra-gray">
-            Una fila por empresa ({data.total}), con sus créditos de SIAC. Adeudo total {formatMoney(data.totales.adeudo)} · vencido {formatMoney(data.totales.vencido)}.
-          </p>
-        </div>
-        {puede(session, "clientes.importar") && (
-          <Link href={`${BASE}/importar-hubspot`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
-            Importar historial de HubSpot
-          </Link>
-        )}
+      <div>
+        <h1 className="text-2xl font-bold">Clientes</h1>
+        <p className="mt-1 text-sm text-finbra-gray">
+          Una fila por empresa ({data.total}), con sus créditos de SIAC. Adeudo total {formatMoney(data.totales.adeudo)} · vencido {formatMoney(data.totales.vencido)}.
+        </p>
       </div>
       <PhotoBanner status={status} />
 
@@ -138,10 +131,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                     {e.numerosCliente.length > 0 && <p className="font-mono text-xs text-finbra-gray">{e.numerosCliente.join(", ")}</p>}
                   </td>
                   <td className="px-4 py-3">{e.ejecutivoNombre ?? <span className="text-xs text-amber-800">Sin asignar</span>}</td>
-                  <td className="px-4 py-3 text-right tabular-nums">
-                    {e.creditosVigentes}
-                    {e.negociosGanados > 0 && <span className="block whitespace-nowrap text-xs text-finbra-gray">{e.negociosGanados} en HubSpot</span>}
-                  </td>
+                  <td className="px-4 py-3 text-right tabular-nums">{e.creditosVigentes}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{formatMoney(e.adeudo)}</td>
                   <td className={`px-4 py-3 text-right tabular-nums ${e.enMora ? "font-semibold text-red-700" : ""}`}>{formatMoney(e.vencido)}</td>
                   <td className="px-4 py-3">
