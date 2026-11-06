@@ -5,6 +5,8 @@ import { getAdminSession } from "@/lib/get-admin-session";
 import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { EmpresaError, actualizarEmpresa, type DatosEmpresa } from "@/lib/db/empresas";
+import { PersonaError, agregarCanal, asignarCanal, guardarPersona, registrarActividad } from "@/lib/db/personas";
+import { validarActividad, validarPersona } from "@/lib/clientes/personas";
 
 export type EmpresaActionResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -31,4 +33,46 @@ export async function editarEmpresaAction(id: string, _prev: EmpresaActionResult
   }
   revalidatePath("/backoffice/clientes", "layout");
   return { ok: true, mensaje: "Cambios guardados." };
+}
+
+// ---------------------------------------------------------------- personas y actividad
+
+/** Corre `fn` con el permiso de editar clientes y traduce los errores conocidos a un mensaje. */
+async function conPermiso(etiqueta: string, mensajeOk: string, fn: (actor: string) => Promise<unknown>): Promise<EmpresaActionResult> {
+  const admin = requierePermiso(await getAdminSession(), "clientes.editar");
+  try {
+    await fn(admin.email);
+  } catch (e) {
+    if (e instanceof PersonaError) return { ok: false, error: e.message };
+    const c = codigoDeError(`clientes: ${etiqueta}`, e);
+    return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
+  }
+  revalidatePath("/backoffice/clientes", "layout");
+  revalidatePath("/backoffice/cobranza/clientes", "layout");
+  return { ok: true, mensaje: mensajeOk };
+}
+
+export async function guardarPersonaAction(empresaId: string, personaId: string | null, _prev: EmpresaActionResult | null, fd: FormData): Promise<EmpresaActionResult> {
+  const v = validarPersona(Object.fromEntries(fd.entries()));
+  if (!v.ok) return { ok: false, error: v.error };
+  return conPermiso("guardar persona", personaId ? "Cambios guardados." : "Persona agregada.", (actor) =>
+    guardarPersona({ empresaId, personaId: personaId ?? undefined, datos: v.datos, actor }),
+  );
+}
+
+export async function asignarCanalAction(empresaId: string, contactId: string, personaId: string | null): Promise<EmpresaActionResult> {
+  return conPermiso("asignar canal", "Listo.", (actor) => asignarCanal({ empresaId, contactId, personaId, actor }));
+}
+
+export async function agregarCanalAction(empresaId: string, personaId: string, _prev: EmpresaActionResult | null, fd: FormData): Promise<EmpresaActionResult> {
+  const tipo = texto(fd, "tipo") === "email" ? "email" : "telefono";
+  return conPermiso("agregar canal", tipo === "email" ? "Correo agregado." : "Teléfono agregado.", (actor) =>
+    agregarCanal({ empresaId, personaId, tipo, valor: texto(fd, "valor"), actor }),
+  );
+}
+
+export async function registrarActividadAction(empresaId: string, _prev: EmpresaActionResult | null, fd: FormData): Promise<EmpresaActionResult> {
+  const v = validarActividad(Object.fromEntries(fd.entries()));
+  if (!v.ok) return { ok: false, error: v.error };
+  return conPermiso("registrar actividad", "Actividad registrada.", (actor) => registrarActividad({ empresaId, datos: v.datos, actor }));
 }

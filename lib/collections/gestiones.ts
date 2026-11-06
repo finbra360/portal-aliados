@@ -26,6 +26,31 @@ export type Resultado = keyof typeof RESULTADOS;
 export const CANALES_PROMESA = { llamada: "Llamada", whatsapp: "WhatsApp", correo: "Correo", visita: "Visita", otro: "Otro" } as const;
 export type CanalPromesa = keyof typeof CANALES_PROMESA;
 
+/** Etiqueta corta de cada tipo de col_activities, para el historial del expediente y de la ficha del cliente. */
+export const ETIQUETAS_ACTIVIDAD: Record<string, string> = {
+  llamada: "Llamada",
+  nota: "Nota",
+  visita: "Visita",
+  correo: "Correo",
+  whatsapp_enviado: "WhatsApp enviado",
+  whatsapp_recibido: "WhatsApp recibido",
+  promesa_creada: "Promesa",
+  promesa_resuelta: "Promesa",
+  pago_detectado: "Pago",
+  pago_registrado: "Pago",
+  entrada_mora: "Atraso",
+  regularizacion: "Al corriente",
+  nueva_mensualidad_vencida: "Atraso",
+  salida_listado: "SIAC",
+  saldo_consultado: "Saldo",
+  cambio_etapa: "Etapa",
+  cambio_contacto: "Contactos",
+  cambio_cuenta_pago: "Cuenta de pago",
+  cambio_asignacion: "Asignación",
+  pausa: "Pausa",
+  alerta: "Alerta",
+};
+
 /** Extrajudicial solo identifica al crédito: sigue en la cola y recibe recordatorios. Jurídico y Reestructura los detienen. */
 export const ETAPAS = { extrajudicial: "Cobranza extrajudicial", juridico: "Jurídico", reestructura: "Reestructura" } as const;
 export type Etapa = keyof typeof ETAPAS;

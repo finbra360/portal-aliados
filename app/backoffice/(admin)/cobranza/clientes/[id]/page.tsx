@@ -8,7 +8,7 @@ import { semaforo } from "@/lib/collections/preventivos";
 import SemaforoPill from "../../SemaforoPill";
 import { listCuentasActivas } from "@/lib/db/payment-accounts";
 import { bucketFor, fechaMexico } from "@/lib/collections/rules";
-import { CANALES_PROMESA, ETAPAS } from "@/lib/collections/gestiones";
+import { CANALES_PROMESA, ETAPAS, ETIQUETAS_ACTIVIDAD } from "@/lib/collections/gestiones";
 import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import PhotoBanner from "../../PhotoBanner";
@@ -19,29 +19,7 @@ import CuentaPagoPanel from "./CuentaPagoPanel";
 import { AlertActions, EtapaSelect, PromiseActions, SaldoAlDiaButton } from "./RowActions";
 import { codigoDeError } from "@/lib/collections/errors";
 
-const TIPO_ACTIVIDAD: Record<string, string> = {
-  llamada: "Llamada",
-  nota: "Nota",
-  visita: "Visita",
-  correo: "Correo",
-  whatsapp_enviado: "WhatsApp enviado",
-  whatsapp_recibido: "WhatsApp recibido",
-  promesa_creada: "Promesa",
-  promesa_resuelta: "Promesa",
-  pago_detectado: "Pago",
-  pago_registrado: "Pago",
-  entrada_mora: "Atraso",
-  regularizacion: "Al corriente",
-  nueva_mensualidad_vencida: "Atraso",
-  salida_listado: "SIAC",
-  saldo_consultado: "Saldo",
-  cambio_etapa: "Etapa",
-  cambio_contacto: "Contactos",
-  cambio_cuenta_pago: "Cuenta de pago",
-  cambio_asignacion: "Asignación",
-  pausa: "Pausa",
-  alerta: "Alerta",
-};
+const TIPO_ACTIVIDAD = ETIQUETAS_ACTIVIDAD;
 
 const ALERTA: Record<string, string> = {
   entrada_mora: "Entró a mora",
