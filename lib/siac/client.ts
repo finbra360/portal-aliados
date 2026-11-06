@@ -91,7 +91,12 @@ export class SiacClient {
     this.onCall = onCall;
   }
 
-  private async call<T extends SiacEnvelope>(operacion: string, parametros: Record<string, string>): Promise<T> {
+  /**
+   * `exigirCorrecto: false` regresa la respuesta aunque Detalle no sea
+   * "CORRECTO": para servicios que todavía no conocemos y cuyo sobre puede ser
+   * distinto (pruebas de una llamada).
+   */
+  private async call<T extends SiacEnvelope>(operacion: string, parametros: Record<string, string>, opciones: { exigirCorrecto?: boolean } = {}): Promise<T> {
     const body = new URLSearchParams({
       RazonSocial: this.config.razonSocial,
       [NOMBRE_CLAVE[operacion] ?? "ClaveAutenticacion"]: this.config.claveAutenticacion,
@@ -120,7 +125,7 @@ export class SiacClient {
         if (!/<string[^>]*>/.test(texto)) throw errorDeRespuesta(operacion, res.status, texto);
         const data = parseAsmxJson<T>(texto);
         await this.onCall?.({ operacion, parametros, httpStatus, detalle: data.Detalle ?? null, respuesta: data });
-        if (data.Detalle !== "CORRECTO") {
+        if (opciones.exigirCorrecto !== false && data.Detalle !== "CORRECTO") {
           const detalle = String(data.Detalle ?? "sin detalle");
           const formato = /FormatoIncorrectoJson/i.test(detalle);
           throw new SiacError(
@@ -226,5 +231,27 @@ export class SiacClient {
       IDCliente: idCliente,
       FechaCorte: fechaCorte,
     });
+  }
+
+  /**
+   * Vista de créditos de SIAC, paginada (publicada en el WSDL con solo
+   * RegistrosPorPagina y PaginaActual). Se usa por ahora solo en la prueba de
+   * una llamada: todavía no sabemos si incluye créditos liquidados ni su formato.
+   */
+  consultarVistaCredito(p: { porPagina: number; pagina: number }) {
+    return this.call<SiacEnvelope>(
+      "ConsultarVistaCredito",
+      { RegistrosPorPagina: String(p.porPagina), PaginaActual: String(p.pagina) },
+      { exigirCorrecto: false },
+    );
+  }
+
+  /** Clientes de SIAC filtrados por número, nombre o RFC (vacíos = sin filtro). Solo prueba, por ahora. */
+  consultarClientes(p: { idCliente?: string; nombre?: string; rfc?: string } = {}) {
+    return this.call<SiacEnvelope>(
+      "ConsultarClientes",
+      { idCliente: p.idCliente ?? "", nombre: p.nombre ?? "", rfc: p.rfc ?? "" },
+      { exigirCorrecto: false },
+    );
   }
 }
