@@ -4,6 +4,7 @@ import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getEmpresasLista } from "@/lib/db/empresas";
+import { relacionDeEmpresas } from "@/lib/db/cartera";
 import { fechaMexico } from "@/lib/collections/rules";
 import { TIPOS_TAREA, avisosDeCartera, type DatosTarea, type TipoTarea } from "@/lib/clientes/tareas";
 
@@ -100,9 +101,6 @@ export async function cerrarTarea(p: { empresaId: string; tareaId: string; estad
   });
 }
 
-/** Tipos de col_activities que son un contacto de una persona del equipo con el cliente. */
-const CONTACTO_COBRANZA = ["llamada", "visita", "correo", "whatsapp_enviado", "promesa_creada"];
-
 /** «Mi cartera»: las empresas de las que soy ejecutivo, mis tareas abiertas y los avisos de mis clientes. */
 export async function getMiCartera(email: string) {
   const hoy = fechaMexico();
@@ -115,20 +113,7 @@ export async function getMiCartera(email: string) {
       ORDER BY t.vence_el, t.id LIMIT 200
     `,
   ]);
-  const ids = lista.items.map((e) => e.empresaId);
-  const extras = ids.length
-    ? await sql`
-        SELECT e.id,
-               EXISTS (SELECT 1 FROM crm_personas p WHERE p.empresa_id = e.id AND p.es_principal AND p.vigente) AS tiene_principal,
-               greatest(
-                 (SELECT max(a.ocurrido_at) FROM crm_actividades a WHERE a.empresa_id = e.id AND a.tipo <> 'nota' AND a.actor <> 'sistema'),
-                 (SELECT max(a.ocurrido_at) FROM col_activities a JOIN col_clients c ON c.id = a.client_id
-                   WHERE c.empresa_id = e.id AND a.actor <> 'sistema' AND a.tipo = ANY(${CONTACTO_COBRANZA}))
-               ) AS ultimo_contacto
-        FROM crm_empresas e WHERE e.id = ANY(${ids}::uuid[])
-      `
-    : [];
-  const porId = new Map(extras.map((x) => [x.id as string, x]));
+  const porId = await relacionDeEmpresas(lista.items.map((e) => e.empresaId));
   const clientes = lista.items.map((e) => {
     const x = porId.get(e.empresaId);
     return {
@@ -137,8 +122,8 @@ export async function getMiCartera(email: string) {
       enMora: e.enMora,
       maxAtraso: e.maxAtraso,
       creditosVigentes: e.creditosVigentes,
-      tienePrincipal: !!x?.tiene_principal,
-      ultimoContacto: x?.ultimo_contacto ? (x.ultimo_contacto as Date).toISOString() : null,
+      tienePrincipal: x?.tienePrincipal ?? false,
+      ultimoContacto: x?.ultimoContacto ?? null,
     };
   });
   return { hoy, clientes: clientes.length, tareas: tareas.map(mapTarea), avisos: avisosDeCartera(clientes, hoy) };
