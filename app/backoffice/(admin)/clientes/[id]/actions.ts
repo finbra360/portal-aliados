@@ -7,6 +7,9 @@ import { codigoDeError } from "@/lib/collections/errors";
 import { EmpresaError, actualizarEmpresa, type DatosEmpresa } from "@/lib/db/empresas";
 import { PersonaError, agregarCanal, asignarCanal, guardarPersona, registrarActividad } from "@/lib/db/personas";
 import { validarActividad, validarPersona } from "@/lib/clientes/personas";
+import { TareaError, cerrarTarea, crearTarea } from "@/lib/db/tareas";
+import { validarTarea } from "@/lib/clientes/tareas";
+import { fechaMexico } from "@/lib/collections/rules";
 
 export type EmpresaActionResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -43,7 +46,7 @@ async function conPermiso(etiqueta: string, mensajeOk: string, fn: (actor: strin
   try {
     await fn(admin.email);
   } catch (e) {
-    if (e instanceof PersonaError) return { ok: false, error: e.message };
+    if (e instanceof PersonaError || e instanceof TareaError) return { ok: false, error: e.message };
     const c = codigoDeError(`clientes: ${etiqueta}`, e);
     return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
   }
@@ -75,4 +78,21 @@ export async function registrarActividadAction(empresaId: string, _prev: Empresa
   const v = validarActividad(Object.fromEntries(fd.entries()));
   if (!v.ok) return { ok: false, error: v.error };
   return conPermiso("registrar actividad", "Actividad registrada.", (actor) => registrarActividad({ empresaId, datos: v.datos, actor }));
+}
+
+// ---------------------------------------------------------------- tareas
+
+export async function crearTareaAction(empresaId: string, _prev: EmpresaActionResult | null, fd: FormData): Promise<EmpresaActionResult> {
+  const v = validarTarea(Object.fromEntries(fd.entries()), fechaMexico());
+  if (!v.ok) return { ok: false, error: v.error };
+  const r = await conPermiso("crear tarea", "Tarea creada.", (actor) => crearTarea({ empresaId, datos: v.datos, actor }));
+  if (r.ok) revalidatePath("/backoffice/inicio");
+  return r;
+}
+
+export async function cerrarTareaAction(empresaId: string, tareaId: string, estado: "hecha" | "cancelada", resultado: string): Promise<EmpresaActionResult> {
+  if (estado !== "hecha" && estado !== "cancelada") return { ok: false, error: "Estado no válido." };
+  const r = await conPermiso("cerrar tarea", estado === "hecha" ? "Tarea hecha." : "Tarea cancelada.", (actor) => cerrarTarea({ empresaId, tareaId, estado, resultado, actor }));
+  if (r.ok) revalidatePath("/backoffice/inicio");
+  return r;
 }
