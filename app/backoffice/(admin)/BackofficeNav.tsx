@@ -61,6 +61,7 @@ const NAV: NavEntry[] = [
       { href: "/backoffice/cobranza/cuentas", label: "Cuentas de pago", permiso: "cobranza.operar" },
       { href: "/backoffice/cobranza/preventivos", label: "Preventivos" },
       { href: "/backoffice/cobranza/whatsapp", label: "WhatsApp" },
+      { href: "/backoffice/cobranza/correos", label: "Correos" },
     ],
   },
   {

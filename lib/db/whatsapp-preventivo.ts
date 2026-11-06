@@ -13,6 +13,7 @@ import {
   ETAPAS,
   MOTIVO_FALTA_MONTO,
   decidirPreventivo,
+  etapaPara,
   semaforo,
   type PreventivoCandidate,
   type PreventivoDecision,
@@ -22,6 +23,8 @@ import {
 import { getWhatsAppConfig } from "@/lib/whatsapp/client";
 import { enviarLote, plantillasDe, ultimosEnvios, type EnvioReciente, type MoraRunResult, type PlantillaMora } from "@/lib/db/whatsapp-mora";
 import { consultarSaldoAlDia } from "@/lib/db/collection-gestiones";
+import { contactosParaEnvio } from "@/lib/db/contactos-envio";
+import { diasCubiertos, esDiaHabil } from "@/lib/collections/dias-habiles";
 
 const VENTANA_DEFAULT = { desde: "09:00", hasta: "19:00" };
 
@@ -68,8 +71,11 @@ async function montosGuardados(creditos: { id: string; proximo_vencimiento: stri
  * las fotos de pruebas del 2026-10-26). Por eso "vence hoy" se reconoce porque
  * la foto ANTERIOR tenía hoy como próximo vencimiento y hoy no hay atraso.
  */
-async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): Promise<PreventivoCandidate[]> {
+export async function candidatosPreventivos(fechaCorte: string, hoy: string, umbralMora: number): Promise<PreventivoCandidate[]> {
   const ambiente = ambienteActual();
+  // Lo que tocaría en los días inhábiles siguientes sale hoy (el viernes, lo del fin de semana).
+  const cubiertos = diasCubiertos(hoy).length ? diasCubiertos(hoy) : [hoy];
+  const hasta = addDays(cubiertos.at(-1)!, 5);
   const [creditos, contactos] = await Promise.all([
     sql`
       WITH cliente AS (
@@ -97,15 +103,11 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
         WHERE x.credit_id = cr.id AND x.fecha_corte < ${fechaCorte} ORDER BY x.fecha_corte DESC LIMIT 1
       ) p ON true
       WHERE c.ambiente = ${ambiente} AND cr.en_listado
-        AND (s.proximo_vencimiento BETWEEN ${hoy}::date AND ${addDays(hoy, 5)}::date
+        AND (s.proximo_vencimiento BETWEEN ${hoy}::date AND ${hasta}::date
              OR (p.proximo_vencimiento = ${hoy}::date AND s.antiguedad = 0))
       ORDER BY proximo_vencimiento, c.nombre
     `,
-    sql`
-      SELECT k.id, k.client_id, k.relacion, k.rol, k.tipo, k.telefono_whatsapp, k.estatus, k.baja_whatsapp_at, k.es_principal, k.nombre_contacto
-      FROM col_contacts k JOIN col_clients c ON c.id = k.client_id
-      WHERE c.ambiente = ${ambiente}
-    `,
+    contactosParaEnvio(ambiente),
   ]);
   const enviados = new Set(
     (
@@ -113,24 +115,8 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
     ).map((r) => r.dedupe_key as string),
   );
   const montos = await montosGuardados(creditos.map((c) => ({ id: c.id, proximo_vencimiento: c.proximo_vencimiento, fecha_ultimo_pago: c.fecha_ultimo_pago })));
-  const porCliente = new Map<string, PreventivoCandidate["contactos"]>();
-  for (const k of contactos) {
-    const lista = porCliente.get(k.client_id) ?? [];
-    lista.push({
-      id: k.id,
-      relacion: k.relacion,
-      rol: k.rol,
-      tipo: k.tipo,
-      telefonoWhatsapp: k.telefono_whatsapp,
-      estatus: k.estatus,
-      bajaWhatsappAt: k.baja_whatsapp_at ? String(k.baja_whatsapp_at) : null,
-      esPrincipal: k.es_principal,
-      nombre: k.nombre_contacto,
-    });
-    porCliente.set(k.client_id, lista);
-  }
   return creditos.map((c) => {
-    const etapa = (Object.keys(ETAPAS) as (keyof typeof ETAPAS)[]).find((e) => addDays(hoy, ETAPAS[e].dias) === c.proximo_vencimiento);
+    const etapa = etapaPara(hoy, c.proximo_vencimiento, cubiertos);
     return {
       creditId: c.id,
       clientId: c.client_id,
@@ -142,8 +128,9 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
       enMora: estaEnMora(Number(c.vencido), Number(c.dias_atraso), umbralMora),
       etapaManual: c.etapa_manual === "juridico" || c.etapa_manual === "reestructura" ? c.etapa_manual : null,
       pausaHasta: c.pausa_hasta,
-      contactos: porCliente.get(c.client_id) ?? [],
+      contactos: contactos.get(c.client_id)?.contactos ?? [],
       contactoCobranzaId: c.contacto_cobranza_id,
+      correos: contactos.get(c.client_id)?.correos ?? [],
       yaSeIntento: etapa ? enviados.has(dedupeKey(c.id, etapa, c.proximo_vencimiento)) : false,
       // MontoSiguienteVencimiento de la foto (Listado Personalizado); si no vino, lo que se le preguntó a SIAC aparte.
       monto: c.monto_siguiente_vencimiento !== null ? Number(c.monto_siguiente_vencimiento) : (montos.get(c.id) ?? null),
@@ -152,7 +139,7 @@ async function candidatos(fechaCorte: string, hoy: string, umbralMora: number): 
   });
 }
 
-const dedupeKey = (creditId: string, etapa: string, vencimiento: string) => `preventiva:${creditId}:${etapa}:${vencimiento}`;
+export const dedupeKey = (creditId: string, etapa: string, vencimiento: string) => `preventiva:${creditId}:${etapa}:${vencimiento}`;
 
 export interface PreventivosPreview {
   ambiente: string;
@@ -191,13 +178,15 @@ export async function previewPreventivos(): Promise<PreventivosPreview> {
     hora: horaMexico(),
     ventana,
     queRecordatorio: "preventivas",
+    diaHabil: esDiaHabil(hoy),
   };
 
   const filas: PreventivosPreview["filas"] = [];
   const proximos: PreventivosPreview["proximos"] = [];
   if (status.fechaCorte) {
-    for (const c of await candidatos(status.fechaCorte, hoy, umbralMora)) {
-      const decision = decidirPreventivo(c, { hoy, plantillasActivas: activas, umbrales });
+    const cubiertos = diasCubiertos(hoy);
+    for (const c of await candidatosPreventivos(status.fechaCorte, hoy, umbralMora)) {
+      const decision = decidirPreventivo(c, { hoy, plantillasActivas: activas, umbrales, cubiertos });
       const base = { creditId: c.creditId, clientId: c.clientId, nombre: c.nombre, noCredito: c.noCredito, proximoVencimiento: c.proximoVencimiento! };
       if (decision) filas.push({ ...base, decision });
       else proximos.push({ ...base, semaforo: semaforo(c.historial, umbrales) });

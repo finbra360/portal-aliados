@@ -7,6 +7,8 @@ import { sql, transaccion } from "@/lib/db";
 import { EJEMPLO_PREVENTIVA, PLANTILLAS_PREVENTIVAS } from "@/lib/collections/preventivos";
 import { EJEMPLO_CONTACTO, PLANTILLA_CONTACTO } from "@/lib/collections/chat";
 import { logAudit } from "@/lib/db/audit";
+import { contactosParaEnvio } from "@/lib/db/contactos-envio";
+import { esDiaHabil } from "@/lib/collections/dias-habiles";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getSetting, openAlert, peso } from "@/lib/collections/store";
 import { UMBRAL_MORA_DEFAULT, fechaMexico, normalizePhoneMx } from "@/lib/collections/rules";
@@ -37,11 +39,11 @@ import {
 
 export class WhatsAppMoraError extends Error {}
 
-const VENTANA_DEFAULT = { desde: "09:00", hasta: "19:00" };
+export const VENTANA_DEFAULT = { desde: "09:00", hasta: "19:00" };
 const MAX_ENVIOS_DEFAULT = 100;
 const PAUSA_ENTRE_ENVIOS_MS = 250;
 
-const horaMexico = (d = new Date()) =>
+export const horaMexico = (d = new Date()) =>
   new Intl.DateTimeFormat("en-GB", { timeZone: "America/Mexico_City", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(d);
 
 export interface PlantillaMora {
@@ -82,7 +84,7 @@ export async function plantillasDe(uso: "mora" | "preventiva" | null): Promise<P
 }
 
 /** Clientes con saldo vencido en la foto, con todo lo que decide si reciben recordatorio. */
-async function candidatos(fechaCorte: string, hoy: string): Promise<MoraCandidate[]> {
+export async function candidatosMora(fechaCorte: string, hoy: string): Promise<MoraCandidate[]> {
   const ambiente = ambienteActual();
   const [clientes, contactos] = await Promise.all([
     sql`
@@ -104,28 +106,8 @@ async function candidatos(fechaCorte: string, hoy: string): Promise<MoraCandidat
       GROUP BY c.id
       HAVING sum(s.total_vencido) > 0
     `,
-    sql`
-      SELECT k.id, k.client_id, k.relacion, k.rol, k.tipo, k.telefono_whatsapp, k.estatus, k.baja_whatsapp_at, k.es_principal, k.nombre_contacto
-      FROM col_contacts k JOIN col_clients c ON c.id = k.client_id
-      WHERE c.ambiente = ${ambiente}
-    `,
+    contactosParaEnvio(ambiente),
   ]);
-  const porCliente = new Map<string, MoraCandidate["contactos"]>();
-  for (const k of contactos) {
-    const lista = porCliente.get(k.client_id) ?? [];
-    lista.push({
-      id: k.id,
-      relacion: k.relacion,
-      rol: k.rol,
-      tipo: k.tipo,
-      telefonoWhatsapp: k.telefono_whatsapp,
-      estatus: k.estatus,
-      bajaWhatsappAt: k.baja_whatsapp_at ? String(k.baja_whatsapp_at) : null,
-      esPrincipal: k.es_principal,
-      nombre: k.nombre_contacto,
-    });
-    porCliente.set(k.client_id, lista);
-  }
   return clientes.map((c) => ({
     clientId: c.id,
     nombre: c.nombre,
@@ -136,8 +118,9 @@ async function candidatos(fechaCorte: string, hoy: string): Promise<MoraCandidat
     etapa: c.etapa,
     promesaVigente: c.promesa_vigente,
     cuenta: c.cuenta,
-    contactos: porCliente.get(c.id) ?? [],
+    contactos: contactos.get(c.id)?.contactos ?? [],
     contactoCobranzaId: c.contacto_cobranza_id,
+    correos: contactos.get(c.id)?.correos ?? [],
     yaSeIntentoHoy: c.ya_hoy,
     ultimaPlantilla: c.ultima_plantilla,
   }));
@@ -182,12 +165,13 @@ export async function previewMora(): Promise<MoraPreview> {
     fotoDeHoy,
     hora: horaMexico(),
     ventana,
+    diaHabil: esDiaHabil(hoy),
   };
   const bloqueos = bloqueosDeEnvio(condiciones);
   const bloqueosManual = bloqueosDeEnvio({ ...condiciones, activado: true });
 
   const filas = status.fechaCorte
-    ? (await candidatos(status.fechaCorte, hoy))
+    ? (await candidatosMora(status.fechaCorte, hoy))
         .map((c) => ({ clientId: c.clientId, nombre: c.nombre, totalVencido: c.totalVencido, decision: decidirMora(c, { umbral, hoy, plantillasActivas: activas }) }))
         .filter((f) => f.decision.enviar || f.decision.motivo !== "Vence hoy: todavía no está en mora")
         .filter((f) => f.totalVencido >= umbral)

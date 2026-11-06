@@ -5,6 +5,7 @@ import { notifySlack } from "@/lib/collections/notify";
 import { runMoraReminders, type MoraRunResult } from "@/lib/db/whatsapp-mora";
 import { obtenerMontosPreventivos, runPreventivos } from "@/lib/db/whatsapp-preventivo";
 import { enviarReporteDiario } from "@/lib/db/reporte";
+import { runCorreosMora, runCorreosPreventivos, type CorreosRunResult } from "@/lib/db/correos-cobranza";
 import { correrRadar, type ResultadoRadar } from "@/lib/db/renovaciones";
 
 // Una sola llamada a SIAC para la foto y, a las 9:00, hasta MAX_CONSULTAS_MONTO consultas de saldo (montos de
@@ -92,17 +93,38 @@ export async function GET(req: NextRequest) {
         }
       }
     }
+    // Después del WhatsApp, los mismos recordatorios por correo (n8n los manda con
+    // "Correo Cobranza"). Con su propio interruptor y los mismos bloqueos.
+    const correos: Record<string, CorreosRunResult | { error: string }> = {};
+    if (reintento && result.status !== "error") {
+      const tandasCorreo = [
+        { clave: "mora", nombre: "de mora", correr: () => runCorreosMora({ disparadoPor: "cron" }) },
+        { clave: "preventivos", nombre: "preventivos", correr: () => runCorreosPreventivos({ disparadoPor: "cron" }) },
+      ];
+      for (const t of tandasCorreo) {
+        try {
+          const r = await t.correr();
+          correos[t.clave] = r;
+          if (r.fallidos > 0 || r.detenido) {
+            await notifySlack(`:warning: Correos ${t.nombre}: ${r.enviados} enviados, ${r.fallidos} fallidos.${r.detenido ? ` ${r.detenido}` : ""}`);
+          }
+        } catch (e) {
+          correos[t.clave] = { error: (e as Error).message };
+          await notifySlack(`:rotating_light: Los correos ${t.nombre} no pudieron correr: ${(e as Error).message}`);
+        }
+      }
+    }
     // El reporte sale aunque la foto haya fallado: justo ese día hay que saberlo.
     let reporte: boolean | { error: string } | null = null;
     if (reintento) {
       try {
-        reporte = await enviarReporteDiario({ tandas: whatsapp, actor: "cron" });
+        reporte = await enviarReporteDiario({ tandas: { ...whatsapp, correoMora: correos.mora, correoPreventivos: correos.preventivos }, actor: "cron" });
       } catch (e) {
         reporte = { error: (e as Error).message };
         console.error("Cobranza: no se pudo armar el reporte diario:", (e as Error).message);
       }
     }
-    return NextResponse.json({ ...result, radar, whatsapp, reporte },{ status: result.status === "error" ? 500 : 200 });
+    return NextResponse.json({ ...result, radar, whatsapp, correos, reporte },{ status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     // Errores antes de poder registrar la corrida (base caída, fecha inválida).
     const mensaje = (e as Error).message;

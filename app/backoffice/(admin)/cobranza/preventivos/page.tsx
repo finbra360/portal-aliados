@@ -161,7 +161,7 @@ export default async function PreventivosPage() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-2">
                       {formatFecha(f.proximoVencimiento)}
-                      <span className="block text-xs text-finbra-gray">{ETAPAS[f.decision.etapa].etiqueta}</span>
+                      <span className="block text-xs text-finbra-gray">{ETAPAS[f.decision.etapa].etiqueta}{f.decision.adelantado ? " (adelantado por día inhábil)" : ""}</span>
                     </td>
                     <td className="px-4 py-2">
                       <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${SEMAFORO[f.decision.semaforo].clase}`}>{SEMAFORO[f.decision.semaforo].label}</span>

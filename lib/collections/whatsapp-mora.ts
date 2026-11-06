@@ -4,6 +4,7 @@
 
 import { chooseRecipient, type ContactLike } from "./contacts.ts";
 import { estaEnMora } from "./rules.ts";
+import { MOTIVO_DIA_INHABIL } from "./dias-habiles.ts";
 
 /**
  * Orden de las variables de las plantillas finbra_mora_v1..v3 en Meta:
@@ -26,6 +27,8 @@ export interface MoraCandidate {
   cuenta: { banco: string; beneficiario: string; clabe: string } | null;
   contactos: (ContactLike & { nombre: string | null })[];
   contactoCobranzaId: string | null;
+  /** Correos activos del deudor (titular), para el recordatorio por correo. */
+  correos: string[];
   /** Ya tiene un recordatorio de mora registrado hoy (enviado, pendiente o fallido). */
   yaSeIntentoHoy: boolean;
   /** Nombre de la última plantilla de mora que se le mandó, para rotar. */
@@ -66,14 +69,21 @@ export function limpiarParametro(s: string): string {
  * que la cola: en jurídico, en reestructura, pausado o con promesa vigente no
  * se le escribe. Sin cuenta de pago o sin WhatsApp válido del deudor, tampoco.
  */
+/** Lo que impide escribirle por cualquier canal (WhatsApp o correo), o null. */
+export function motivoComunMora(c: MoraCandidate, p: { umbral: number; hoy: string }): string | null {
+  if (c.totalVencido < p.umbral) return "Saldo vencido menor al umbral de mora";
+  if (!estaEnMora(c.totalVencido, c.diasAtraso, p.umbral)) return "Vence hoy: todavía no está en mora";
+  if (c.etapa === "juridico") return "En jurídico";
+  if (c.etapa === "reestructura") return "En reestructura";
+  if (c.pausaHasta && c.pausaHasta >= p.hoy) return "Cobranza pausada";
+  if (c.promesaVigente) return "Tiene una promesa de pago vigente";
+  if (!c.cuenta) return "Sin cuenta de pago";
+  return null;
+}
+
 export function decidirMora(c: MoraCandidate, p: { umbral: number; hoy: string; plantillasActivas: string[] }): MoraDecision {
-  if (c.totalVencido < p.umbral) return { enviar: false, motivo: "Saldo vencido menor al umbral de mora" };
-  if (!estaEnMora(c.totalVencido, c.diasAtraso, p.umbral)) return { enviar: false, motivo: "Vence hoy: todavía no está en mora" };
-  if (c.etapa === "juridico") return { enviar: false, motivo: "En jurídico" };
-  if (c.etapa === "reestructura") return { enviar: false, motivo: "En reestructura" };
-  if (c.pausaHasta && c.pausaHasta >= p.hoy) return { enviar: false, motivo: "Cobranza pausada" };
-  if (c.promesaVigente) return { enviar: false, motivo: "Tiene una promesa de pago vigente" };
-  if (!c.cuenta) return { enviar: false, motivo: "Sin cuenta de pago" };
+  const comun = motivoComunMora(c, p);
+  if (comun || !c.cuenta) return { enviar: false, motivo: comun ?? "Sin cuenta de pago" };
   const rec = chooseRecipient(c.contactos, c.contactoCobranzaId);
   const k = c.contactos.find((x) => x.id === rec.contactId);
   if (!k?.telefonoWhatsapp) return { enviar: false, motivo: "Sin WhatsApp válido del deudor" };
@@ -191,9 +201,12 @@ export function bloqueosDeEnvio(p: {
   ventana: { desde: string; hasta: string };
   /** "de mora" o "preventivas", para el texto del bloqueo de plantillas. */
   queRecordatorio?: string;
+  /** false los sábados, domingos y feriados bancarios: ese día no sale nada. */
+  diaHabil?: boolean;
 }): string[] {
   const b: string[] = [];
   if (p.ambiente !== "produccion") b.push("Conectado al ambiente de pruebas de SIAC: sus datos no son reales y no se le escribe a nadie");
+  if (p.diaHabil === false) b.push(MOTIVO_DIA_INHABIL);
   if (!p.activado) b.push("El envío automático está apagado");
   if (!p.configurado) b.push("Faltan las variables de WhatsApp en Vercel (WHATSAPP_TOKEN y WHATSAPP_PHONE_NUMBER_ID)");
   if (p.plantillasActivas === 0) b.push(`No hay plantillas ${p.queRecordatorio ?? "de mora"} activas`);

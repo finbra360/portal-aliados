@@ -88,3 +88,25 @@ export function verifyCode(email: string, code: string) {
   });
 }
 
+
+/** Un correo de cobranza para que n8n lo mande con la cuenta de Gmail "Correo Cobranza". */
+export interface CorreoCobranzaN8n {
+  /** Id del registro en col_email_messages, para casar la respuesta. */
+  id: string;
+  to: string;
+  subject: string;
+  html: string;
+}
+
+export interface ResultadoCorreoN8n {
+  id: string;
+  ok: boolean;
+  gmailId?: string | null;
+  error?: string | null;
+}
+
+/** Manda un lote de correos de cobranza (flujo de n8n "Correos de cobranza (backoffice)"). Una llamada por lote. */
+export async function enviarCorreosCobranza(correos: CorreoCobranzaN8n[]): Promise<ResultadoCorreoN8n[]> {
+  const r = await callWebhook<{ resultados?: ResultadoCorreoN8n[] }>("/webhook/cobranza-correos", { body: { correos } });
+  return Array.isArray(r.resultados) ? r.resultados : [];
+}
