@@ -19,12 +19,18 @@ import ContactosEmpresa from "./ContactosEmpresa";
 import RegistrarActividad from "./RegistrarActividad";
 import { getContactos, getHistorial } from "@/lib/db/personas";
 import { CANALES, FILTROS_HISTORIAL, ROLES_DECISION, type EntradaHistorial, type OrigenHistorial } from "@/lib/clientes/personas";
+import { getTareasEmpresa, type Tarea } from "@/lib/db/tareas";
+import { TIPOS_TAREA } from "@/lib/clientes/tareas";
+import PlazoChip from "../PlazoChip";
+import NuevaTarea from "./NuevaTarea";
+import CerrarTarea from "./CerrarTarea";
 
 const BASE = "/backoffice/clientes";
 const PESTANAS = [
   { value: "resumen", label: "Resumen" },
   { value: "contactos", label: "Contactos" },
   { value: "actividad", label: "Actividad" },
+  { value: "tareas", label: "Tareas" },
   { value: "creditos", label: "Créditos" },
   { value: "datos", label: "Datos de la empresa" },
 ] as const;
@@ -53,6 +59,22 @@ function Entrada({ e }: { e: EntradaHistorial }) {
   );
 }
 type Pestana = (typeof PESTANAS)[number]["value"];
+
+/** Una tarea abierta: fecha, qué hay que hacer, responsable y, si se puede, los botones para cerrarla. */
+function TareaAbierta({ t, hoy, empresaId, puedeEditar }: { t: Tarea; hoy: string; empresaId: string; puedeEditar: boolean }) {
+  return (
+    <li className="space-y-1.5 py-3 first:pt-0 last:pb-0">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <PlazoChip venceEl={t.venceEl} hoy={hoy} />
+        <span className="text-xs text-finbra-gray">{TIPOS_TAREA[t.tipo] ?? t.tipo}</span>
+        <span className="text-xs text-finbra-gray">· {t.responsableNombre ?? t.responsableEmail ?? "Sin responsable"}</span>
+      </div>
+      <p className="text-sm font-semibold">{t.titulo}</p>
+      {t.descripcion && <p className="whitespace-pre-line text-sm text-finbra-gray">{t.descripcion}</p>}
+      {puedeEditar && <CerrarTarea empresaId={empresaId} tareaId={t.id} />}
+    </li>
+  );
+}
 
 const dinero = (v: number | null) => (v === null ? "—" : formatMoney(v));
 const etapaManual = (e: string | null) => (e && e in ETAPAS ? ETAPAS[e as keyof typeof ETAPAS] : null);
@@ -118,13 +140,15 @@ export default async function FichaClientePage({ params, searchParams }: { param
   let ejecutivos: Awaited<ReturnType<typeof listEjecutivos>> = [];
   let contactos: Awaited<ReturnType<typeof getContactos>> = { personas: [], canales: [], clientes: [] };
   let historial: EntradaHistorial[] = [];
+  let tareas: Awaited<ReturnType<typeof getTareasEmpresa>> = { abiertas: [], cerradas: [] };
   try {
-    [ficha, status, ejecutivos, contactos, historial] = await Promise.all([
+    [ficha, status, ejecutivos, contactos, historial, tareas] = await Promise.all([
       getEmpresa(id),
       getPhotoStatus(),
-      pestana === "datos" && puedeEditar ? listEjecutivos() : Promise.resolve([]),
+      (pestana === "datos" || pestana === "tareas") && puedeEditar ? listEjecutivos() : Promise.resolve([]),
       ["resumen", "contactos", "actividad"].includes(pestana) ? getContactos(id) : Promise.resolve(contactos),
       pestana === "actividad" ? getHistorial(id, filtro) : pestana === "resumen" ? getHistorial(id) : Promise.resolve([]),
+      pestana === "resumen" || pestana === "tareas" ? getTareasEmpresa(id) : Promise.resolve(tareas),
     ]);
   } catch (e) {
     const c = codigoDeError("ficha de cliente", e);
@@ -188,6 +212,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
           >
             {p.label}
             {p.value === "creditos" && <span className="font-normal"> ({creditos.length})</span>}
+            {p.value === "tareas" && tareas.abiertas.length > 0 && <span className="font-normal"> ({tareas.abiertas.length})</span>}
           </Link>
         ))}
       </nav>
@@ -284,6 +309,25 @@ export default async function FichaClientePage({ params, searchParams }: { param
 
               <Card>
                 <div className="mb-3 flex items-baseline justify-between">
+                  <h2 className="text-lg font-bold">Tareas abiertas</h2>
+                  <Link href={`${BASE}/${id}?tab=tareas`} className="text-sm text-finbra-purple hover:underline">{puedeEditar ? "Nueva tarea →" : "Ver todas →"}</Link>
+                </div>
+                {tareas.abiertas.length === 0 ? (
+                  <p className="text-sm text-finbra-gray">No hay tareas pendientes.</p>
+                ) : (
+                  <ul className="divide-y divide-black/5">
+                    {tareas.abiertas.slice(0, 3).map((t) => (
+                      <TareaAbierta key={t.id} t={t} hoy={hoy} empresaId={id} puedeEditar={puedeEditar} />
+                    ))}
+                  </ul>
+                )}
+                {tareas.abiertas.length > 3 && (
+                  <p className="mt-3 text-xs text-finbra-gray">y {tareas.abiertas.length - 3} más en la pestaña Tareas.</p>
+                )}
+              </Card>
+
+              <Card>
+                <div className="mb-3 flex items-baseline justify-between">
                   <h2 className="text-lg font-bold">Última actividad</h2>
                   <Link href={`${BASE}/${id}?tab=actividad`} className="text-sm text-finbra-purple hover:underline">{puedeEditar ? "Registrar →" : "Ver todo →"}</Link>
                 </div>
@@ -353,6 +397,50 @@ export default async function FichaClientePage({ params, searchParams }: { param
               Une la actividad comercial con el expediente de cobranza (gestiones, promesas, WhatsApp) y lo que detecta SIAC (pagos, atrasos). Nada se puede editar ni borrar.
             </p>
           </Card>
+        </div>
+      )}
+
+      {pestana === "tareas" && (
+        <div className="space-y-6">
+          {puedeEditar && (
+            <Card>
+              <h2 className="mb-3 text-lg font-bold">Nueva tarea</h2>
+              <NuevaTarea empresaId={id} hoy={hoy} ejecutivos={ejecutivos} responsablePorOmision={null} />
+            </Card>
+          )}
+          <Card>
+            <h2 className="mb-3 text-lg font-bold">Pendientes</h2>
+            {tareas.abiertas.length === 0 ? (
+              <p className="text-sm text-finbra-gray">No hay tareas pendientes.</p>
+            ) : (
+              <ul className="divide-y divide-black/5">
+                {tareas.abiertas.map((t) => (
+                  <TareaAbierta key={t.id} t={t} hoy={hoy} empresaId={id} puedeEditar={puedeEditar} />
+                ))}
+              </ul>
+            )}
+          </Card>
+          {tareas.cerradas.length > 0 && (
+            <Card>
+              <h2 className="mb-3 text-lg font-bold">Cerradas recientemente</h2>
+              <ul className="divide-y divide-black/5">
+                {tareas.cerradas.map((t) => (
+                  <li key={t.id} className="space-y-0.5 py-2 first:pt-0 last:pb-0">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-finbra-gray">
+                      <span className={`rounded-full px-2 py-0.5 font-semibold ${t.estado === "hecha" ? "bg-emerald-100 text-emerald-800" : "bg-black/5 text-finbra-gray"}`}>
+                        {t.estado === "hecha" ? "Hecha" : "Cancelada"}
+                      </span>
+                      {t.cerradaAt && <span>{formatFechaHora(t.cerradaAt)}</span>}
+                      {t.cerradaPor && <span>· {t.cerradaPor}</span>}
+                    </p>
+                    <p className="text-sm">{t.titulo}</p>
+                    {t.resultado && <p className="whitespace-pre-line text-sm text-finbra-gray">{t.resultado}</p>}
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+          <p className="text-xs text-finbra-gray">Al cerrar una tarea queda una nota en la actividad del cliente.</p>
         </div>
       )}
 
