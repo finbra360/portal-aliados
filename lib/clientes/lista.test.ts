@@ -14,8 +14,6 @@ const empresa = (over: Partial<EmpresaRow>): EmpresaRow => ({
   ejecutivoEmail: null,
   ejecutivoNombre: null,
   numerosCliente: ["000000100"],
-  negociosGanados: 0,
-  primerCierre: null,
   ...over,
 });
 
@@ -75,8 +73,6 @@ test("próximo pago: la fecha más cercana, sumando los créditos que vencen ese
 test("etapa del ciclo derivada de los créditos", () => {
   const etapa = (cs: CreditoEmpresaRow[]) => resumirEmpresa(empresa({}), cs, 1000, HOY).etapa;
   assert.equal(etapa([]), "sin_creditos");
-  assert.equal(resumirEmpresa(empresa({ negociosGanados: 2 }), [], 1000, HOY).etapa, "ex_cliente", "sin SIAC pero con negocios ganados en HubSpot");
-  assert.equal(resumirEmpresa(empresa({ negociosGanados: 2 }), [credito({})], 1000, HOY).etapa, "activo", "si tiene créditos vigentes, manda SIAC");
   assert.equal(etapa([credito({ enListado: false })]), "ex_cliente");
   assert.equal(etapa([credito({})]), "activo");
   assert.equal(etapa([credito({ fechaTermino: "2027-02-03" })]), "por_liquidar", "90 días exactos");

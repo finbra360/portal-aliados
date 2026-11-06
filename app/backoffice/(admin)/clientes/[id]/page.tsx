@@ -97,7 +97,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
   }
   if (!ficha) notFound();
 
-  const { empresa: e, clientes, creditos, negocios, clienteDesde, resumen: r } = ficha;
+  const { empresa: e, clientes, creditos, resumen: r } = ficha;
   const vigentes = creditos.filter((c) => c.enListado);
   const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(new Date());
 
@@ -115,12 +115,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
             </p>
             <div className="flex flex-wrap items-start gap-2 pt-1">
               <EtapaChip etapa={r.etapa} />
-              {r.historial && <SemaforoPill semaforo={r.semaforo} historial={r.historial} detalle />}
-              {clienteDesde && (
-                <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-xs text-finbra-gray">
-                  Cliente desde {new Intl.DateTimeFormat("es-MX", { month: "short", year: "numeric", timeZone: "UTC" }).format(new Date(`${clienteDesde}T00:00:00Z`))}
-                </span>
-              )}
+              <SemaforoPill semaforo={r.semaforo} historial={r.historial} detalle />
             </div>
           </div>
           <div className="space-y-2 text-sm sm:text-right">
@@ -153,7 +148,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
             className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${pestana === p.value ? "border-finbra-purple text-finbra-purple-700" : "border-transparent text-finbra-gray hover:text-black"}`}
           >
             {p.label}
-            {p.value === "creditos" && <span className="font-normal"> ({creditos.length + negocios.length})</span>}
+            {p.value === "creditos" && <span className="font-normal"> ({creditos.length})</span>}
           </Link>
         ))}
       </nav>
@@ -190,15 +185,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
                 <Link href={`${BASE}/${id}?tab=creditos`} className="text-sm text-finbra-purple hover:underline">Ver todos →</Link>
               </div>
               {vigentes.length === 0 ? (
-                <p className="px-6 py-5 text-sm text-finbra-gray">
-                  {creditos.length ? "Ya no tiene créditos en el listado de SIAC." : "No tiene créditos en SIAC."}
-                  {negocios.length > 0 && (
-                    <>
-                      {" "}En HubSpot tiene {negocios.length === 1 ? "1 negocio ganado" : `${negocios.length} negocios ganados`}; el último cerró el {formatFecha(negocios[0].fechaCierre)}.{" "}
-                      <Link href={`${BASE}/${id}?tab=creditos`} className="text-finbra-purple hover:underline">Ver historial</Link>
-                    </>
-                  )}
-                </p>
+                <p className="px-6 py-5 text-sm text-finbra-gray">{creditos.length ? "Ya no tiene créditos en el listado de SIAC." : "Todavía no tiene créditos en SIAC."}</p>
               ) : (
                 <table className="mt-3 w-full min-w-[600px] text-left text-sm">
                   <thead>
@@ -244,7 +231,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
         </>
       )}
 
-      {pestana === "creditos" && (creditos.length > 0 || negocios.length === 0) && (
+      {pestana === "creditos" && (
         <Card className="overflow-x-auto p-0">
           {creditos.length === 0 ? (
             <p className="p-6 text-sm text-finbra-gray">Todavía no tiene créditos en SIAC.</p>
@@ -296,40 +283,6 @@ export default async function FichaClientePage({ params, searchParams }: { param
           <p className="px-4 pb-4 pt-2 text-xs text-finbra-gray">
             Montos de la foto más reciente de SIAC de cada crédito. Los que salieron del listado conservan su historia pero ya no suman.
           </p>
-        </Card>
-      )}
-
-      {pestana === "creditos" && negocios.length > 0 && (
-        <Card className="overflow-x-auto p-0">
-          <h2 className="px-6 pt-5 text-lg font-bold">Negocios ganados en HubSpot</h2>
-          <p className="px-6 pt-1 text-sm text-finbra-gray">
-            La historia anterior a la sincronización con SIAC (oct 2026). El monto es el del negocio en HubSpot; lo que se dispuso lo da SIAC.
-          </p>
-          <table className="mt-3 w-full min-w-[760px] text-left text-sm">
-            <thead>
-              <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                <th scope="col" className="px-6 py-2">Cierre</th>
-                <th scope="col" className="px-4 py-2">Negocio</th>
-                <th scope="col" className="px-4 py-2">Tipo</th>
-                <th scope="col" className="px-4 py-2">Producto</th>
-                <th scope="col" className="px-4 py-2 text-right">Monto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {negocios.map((n) => (
-                <tr key={n.id} className="border-b border-black/5 align-top last:border-0">
-                  <td className="whitespace-nowrap px-6 py-2">{formatFecha(n.fechaCierre)}</td>
-                  <td className="px-4 py-2">
-                    {n.nombre}
-                    {n.etapa && <span className="block text-xs text-finbra-gray">{n.etapa}</span>}
-                  </td>
-                  <td className="px-4 py-2">{n.pipeline === "renovacion" ? "Renovación" : "Nuevo"}</td>
-                  <td className="px-4 py-2 text-finbra-gray">{n.producto ?? "—"}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{dinero(n.monto)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </Card>
       )}
 
