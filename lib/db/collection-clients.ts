@@ -344,6 +344,8 @@ export async function addManualContact(p: {
   notas: string | null;
   usarParaRecordatorios: boolean;
   actor: string;
+  /** Persona de Clientes 360 (crm_personas) a la que pertenece; el llamador verifica que sea de la misma empresa. */
+  personaId?: string | null;
 }) {
   const v = validarContactoNuevo(p.tipo, p.valor);
   if (!v.ok) throw new ContactError(v.error);
@@ -365,9 +367,9 @@ export async function addManualContact(p: {
     if (dup) throw new ContactError("Ese contacto ya está registrado para este cliente");
 
     const [row] = await tx`
-      INSERT INTO col_contacts (client_id, origen, relacion, rol, tipo, valor_original, telefono_whatsapp, nombre_contacto, notas, created_by, updated_by)
+      INSERT INTO col_contacts (client_id, origen, relacion, rol, tipo, valor_original, telefono_whatsapp, nombre_contacto, notas, persona_id, created_by, updated_by)
       VALUES (${p.clientId}, 'manual', ${tipo.relacion}, ${tipo.rol}, ${p.tipo}, ${v.valor}, ${v.telefonoWhatsapp},
-              ${p.nombre?.trim() || null}, ${p.notas?.trim() || null}, ${p.actor}, ${p.actor})
+              ${p.nombre?.trim() || null}, ${p.notas?.trim() || null}, ${p.personaId ?? null}, ${p.actor}, ${p.actor})
       RETURNING id
     `;
     contactId = row.id;

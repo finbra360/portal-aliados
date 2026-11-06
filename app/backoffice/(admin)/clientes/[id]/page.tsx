@@ -7,7 +7,7 @@ import { getPhotoStatus } from "@/lib/db/collections";
 import { getEmpresa, listEjecutivos, type FichaCredito } from "@/lib/db/empresas";
 import { ETAPAS } from "@/lib/collections/gestiones";
 import { codigoDeError } from "@/lib/collections/errors";
-import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
+import { formatFecha, formatFechaHora, formatMoney, formatTelefono } from "@/lib/format";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import ProgressBar from "@/components/ui/ProgressBar";
@@ -15,13 +15,43 @@ import PhotoBanner from "../../cobranza/PhotoBanner";
 import SemaforoPill from "../../cobranza/SemaforoPill";
 import EtapaChip from "../EtapaChip";
 import EditarEmpresa from "./EditarEmpresa";
+import ContactosEmpresa from "./ContactosEmpresa";
+import RegistrarActividad from "./RegistrarActividad";
+import { getContactos, getHistorial } from "@/lib/db/personas";
+import { CANALES, FILTROS_HISTORIAL, ROLES_DECISION, type EntradaHistorial, type OrigenHistorial } from "@/lib/clientes/personas";
 
 const BASE = "/backoffice/clientes";
 const PESTANAS = [
   { value: "resumen", label: "Resumen" },
+  { value: "contactos", label: "Contactos" },
+  { value: "actividad", label: "Actividad" },
   { value: "creditos", label: "Créditos" },
   { value: "datos", label: "Datos de la empresa" },
 ] as const;
+
+const ORIGEN_CLASE: Record<OrigenHistorial, string> = {
+  comercial: "bg-finbra-purple/10 text-finbra-purple-700",
+  cobranza: "bg-amber-100 text-amber-800",
+  siac: "bg-black/5 text-finbra-gray",
+};
+const ORIGEN_LABEL: Record<OrigenHistorial, string> = { comercial: "Comercial", cobranza: "Cobranza", siac: "SIAC" };
+
+/** Una línea del historial unificado. */
+function Entrada({ e }: { e: EntradaHistorial }) {
+  return (
+    <li className="space-y-0.5">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-finbra-gray">
+        <span>{formatFechaHora(e.ocurridoAt)}</span>
+        <span className={`rounded-full px-2 py-0.5 font-semibold ${ORIGEN_CLASE[e.origen]}`}>{ORIGEN_LABEL[e.origen]}</span>
+        <span className="font-semibold text-black">{e.tipo}</span>
+        {e.resultado && <span>· {e.resultado}</span>}
+        {e.persona && <span>· con {e.persona}</span>}
+        {e.actor && <span>· {e.actor}</span>}
+      </p>
+      {e.descripcion && <p className="whitespace-pre-line text-sm">{e.descripcion}</p>}
+    </li>
+  );
+}
 type Pestana = (typeof PESTANAS)[number]["value"];
 
 const dinero = (v: number | null) => (v === null ? "—" : formatMoney(v));
@@ -71,7 +101,7 @@ function Dato({ etiqueta, children }: { etiqueta: string; children: ReactNode })
   );
 }
 
-export default async function FichaClientePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string }> }) {
+export default async function FichaClientePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ tab?: string; f?: string }> }) {
   const session = await getAdminSession();
   if (!puede(session, "cartera.ver")) {
     return <EmptyState title="No tienes acceso a Clientes" description="Tu rol no puede ver la cartera. Si la necesitas, pídele a un Super Admin que cambie tu rol en Usuarios." />;
@@ -79,17 +109,22 @@ export default async function FichaClientePage({ params, searchParams }: { param
   const puedeEditar = puede(session, "clientes.editar");
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
-  const { tab } = await searchParams;
+  const { tab, f } = await searchParams;
   const pestana: Pestana = PESTANAS.some((p) => p.value === tab) ? (tab as Pestana) : "resumen";
+  const filtro = FILTROS_HISTORIAL.find((x) => x.value === f)?.value ?? "todo";
 
   let ficha: Awaited<ReturnType<typeof getEmpresa>>;
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   let ejecutivos: Awaited<ReturnType<typeof listEjecutivos>> = [];
+  let contactos: Awaited<ReturnType<typeof getContactos>> = { personas: [], canales: [], clientes: [] };
+  let historial: EntradaHistorial[] = [];
   try {
-    [ficha, status, ejecutivos] = await Promise.all([
+    [ficha, status, ejecutivos, contactos, historial] = await Promise.all([
       getEmpresa(id),
       getPhotoStatus(),
       pestana === "datos" && puedeEditar ? listEjecutivos() : Promise.resolve([]),
+      ["resumen", "contactos", "actividad"].includes(pestana) ? getContactos(id) : Promise.resolve(contactos),
+      pestana === "actividad" ? getHistorial(id, filtro) : pestana === "resumen" ? getHistorial(id) : Promise.resolve([]),
     ]);
   } catch (e) {
     const c = codigoDeError("ficha de cliente", e);
@@ -98,6 +133,10 @@ export default async function FichaClientePage({ params, searchParams }: { param
   if (!ficha) notFound();
 
   const { empresa: e, clientes, creditos, resumen: r } = ficha;
+  const principal = contactos.personas.find((p) => p.esPrincipal && p.vigente) ?? null;
+  const canalesPrincipal = principal
+    ? contactos.canales.filter((k) => k.personaId === principal.id && k.estatus === "activo").map((k) => (k.tipo === "telefono" ? formatTelefono(k.valor) : k.valor))
+    : [];
   const vigentes = creditos.filter((c) => c.enListado);
   const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Mexico_City" }).format(new Date());
 
@@ -215,20 +254,106 @@ export default async function FichaClientePage({ params, searchParams }: { param
               )}
             </Card>
 
-            <Card>
-              <div className="mb-3 flex items-baseline justify-between">
-                <h2 className="text-lg font-bold">Datos de la empresa</h2>
-                {puedeEditar && <Link href={`${BASE}/${id}?tab=datos`} className="text-sm text-finbra-purple hover:underline">Editar</Link>}
-              </div>
-              <dl className="space-y-2 text-sm">
-                <Dato etiqueta="Nombre comercial">{e.nombreComercial}</Dato>
-                <Dato etiqueta="Sitio web">{e.sitioWeb}</Dato>
-                <Dato etiqueta="Números de cliente">{e.numerosCliente.length ? <span className="font-mono">{e.numerosCliente.join(", ")}</span> : null}</Dato>
-                <Dato etiqueta="Notas">{e.notas && <span className="whitespace-pre-line">{e.notas}</span>}</Dato>
-              </dl>
-            </Card>
+            <div className="space-y-6">
+              <Card>
+                <div className="mb-3 flex items-baseline justify-between">
+                  <h2 className="text-lg font-bold">Contacto principal</h2>
+                  <Link href={`${BASE}/${id}?tab=contactos`} className="text-sm text-finbra-purple hover:underline">Contactos →</Link>
+                </div>
+                {principal ? (
+                  <div className="space-y-1 text-sm">
+                    <p className="font-semibold">
+                      {principal.nombre}
+                      {principal.puesto && <span className="font-normal text-finbra-gray"> · {principal.puesto}</span>}
+                    </p>
+                    {principal.rolDecision && <p className="text-finbra-gray">{ROLES_DECISION[principal.rolDecision]}</p>}
+                    {(principal.canalPreferido || principal.horarioPreferido) && (
+                      <p className="text-finbra-gray">
+                        Prefiere {principal.canalPreferido ? CANALES[principal.canalPreferido] : "contacto"}
+                        {principal.horarioPreferido ? `, ${principal.horarioPreferido}` : ""}
+                      </p>
+                    )}
+                    {canalesPrincipal.length > 0 && <p className="font-mono text-xs">{canalesPrincipal.join(" · ")}</p>}
+                  </div>
+                ) : (
+                  <p className="text-sm text-finbra-gray">
+                    {contactos.personas.some((p) => p.vigente) ? "Ninguna persona está marcada como principal." : "Todavía no hay personas registradas."}
+                  </p>
+                )}
+              </Card>
+
+              <Card>
+                <div className="mb-3 flex items-baseline justify-between">
+                  <h2 className="text-lg font-bold">Última actividad</h2>
+                  <Link href={`${BASE}/${id}?tab=actividad`} className="text-sm text-finbra-purple hover:underline">{puedeEditar ? "Registrar →" : "Ver todo →"}</Link>
+                </div>
+                {historial.length === 0 ? (
+                  <p className="text-sm text-finbra-gray">Sin actividad registrada.</p>
+                ) : (
+                  <ol className="space-y-3 border-l border-black/10 pl-4">
+                    {historial.slice(0, 5).map((h) => (
+                      <Entrada key={h.id} e={h} />
+                    ))}
+                  </ol>
+                )}
+              </Card>
+
+              <Card>
+                <div className="mb-3 flex items-baseline justify-between">
+                  <h2 className="text-lg font-bold">Datos de la empresa</h2>
+                  {puedeEditar && <Link href={`${BASE}/${id}?tab=datos`} className="text-sm text-finbra-purple hover:underline">Editar</Link>}
+                </div>
+                <dl className="space-y-2 text-sm">
+                  <Dato etiqueta="Nombre comercial">{e.nombreComercial}</Dato>
+                  <Dato etiqueta="Sitio web">{e.sitioWeb}</Dato>
+                  <Dato etiqueta="Números de cliente">{e.numerosCliente.length ? <span className="font-mono">{e.numerosCliente.join(", ")}</span> : null}</Dato>
+                  <Dato etiqueta="Notas">{e.notas && <span className="whitespace-pre-line">{e.notas}</span>}</Dato>
+                </dl>
+              </Card>
+            </div>
           </div>
         </>
+      )}
+
+      {pestana === "contactos" && <ContactosEmpresa empresaId={id} personas={contactos.personas} canales={contactos.canales} puedeEditar={puedeEditar} />}
+
+      {pestana === "actividad" && (
+        <div className="space-y-6">
+          {puedeEditar && (
+            <Card>
+              <h2 className="mb-3 text-lg font-bold">Registrar actividad</h2>
+              <RegistrarActividad empresaId={id} personas={contactos.personas.filter((p) => p.vigente).map((p) => ({ id: p.id, nombre: p.nombre }))} />
+            </Card>
+          )}
+          <Card>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-lg font-bold">Historial</h2>
+              <div className="flex flex-wrap gap-2">
+                {FILTROS_HISTORIAL.map((x) => (
+                  <Link
+                    key={x.value}
+                    href={x.value === "todo" ? `${BASE}/${id}?tab=actividad` : `${BASE}/${id}?tab=actividad&f=${x.value}`}
+                    className={`rounded-full px-3 py-1 text-sm font-medium ${filtro === x.value ? "bg-finbra-purple text-white" : "bg-black/5 text-finbra-gray hover:bg-black/10"}`}
+                  >
+                    {x.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            {historial.length === 0 ? (
+              <p className="text-sm text-finbra-gray">{filtro === "todo" ? "Todavía no hay actividad." : "Nada con este filtro."}</p>
+            ) : (
+              <ol className="space-y-4 border-l border-black/10 pl-4">
+                {historial.map((h) => (
+                  <Entrada key={h.id} e={h} />
+                ))}
+              </ol>
+            )}
+            <p className="mt-4 text-xs text-finbra-gray">
+              Une la actividad comercial con el expediente de cobranza (gestiones, promesas, WhatsApp) y lo que detecta SIAC (pagos, atrasos). Nada se puede editar ni borrar.
+            </p>
+          </Card>
+        </div>
       )}
 
       {pestana === "creditos" && (
