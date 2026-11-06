@@ -142,6 +142,53 @@ CREATE TABLE IF NOT EXISTS crm_tareas (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_tareas_dedupe ON crm_tareas(dedupe_key) WHERE estado = 'abierta' AND dedupe_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_crm_tareas_pendientes ON crm_tareas(responsable_email, vence_el) WHERE estado = 'abierta';
 CREATE INDEX IF NOT EXISTS idx_crm_tareas_empresa ON crm_tareas(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_crm_tareas_dedupe_todas ON crm_tareas(dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+-- Radar de renovación (agregado el 2026-11-05). Lo corre el cron después de la
+-- foto diaria (lib/db/renovaciones.ts); las reglas están en lib/clientes/renovaciones.ts.
+INSERT INTO crm_settings (key, value, descripcion) VALUES
+  ('renovaciones',
+   '{"activo": true, "ventanas": [90, 60, 30], "atraso_maximo_historico": 15, "veces_mora_max": 2}',
+   'Radar de renovación. activo: prende o apaga el radar automático. ventanas: días antes del fin del plazo en que se abre la oportunidad (la mayor) y se recuerda (las demás). atraso_maximo_historico y veces_mora_max: compuertas de comportamiento de pago para calificar.')
+ON CONFLICT (key) DO NOTHING;
+
+-- Oportunidad comercial. Solo autoriza a contactar al cliente: NO es una
+-- aprobación de crédito, y el monto de referencia no es una oferta.
+CREATE TABLE IF NOT EXISTS crm_oportunidades (
+  id BIGSERIAL PRIMARY KEY,
+  empresa_id UUID NOT NULL REFERENCES crm_empresas(id) ON DELETE CASCADE,
+  -- Crédito que la originó (el que está por terminar).
+  credit_id UUID REFERENCES col_credits(id) ON DELETE SET NULL,
+  -- Incremento y reactivación llegan después.
+  tipo TEXT NOT NULL DEFAULT 'renovacion' CHECK (tipo IN ('renovacion')),
+  -- abierta: nadie la ha trabajado; en_contacto e interesado: la trabaja el
+  -- ejecutivo; ganada: pasó a análisis de crédito; descartada: la cerró una
+  -- persona con un motivo; cerrada: la cerró el radar (cayó en mora o el
+  -- crédito salió del listado).
+  estado TEXT NOT NULL DEFAULT 'abierta' CHECK (estado IN ('abierta', 'en_contacto', 'interesado', 'ganada', 'descartada', 'cerrada')),
+  origen TEXT NOT NULL DEFAULT 'radar' CHECK (origen IN ('radar')),
+  fecha_termino DATE,
+  -- Monto original del crédito que termina. Referencia preliminar, no oferta.
+  monto_referencia NUMERIC(14, 2),
+  -- Foto de SIAC con la que se calculó.
+  fecha_corte DATE NOT NULL,
+  -- Por qué califica, en texto, para mostrarlo tal cual.
+  razones JSONB NOT NULL DEFAULT '[]',
+  responsable_email TEXT REFERENCES admin_users(email) ON UPDATE CASCADE,
+  motivo_cierre TEXT,
+  cerrada_por TEXT,
+  cerrada_at TIMESTAMPTZ,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Una abierta por empresa y tipo, y el radar abre a lo más una por crédito
+-- (si se descarta o se cierra, ese crédito ya no vuelve a generar otra).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_oportunidades_abierta ON crm_oportunidades(empresa_id, tipo) WHERE estado IN ('abierta', 'en_contacto', 'interesado');
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_oportunidades_credito ON crm_oportunidades(credit_id, tipo) WHERE origen = 'radar';
+CREATE INDEX IF NOT EXISTS idx_crm_oportunidades_empresa ON crm_oportunidades(empresa_id);
 
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
@@ -166,3 +213,4 @@ ALTER TABLE crm_empresas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_personas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_actividades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_tareas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_oportunidades ENABLE ROW LEVEL SECURITY;

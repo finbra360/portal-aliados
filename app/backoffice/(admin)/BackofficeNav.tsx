@@ -26,7 +26,10 @@ const NAV: NavEntry[] = [
     label: "Clientes",
     icon: <IconBuilding />,
     roles: PERMISOS["cartera.ver"].roles,
-    items: [{ href: "/backoffice/clientes", label: "Todos los clientes" }],
+    items: [
+      { href: "/backoffice/clientes", label: "Todos los clientes", excluir: ["/backoffice/clientes/renovaciones"] },
+      { href: "/backoffice/clientes/renovaciones", label: "Renovaciones" },
+    ],
   },
   {
     type: "group",

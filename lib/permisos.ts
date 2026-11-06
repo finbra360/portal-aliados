@@ -13,7 +13,7 @@ import type { AdminRole } from "./db/admin-users.ts";
 import type { AdminSessionPayload } from "./admin-auth.ts";
 import { ForbiddenError } from "./rbac.ts";
 
-export type Permiso = "cartera.ver" | "clientes.editar" | "cobranza.operar" | "cobranza.configurar";
+export type Permiso = "cartera.ver" | "clientes.editar" | "clientes.configurar" | "cobranza.operar" | "cobranza.configurar";
 
 export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly AdminRole[] }> = {
   "cartera.ver": {
@@ -24,6 +24,10 @@ export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly Ad
   "clientes.editar": {
     descripcion: "Editar los datos de la empresa en Clientes: nombre, razón social, RFC, industria, ejecutivo y notas. No toca nada de SIAC.",
     roles: ["super_admin", "finanzas", "comercial"],
+  },
+  "clientes.configurar": {
+    descripcion: "Correr a mano el radar de renovación (normalmente lo corre el cron después de la foto diaria).",
+    roles: ["super_admin"],
   },
   "cobranza.operar": {
     descripcion:

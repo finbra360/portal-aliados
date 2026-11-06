@@ -10,6 +10,8 @@ import { validarActividad, validarPersona } from "@/lib/clientes/personas";
 import { TareaError, cerrarTarea, crearTarea } from "@/lib/db/tareas";
 import { validarTarea } from "@/lib/clientes/tareas";
 import { fechaMexico } from "@/lib/collections/rules";
+import { OportunidadError, cambiarEstadoOportunidad } from "@/lib/db/renovaciones";
+import { ESTADOS_OPORTUNIDAD, type EstadoOportunidad } from "@/lib/clientes/renovaciones";
 
 export type EmpresaActionResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -46,7 +48,7 @@ async function conPermiso(etiqueta: string, mensajeOk: string, fn: (actor: strin
   try {
     await fn(admin.email);
   } catch (e) {
-    if (e instanceof PersonaError || e instanceof TareaError) return { ok: false, error: e.message };
+    if (e instanceof PersonaError || e instanceof TareaError || e instanceof OportunidadError) return { ok: false, error: e.message };
     const c = codigoDeError(`clientes: ${etiqueta}`, e);
     return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
   }
@@ -94,5 +96,16 @@ export async function cerrarTareaAction(empresaId: string, tareaId: string, esta
   if (estado !== "hecha" && estado !== "cancelada") return { ok: false, error: "Estado no válido." };
   const r = await conPermiso("cerrar tarea", estado === "hecha" ? "Tarea hecha." : "Tarea cancelada.", (actor) => cerrarTarea({ empresaId, tareaId, estado, resultado, actor }));
   if (r.ok) revalidatePath("/backoffice/inicio");
+  return r;
+}
+
+// ---------------------------------------------------------------- oportunidades
+
+export async function cambiarOportunidadAction(empresaId: string, id: string, estado: string, motivo: string): Promise<EmpresaActionResult> {
+  const etiqueta = ESTADOS_OPORTUNIDAD[estado as EstadoOportunidad] ?? "Listo";
+  const r = await conPermiso("cambiar oportunidad", `Oportunidad: ${etiqueta.toLowerCase()}.`, (actor) => cambiarEstadoOportunidad({ empresaId, id, estado, motivo, actor }));
+  if (r.ok) {
+    revalidatePath("/backoffice/inicio");
+  }
   return r;
 }

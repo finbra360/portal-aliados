@@ -24,6 +24,10 @@ import { TIPOS_TAREA } from "@/lib/clientes/tareas";
 import PlazoChip from "../PlazoChip";
 import NuevaTarea from "./NuevaTarea";
 import CerrarTarea from "./CerrarTarea";
+import MoverOportunidad from "./MoverOportunidad";
+import OportunidadChip from "../OportunidadChip";
+import { getAjustesRenovacion, getOportunidadesEmpresa, type Oportunidad } from "@/lib/db/renovaciones";
+import { AJUSTES_RENOVACION_DEFAULT, diasParaFin, estaAbierta, evaluarRenovacion, type AjustesRenovacion, type CreditoRenovacion } from "@/lib/clientes/renovaciones";
 
 const BASE = "/backoffice/clientes";
 const PESTANAS = [
@@ -59,6 +63,135 @@ function Entrada({ e }: { e: EntradaHistorial }) {
   );
 }
 type Pestana = (typeof PESTANAS)[number]["value"];
+
+const aRenovacion = (c: FichaCredito): CreditoRenovacion => ({
+  creditId: c.creditId,
+  empresaId: c.empresaId,
+  noCredito: c.noCredito,
+  enListado: c.enListado,
+  fechaTermino: c.fechaTermino,
+  montoCredito: c.montoCredito,
+  atraso: c.atraso,
+  vencido: c.vencido,
+  atrasoMaximo: c.atrasoMaximo,
+  vecesMora: c.vecesMora,
+  etapaManual: c.etapaManual,
+  cubiertos: c.cubiertos,
+  vencimientos: c.vencimientos,
+});
+
+/**
+ * Tarjeta de renovación del Resumen: la oportunidad abierta con sus botones o,
+ * si no hay, si el crédito que está por terminar califica y por qué. No se
+ * muestra si nada termina dentro de la ventana y no hay oportunidades.
+ */
+function Renovacion({
+  empresaId,
+  creditos,
+  oportunidades,
+  ajustes,
+  hoy,
+  puedeEditar,
+}: {
+  empresaId: string;
+  creditos: FichaCredito[];
+  oportunidades: Oportunidad[];
+  ajustes: AjustesRenovacion;
+  hoy: string;
+  puedeEditar: boolean;
+}) {
+  const abierta = oportunidades.find((o) => estaAbierta(o.estado));
+  const mayor = Math.max(...ajustes.ventanas);
+  const vigentes = creditos.filter((c) => c.enListado).map(aRenovacion);
+  const proximo = vigentes
+    .filter((c) => c.fechaTermino && diasParaFin(c.fechaTermino, hoy) >= 0 && diasParaFin(c.fechaTermino, hoy) <= mayor)
+    .sort((a, b) => a.fechaTermino!.localeCompare(b.fechaTermino!))[0];
+  const ultima = oportunidades[0];
+  if (!abierta && !proximo && !ultima) return null;
+
+  const encabezado = (
+    <div className="mb-3 flex items-baseline justify-between gap-2">
+      <h2 className="text-lg font-bold">Renovación</h2>
+      <Link href="/backoffice/clientes/renovaciones" className="text-sm text-finbra-purple hover:underline">Radar →</Link>
+    </div>
+  );
+
+  if (abierta) {
+    const d = abierta.fechaTermino ? diasParaFin(abierta.fechaTermino, hoy) : null;
+    return (
+      <Card>
+        {encabezado}
+        <div className="space-y-3 text-sm">
+          <p className="flex flex-wrap items-center gap-2">
+            <OportunidadChip estado={abierta.estado} />
+            <span className="text-finbra-gray">· {abierta.responsableNombre ?? abierta.responsableEmail ?? "Sin responsable"}</span>
+          </p>
+          <p>
+            El crédito <span className="font-mono font-semibold">{abierta.noCredito ?? "—"}</span>
+            {abierta.fechaTermino && <> termina el {formatFecha(abierta.fechaTermino)}{d !== null && d >= 0 && <> (en {d} {d === 1 ? "día" : "días"})</>}</>}.
+          </p>
+          {abierta.montoReferencia !== null && (
+            <p>
+              <span className="text-finbra-gray">Monto de referencia: </span>
+              <span className="font-semibold">{formatMoney(abierta.montoReferencia)}</span>
+              <span className="block text-xs text-finbra-gray">Preliminar. Sujeto a análisis de crédito y políticas; no es una oferta.</span>
+            </p>
+          )}
+          {abierta.razones.length > 0 && (
+            <ul className="space-y-0.5 text-xs text-emerald-800">
+              {abierta.razones.map((r) => (
+                <li key={r}>✓ {r}</li>
+              ))}
+            </ul>
+          )}
+          {puedeEditar && <MoverOportunidad empresaId={empresaId} id={abierta.id} estado={abierta.estado} />}
+          <p className="text-xs text-finbra-gray">La abrió el radar con la foto del {formatFecha(abierta.fechaCorte)}.</p>
+        </div>
+      </Card>
+    );
+  }
+
+  const cerradaDelProximo = proximo ? oportunidades.find((o) => o.creditId === proximo.creditId) : undefined;
+  const ev = proximo ? evaluarRenovacion(proximo, vigentes, ajustes, hoy) : null;
+  return (
+    <Card>
+      {encabezado}
+      <div className="space-y-2 text-sm">
+        {proximo && (
+          <p>
+            El crédito <span className="font-mono font-semibold">{proximo.noCredito}</span> termina el {formatFecha(proximo.fechaTermino)} (en {diasParaFin(proximo.fechaTermino!, hoy)} días).
+          </p>
+        )}
+        {cerradaDelProximo || (!proximo && ultima) ? (
+          (() => {
+            const o = cerradaDelProximo ?? ultima!;
+            return (
+              <p className="text-finbra-gray">
+                <OportunidadChip estado={o.estado} />
+                <span className="ml-2">
+                  {o.noCredito && <>Crédito <span className="font-mono">{o.noCredito}</span>. </>}
+                  {o.motivoCierre}
+                  {o.cerradaAt && <> · {formatFechaHora(o.cerradaAt)}</>}
+                </span>
+              </p>
+            );
+          })()
+        ) : ev?.califica ? (
+          <p className="text-emerald-800">Califica para ofrecerle renovar. La oportunidad se abre en la próxima revisión del radar.</p>
+        ) : ev ? (
+          <>
+            <p className="font-semibold text-red-700">No califica para ofrecerle renovar:</p>
+            <ul className="space-y-0.5 text-xs text-red-700">
+              {ev.motivos.map((m) => (
+                <li key={m}>✗ {m}</li>
+              ))}
+            </ul>
+          </>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
 
 /** Una tarea abierta: fecha, qué hay que hacer, responsable y, si se puede, los botones para cerrarla. */
 function TareaAbierta({ t, hoy, empresaId, puedeEditar }: { t: Tarea; hoy: string; empresaId: string; puedeEditar: boolean }) {
@@ -141,14 +274,18 @@ export default async function FichaClientePage({ params, searchParams }: { param
   let contactos: Awaited<ReturnType<typeof getContactos>> = { personas: [], canales: [], clientes: [] };
   let historial: EntradaHistorial[] = [];
   let tareas: Awaited<ReturnType<typeof getTareasEmpresa>> = { abiertas: [], cerradas: [] };
+  let oportunidades: Oportunidad[] = [];
+  let ajustesRenovacion: AjustesRenovacion = AJUSTES_RENOVACION_DEFAULT;
   try {
-    [ficha, status, ejecutivos, contactos, historial, tareas] = await Promise.all([
+    [ficha, status, ejecutivos, contactos, historial, tareas, oportunidades, ajustesRenovacion] = await Promise.all([
       getEmpresa(id),
       getPhotoStatus(),
       (pestana === "datos" || pestana === "tareas") && puedeEditar ? listEjecutivos() : Promise.resolve([]),
       ["resumen", "contactos", "actividad"].includes(pestana) ? getContactos(id) : Promise.resolve(contactos),
       pestana === "actividad" ? getHistorial(id, filtro) : pestana === "resumen" ? getHistorial(id) : Promise.resolve([]),
       pestana === "resumen" || pestana === "tareas" ? getTareasEmpresa(id) : Promise.resolve(tareas),
+      pestana === "resumen" ? getOportunidadesEmpresa(id) : Promise.resolve([]),
+      pestana === "resumen" ? getAjustesRenovacion() : Promise.resolve(ajustesRenovacion),
     ]);
   } catch (e) {
     const c = codigoDeError("ficha de cliente", e);
@@ -280,6 +417,8 @@ export default async function FichaClientePage({ params, searchParams }: { param
             </Card>
 
             <div className="space-y-6">
+              <Renovacion empresaId={id} creditos={creditos} oportunidades={oportunidades} ajustes={ajustesRenovacion} hoy={hoy} puedeEditar={puedeEditar} />
+
               <Card>
                 <div className="mb-3 flex items-baseline justify-between">
                   <h2 className="text-lg font-bold">Contacto principal</h2>
