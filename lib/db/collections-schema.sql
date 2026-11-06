@@ -536,6 +536,29 @@ ALTER TABLE col_alerts ADD CONSTRAINT col_alerts_tipo_check CHECK (tipo IN (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_col_alerts_abiertas ON col_alerts(dedupe_key) WHERE estado = 'abierta';
 CREATE INDEX IF NOT EXISTS idx_col_alerts_client ON col_alerts(client_id);
 
+-- Recordatorios de cobranza por correo (preventivos y mora). El backoffice arma
+-- cada correo y n8n lo manda con la cuenta de Gmail "Correo Cobranza". Igual
+-- que en WhatsApp, `dedupe_key` es única: un segundo intento del mismo
+-- recordatorio falla en la base antes de llegar a n8n.
+CREATE TABLE IF NOT EXISTS col_email_messages (
+  id BIGSERIAL PRIMARY KEY,
+  client_id UUID REFERENCES col_clients(id) ON DELETE CASCADE,
+  credit_id UUID REFERENCES col_credits(id) ON DELETE CASCADE,
+  destinatarios TEXT[] NOT NULL,
+  asunto TEXT NOT NULL,
+  cuerpo_html TEXT NOT NULL,
+  origen TEXT NOT NULL CHECK (origen IN ('recordatorio_mora', 'recordatorio_preventivo', 'prueba')),
+  estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'enviado', 'fallido')),
+  error TEXT,
+  -- Id del mensaje en Gmail, cuando n8n lo manda.
+  gmail_id TEXT,
+  dedupe_key TEXT NOT NULL UNIQUE,
+  enviado_por TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  estado_actualizado_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_col_email_client ON col_email_messages(client_id, created_at DESC);
+
 -- Timeline del expediente: gestiones humanas y hitos del sistema, en orden.
 -- Solo se escribe. Los detalles viven en su tabla (mensaje, promesa, evento,
 -- alerta) y aquí se referencian, en la misma transacción que los crea.
@@ -600,3 +623,4 @@ ALTER TABLE col_wa_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE col_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE col_activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE col_payment_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE col_email_messages ENABLE ROW LEVEL SECURITY;

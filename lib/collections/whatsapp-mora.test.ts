@@ -45,6 +45,7 @@ const cliente = (over: Partial<MoraCandidate> = {}): MoraCandidate => ({
   cuenta: { banco: "Banco Ficticio", beneficiario: "Finbra Demo", clabe: CLABE },
   contactos: [tel()],
   contactoCobranzaId: null,
+  correos: ["pagos@empresa-ficticia.mx"],
   yaSeIntentoHoy: false,
   ultimaPlantilla: null,
   ...over,

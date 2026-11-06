@@ -14,6 +14,11 @@ export interface DatosReporte {
     mora: { enviados: number; fallidos: number; bloqueo: string | null };
     preventivos: { enviados: number; fallidos: number; bloqueo: string | null };
   };
+  /** Recordatorios por correo (vía n8n). Opcional para reportes de antes de los correos. */
+  correos?: {
+    mora: { enviados: number; fallidos: number; bloqueo: string | null };
+    preventivos: { enviados: number; fallidos: number; bloqueo: string | null };
+  };
   chat: { sinLeer: number; conversaciones: number; horasMasAntiguo: number | null };
   alertas: { abiertas: number; criticas: number };
 }
@@ -65,6 +70,8 @@ export function armarReporte(d: DatosReporte): string {
   }
 
   l.push("", "*WhatsApp*", lineaEnvios("Recordatorios de mora", d.whatsapp.mora), lineaEnvios("Preventivos", d.whatsapp.preventivos));
+  const correos = d.correos;
+  if (correos) l.splice(l.length, 0, "", "*Correo*", lineaEnvios("Recordatorios de mora", correos.mora), lineaEnvios("Preventivos", correos.preventivos), "", "*Chat de WhatsApp*");
   if (d.chat.sinLeer) {
     const desde = d.chat.horasMasAntiguo !== null && d.chat.horasMasAntiguo >= 1 ? `; el más antiguo, hace ${plural(d.chat.horasMasAntiguo, "hora", "horas")}` : "";
     l.push(`• :speech_balloon: ${plural(d.chat.sinLeer, "mensaje sin leer", "mensajes sin leer")} en ${plural(d.chat.conversaciones, "conversación", "conversaciones")}${desde} → <${d.urlBase}/cobranza/chat|Chat>`);

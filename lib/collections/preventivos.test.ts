@@ -12,6 +12,7 @@ import {
   type PreventivoCandidate,
 } from "./preventivos.ts";
 import { contarVariables } from "./whatsapp-mora.ts";
+import { diasCubiertos } from "./dias-habiles.ts";
 
 const HOY = "2026-10-15";
 const ACTIVAS = ["finbra_preventivo_5d", "finbra_preventivo_1d", "finbra_preventivo_dia"];
@@ -32,6 +33,7 @@ const cand = (over: Partial<PreventivoCandidate> = {}): PreventivoCandidate => (
     { id: "k1", relacion: "titular", rol: null, tipo: "telefono", telefonoWhatsapp: "525511112222", estatus: "activo", bajaWhatsappAt: null, esPrincipal: true, nombre: null },
   ],
   contactoCobranzaId: null,
+  correos: ["pagos@empresa-ficticia.mx"],
   yaSeIntento: false,
   monto: 18500,
   cuenta: { banco: "Banco Ficticio", beneficiario: "Finbra Demo", clabe: CLABE },
@@ -70,6 +72,7 @@ test("preventivo: arma la plantilla del día con nombre, monto y fecha", () => {
     etapa: "dia",
     semaforo: "verde",
     aviso: null,
+    adelantado: false,
     enviar: true,
     contactId: "k1",
     telefono: "525511112222",
@@ -115,4 +118,27 @@ test("plantillas preventivas que se dan de alta en Meta", () => {
 test("preventivo: avisa si pagó hace poco (posible pago adelantado)", () => {
   assert.match(decidir(cand({ fechaUltimoPago: "2026-10-01" }))!.aviso!, /revisa si ya cubrió/);
   assert.equal(decidir(cand({ fechaUltimoPago: "2026-09-15" }))!.aviso, null);
+});
+
+test("viernes: lo del fin de semana se adelanta con un texto que sigue siendo cierto", () => {
+  const VIERNES = "2026-11-06";
+  const cubiertos = diasCubiertos(VIERNES); // viernes, sábado y domingo
+  const d = (venc: string, over: Partial<PreventivoCandidate> = {}) =>
+    decidirPreventivo(cand({ proximoVencimiento: venc, historial: { vecesMora: 3, atrasoMaximo: 40 }, ...over }), { hoy: VIERNES, plantillasActivas: ACTIVAS, cubiertos });
+  // Vence el sábado: tocaban "1 día antes" (viernes) y "el día" (sábado); va el más cercano, con el texto de "mañana".
+  const sab = d("2026-11-07")!;
+  assert.equal(sab.etapa, "dia");
+  assert.equal(sab.adelantado, true);
+  assert.equal(sab.enviar && sab.plantilla, "finbra_preventivo_1d");
+  // Vence el lunes: el "1 día antes" del domingo sale el viernes con la plantilla que trae la fecha.
+  const lun = d("2026-11-09")!;
+  assert.equal(lun.etapa, "1d");
+  assert.equal(lun.enviar && lun.plantilla, "finbra_preventivo_5d");
+  // Vence el viernes siguiente: el "5 días antes" del domingo se adelanta; uno del lunes no.
+  assert.equal(d("2026-11-13")!.etapa, "5d");
+  assert.equal(d("2026-11-14"), null, "su 5 días antes es el lunes: ese día sale");
+  // Un verde no recibe el adelantado de 1 día, pero sí el del día del pago.
+  assert.match((d("2026-11-09", { historial: { vecesMora: 0, atrasoMaximo: 0 } }) as { motivo: string }).motivo, /verde/);
+  assert.equal(d("2026-11-08", { historial: { vecesMora: 0, atrasoMaximo: 0 } })!.enviar, true);
+  assert.equal(etapaPara("2026-11-06", "2026-11-08", cubiertos), "dia");
 });

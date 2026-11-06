@@ -67,11 +67,31 @@ export function semaforo(h: { vecesMora: number; atrasoMaximo: number }, u: Umbr
   return "verde";
 }
 
-/** Qué recordatorio toca hoy para un vencimiento, o null si ninguno. */
-export function etapaPara(hoy: string, proximoVencimiento: string | null): Etapa | null {
+/**
+ * Qué recordatorio toca hoy para un vencimiento, o null si ninguno.
+ * `cubiertos`: hoy y los días inhábiles que le siguen (ver dias-habiles); lo
+ * que tocaría en uno de esos días se adelanta a hoy. Si toca más de uno, va el
+ * más cercano al vencimiento.
+ */
+export function etapaPara(hoy: string, proximoVencimiento: string | null, cubiertos: string[] = [hoy]): Etapa | null {
   if (!proximoVencimiento) return null;
+  let mejor: Etapa | null = null;
+  for (const dia of cubiertos) {
+    const d = daysBetween(dia, proximoVencimiento);
+    const e = (Object.keys(ETAPAS) as Etapa[]).find((x) => ETAPAS[x].dias === d);
+    if (e && (mejor === null || ETAPAS[e].dias < ETAPAS[mejor].dias)) mejor = e;
+  }
+  return mejor;
+}
+
+/**
+ * La plantilla cuyo texto es cierto hoy: "hoy vence" solo si vence hoy y
+ * "vence mañana" solo si vence mañana; si no, la de 5 días, que trae la fecha.
+ * Importa cuando un recordatorio se adelanta (el viernes, uno del domingo).
+ */
+export function etapaDelTexto(hoy: string, proximoVencimiento: string): Etapa {
   const d = daysBetween(hoy, proximoVencimiento);
-  return (Object.keys(ETAPAS) as Etapa[]).find((e) => ETAPAS[e].dias === d) ?? null;
+  return d <= 0 ? "dia" : d === 1 ? "1d" : "5d";
 }
 
 /**
@@ -107,6 +127,8 @@ export interface PreventivoCandidate {
   pausaHasta: string | null;
   contactos: (ContactLike & { nombre: string | null })[];
   contactoCobranzaId: string | null;
+  /** Correos activos del deudor (titular), para el recordatorio por correo. */
+  correos: string[];
   /** Ya tiene registrado este recordatorio (mismo crédito, etapa y vencimiento). */
   yaSeIntento: boolean;
   /** Monto de la mensualidad según SIAC, o null si SIAC todavía no lo da. */
@@ -115,7 +137,11 @@ export interface PreventivoCandidate {
   cuenta: { banco: string; beneficiario: string; clabe: string } | null;
 }
 
-export type PreventivoDecision = { etapa: Etapa; semaforo: Semaforo; aviso: string | null } & (
+/**
+ * etapa: el recordatorio que toca (decide el semáforo y evita repetirlo).
+ * adelantado: tocaba en un día inhábil siguiente y sale hoy.
+ */
+export type PreventivoDecision = { etapa: Etapa; semaforo: Semaforo; aviso: string | null; adelantado: boolean } & (
   | { enviar: true; contactId: string; telefono: string; plantilla: string; parametros: string[] }
   | { enviar: false; motivo: string }
 );
@@ -131,15 +157,12 @@ export const MOTIVO_FALTA_MONTO = "Falta consultar a SIAC el monto de la mensual
 /** Días entre el último pago y el vencimiento para avisar que tal vez ya pagó por adelantado. */
 export const DIAS_PAGO_RECIENTE = 20;
 
-/**
- * Decide el recordatorio preventivo de hoy para un crédito. Regresa null si hoy
- * no le toca ninguno (no vence en 5, 1 o 0 días).
- */
-export function decidirPreventivo(
+/** Qué recordatorio toca, el semáforo y el aviso de pago reciente; null si hoy no le toca ninguno. */
+export function baseDecision(
   c: PreventivoCandidate,
-  p: { hoy: string; plantillasActivas: string[]; umbrales?: UmbralesSemaforo },
-): PreventivoDecision | null {
-  const etapa = etapaPara(p.hoy, c.proximoVencimiento);
+  p: { hoy: string; umbrales?: UmbralesSemaforo; cubiertos?: string[] },
+): { etapa: Etapa; s: Semaforo; aviso: string | null; adelantado: boolean } | null {
+  const etapa = etapaPara(p.hoy, c.proximoVencimiento, p.cubiertos?.length ? p.cubiertos : [p.hoy]);
   if (!etapa) return null;
   const s = semaforo(c.historial, p.umbrales);
   // SIAC todavía no confirma si ProximoVencimiento avanza cuando el cliente paga
@@ -148,28 +171,59 @@ export function decidirPreventivo(
     c.fechaUltimoPago && c.proximoVencimiento && daysBetween(c.fechaUltimoPago, c.proximoVencimiento) <= DIAS_PAGO_RECIENTE
       ? `Pagó el ${c.fechaUltimoPago}: revisa si ya cubrió esta mensualidad`
       : null;
-  const no = (motivo: string): PreventivoDecision => ({ etapa, semaforo: s, aviso, enviar: false, motivo });
+  const adelantado = daysBetween(p.hoy, c.proximoVencimiento!) !== ETAPAS[etapa].dias;
+  return { etapa, s, aviso, adelantado };
+}
 
-  if (c.etapaManual === "juridico") return no("En jurídico");
-  if (c.etapaManual === "reestructura") return no("En reestructura");
-  if (c.pausaHasta && c.pausaHasta >= p.hoy) return no("Cobranza pausada");
-  if (c.enMora) return no("En mora: recibe el recordatorio de mora");
+/** Lo que impide escribirle por cualquier canal (WhatsApp o correo), o null. */
+export function motivoComunPreventivo(c: PreventivoCandidate, etapa: Etapa, s: Semaforo, hoy: string): string | null {
+  if (c.etapaManual === "juridico") return "En jurídico";
+  if (c.etapaManual === "reestructura") return "En reestructura";
+  if (c.pausaHasta && c.pausaHasta >= hoy) return "Cobranza pausada";
+  if (c.enMora) return "En mora: recibe el recordatorio de mora";
   const porSemaforo = motivoSemaforo(etapa, s);
-  if (porSemaforo) return no(porSemaforo);
-  if (!c.cuenta) return no("Sin cuenta de pago");
+  if (porSemaforo) return porSemaforo;
+  if (!c.cuenta) return "Sin cuenta de pago";
+  return null;
+}
+
+export function motivoMonto(monto: number | null): string | null {
+  if (monto === null) return MOTIVO_FALTA_MONTO;
+  if (monto <= 0) return "SIAC no reporta nada por pagar en esa fecha (¿ya pagó?)";
+  return null;
+}
+
+/**
+ * Decide el recordatorio preventivo de hoy para un crédito. Regresa null si hoy
+ * no le toca ninguno (no vence en 5, 1 o 0 días, contando lo que se adelanta
+ * de los días inhábiles siguientes).
+ */
+export function decidirPreventivo(
+  c: PreventivoCandidate,
+  p: { hoy: string; plantillasActivas: string[]; umbrales?: UmbralesSemaforo; cubiertos?: string[] },
+): PreventivoDecision | null {
+  const base = baseDecision(c, p);
+  if (!base) return null;
+  const { etapa, s, aviso, adelantado } = base;
+  const no = (motivo: string): PreventivoDecision => ({ etapa, semaforo: s, aviso, adelantado, enviar: false, motivo });
+
+  const comun = motivoComunPreventivo(c, etapa, s, p.hoy);
+  if (comun) return no(comun);
   const rec = chooseRecipient(c.contactos, c.contactoCobranzaId);
   const k = c.contactos.find((x) => x.id === rec.contactId);
   if (!k?.telefonoWhatsapp) return no("Sin WhatsApp válido del deudor");
   if (c.yaSeIntento) return no("Ya se le envió este recordatorio");
-  const plantilla = ETAPAS[etapa].plantilla;
+  const plantilla = ETAPAS[etapaDelTexto(p.hoy, c.proximoVencimiento!)].plantilla;
   if (!p.plantillasActivas.includes(plantilla)) return no(`La plantilla ${plantilla} no está activa`);
-  if (c.monto === null) return no(MOTIVO_FALTA_MONTO);
-  if (c.monto <= 0) return no("SIAC no reporta nada por pagar en esa fecha (¿ya pagó?)");
+  const porMonto = motivoMonto(c.monto);
+  if (porMonto) return no(porMonto);
+  if (!c.cuenta || c.monto === null) return no("Sin cuenta de pago");
 
   return {
     etapa,
     semaforo: s,
     aviso,
+    adelantado,
     enviar: true,
     contactId: k.id,
     telefono: k.telefonoWhatsapp,

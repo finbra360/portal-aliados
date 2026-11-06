@@ -9,10 +9,11 @@ import { notifySlack } from "@/lib/collections/notify";
 import { fechaMexico } from "@/lib/collections/rules";
 import { armarReporte, type DatosReporte } from "@/lib/collections/reporte";
 import type { MoraRunResult } from "@/lib/db/whatsapp-mora";
+import type { CorreosRunResult } from "@/lib/db/correos-cobranza";
 
 const URL_BACKOFFICE = "https://backoffice.finbra.com";
 
-type ResultadoTanda = MoraRunResult | { error: string } | undefined;
+type ResultadoTanda = MoraRunResult | CorreosRunResult | { error: string } | undefined;
 
 function resumenTanda(origen: string, enviados: Map<string, { enviados: number; fallidos: number }>, tanda: ResultadoTanda) {
   const e = enviados.get(origen) ?? { enviados: 0, fallidos: 0 };
@@ -20,13 +21,20 @@ function resumenTanda(origen: string, enviados: Map<string, { enviados: number; 
   return { ...e, bloqueo };
 }
 
-export async function datosReporte(tandas: { mora?: ResultadoTanda; preventivos?: ResultadoTanda } = {}): Promise<DatosReporte> {
+export interface TandasReporte {
+  mora?: ResultadoTanda;
+  preventivos?: ResultadoTanda;
+  correoMora?: ResultadoTanda;
+  correoPreventivos?: ResultadoTanda;
+}
+
+export async function datosReporte(tandas: TandasReporte = {}): Promise<DatosReporte> {
   const hoy = fechaMexico();
   const ambiente = ambienteActual();
   const status = await getPhotoStatus();
   const fc = status.fechaCorte;
 
-  const [overview, eventos, promesasHoy, [incumplidas], envios, [chat]] = await Promise.all([
+  const [overview, eventos, promesasHoy, [incumplidas], envios, [chat], correosHoy] = await Promise.all([
     fc ? getCollectionsOverview(fc) : Promise.resolve(null),
     fc
       ? sql`
@@ -58,10 +66,17 @@ export async function datosReporte(tandas: { mora?: ResultadoTanda; preventivos?
              floor(extract(epoch FROM now() - min(created_at)) / 3600)::int AS horas
       FROM col_wa_messages WHERE direccion = 'entrante' AND leido_equipo_at IS NULL
     `,
+    sql`
+      SELECT origen, count(*) FILTER (WHERE estado <> 'fallido')::int AS enviados, count(*) FILTER (WHERE estado = 'fallido')::int AS fallidos
+      FROM col_email_messages
+      WHERE origen IN ('recordatorio_mora', 'recordatorio_preventivo') AND (created_at AT TIME ZONE 'America/Mexico_City')::date = ${hoy}::date
+      GROUP BY origen
+    `,
   ]);
 
   const porTipo = (t: string) => eventos.filter((e) => e.tipo === t);
   const porOrigen = new Map(envios.map((e) => [e.origen as string, { enviados: e.enviados as number, fallidos: e.fallidos as number }]));
+  const porOrigenCorreo = new Map(correosHoy.map((e) => [e.origen as string, { enviados: e.enviados as number, fallidos: e.fallidos as number }]));
   const ultima = status.ultimaCorrida;
   return {
     fecha: hoy,
@@ -85,6 +100,10 @@ export async function datosReporte(tandas: { mora?: ResultadoTanda; preventivos?
       mora: resumenTanda("recordatorio_mora", porOrigen, tandas.mora),
       preventivos: resumenTanda("recordatorio_preventivo", porOrigen, tandas.preventivos),
     },
+    correos: {
+      mora: resumenTanda("recordatorio_mora", porOrigenCorreo, tandas.correoMora),
+      preventivos: resumenTanda("recordatorio_preventivo", porOrigenCorreo, tandas.correoPreventivos),
+    },
     chat: { sinLeer: chat.sin_leer, conversaciones: chat.conversaciones, horasMasAntiguo: chat.sin_leer ? chat.horas : null },
     alertas: { abiertas: overview?.alertasAbiertas ?? 0, criticas: overview?.alertasCriticas ?? 0 },
   };
@@ -94,7 +113,7 @@ export async function datosReporte(tandas: { mora?: ResultadoTanda; preventivos?
  * Manda el reporte a Slack. Sin `forzar`, una sola vez al día: si el cron
  * corre de nuevo, no lo repite. Regresa false si ya se había mandado hoy.
  */
-export async function enviarReporteDiario(p: { tandas?: { mora?: ResultadoTanda; preventivos?: ResultadoTanda }; forzar?: boolean; actor: string }): Promise<boolean> {
+export async function enviarReporteDiario(p: { tandas?: TandasReporte; forzar?: boolean; actor: string }): Promise<boolean> {
   const hoy = fechaMexico();
   const ultimo = await getSetting<{ fecha?: string }>("reporte_diario", {});
   if (!p.forzar && ultimo.fecha === hoy) return false;
