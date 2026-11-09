@@ -21,3 +21,26 @@ export async function notifySlack(texto: string): Promise<void> {
     console.error("No se pudo mandar el aviso a Slack:", e);
   }
 }
+
+/**
+ * Aviso al canal de aliados (SLACK_ALIADOS_WEBHOOK_URL). Mismo trato que el de
+ * cobranza: si no está configurado o falla, solo queda en el log.
+ */
+export async function notifySlackAliados(texto: string): Promise<void> {
+  const url = process.env.SLACK_ALIADOS_WEBHOOK_URL;
+  if (!url) {
+    console.warn("SLACK_ALIADOS_WEBHOOK_URL no está configurado; aviso de aliados no enviado.");
+    return;
+  }
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: texto }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) console.error(`Slack respondió ${res.status} al aviso de aliados`);
+  } catch (e) {
+    console.error("No se pudo mandar el aviso de aliados a Slack:", e);
+  }
+}
