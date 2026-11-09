@@ -7,6 +7,7 @@ import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { openAlert } from "@/lib/collections/store";
 import { notifySlack } from "@/lib/collections/notify";
+import { procesarWebhookAliados } from "@/lib/db/aliados-chat";
 import { PLANTILLA_CONTACTO, RANGO_ESTADO, esBaja, leerWebhook, ventana, type MensajeEntrante } from "@/lib/collections/chat";
 import { motivoNoActivable, renderPlantilla } from "@/lib/collections/whatsapp-mora";
 import { WhatsAppError, descargarMedia, enviarPlantilla, enviarTexto, getWhatsAppConfig } from "@/lib/whatsapp/client";
@@ -106,6 +107,13 @@ async function guardarEntrante(m: MensajeEntrante) {
 
 /** Procesa un webhook de Meta: mensajes de clientes y estados de los mensajes enviados. */
 export async function procesarWebhook(body: unknown): Promise<{ mensajes: number; estados: number }> {
+  // La misma app de Meta recibe también el número de Aliados: eso va a su propio
+  // chat (ali_wa_messages). Un error ahí nunca detiene lo de cobranza.
+  try {
+    await procesarWebhookAliados(body);
+  } catch (e) {
+    console.error("WhatsApp de aliados: no se pudo procesar el webhook:", (e as Error).message);
+  }
   const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   if (!phoneNumberId) return { mensajes: 0, estados: 0 };
   const { mensajes, estados } = leerWebhook(body, phoneNumberId);

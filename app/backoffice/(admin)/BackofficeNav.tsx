@@ -38,13 +38,14 @@ const NAV: NavEntry[] = [
     icon: <IconUsers />,
     items: [
       { href: "/backoffice/brokers/resumen", label: "Resumen", exact: true },
-      { href: "/backoffice/brokers", label: "Brokers", excluir: ["/backoffice/brokers/resumen"] },
+      { href: "/backoffice/brokers", label: "Brokers", excluir: ["/backoffice/brokers/resumen", "/backoffice/brokers/chat"] },
       { href: "/backoffice/operaciones", label: "Operaciones" },
       { href: "/backoffice/comisiones", label: "Comisiones" },
       { href: "/backoffice/rankings", label: "Rankings" },
       { href: "/backoffice/concursos", label: "Concursos" },
       { href: "/backoffice/recursos", label: "Recursos" },
       { href: "/backoffice/comunicaciones", label: "Comunicaciones" },
+      { href: "/backoffice/brokers/chat", label: "Chat de aliados" },
     ],
   },
   {
