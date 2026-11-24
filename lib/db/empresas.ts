@@ -16,6 +16,8 @@ import {
   type EmpresaOrder,
   type EmpresaRow,
 } from "@/lib/clientes/lista";
+import { calcularSalud, senalesDe } from "@/lib/clientes/salud";
+import { getAjustesSalud, relacionDeEmpresas } from "@/lib/db/salud";
 
 export class EmpresaError extends Error {}
 
@@ -64,11 +66,13 @@ const empresaSelect = () => sql`
 
 /**
  * Todas las empresas del ambiente con los totales de la última foto completa
- * (la misma que usa la lista de Cobranza), para la lista de Clientes.
+ * (la misma que usa la lista de Cobranza) y su salud, para la lista de
+ * Clientes. También regresa la relación de cada empresa (contacto, cuenta de
+ * pago…), para que quien la necesite no la vuelva a consultar.
  */
 export async function getEmpresasLista(fechaCorte: string | null, opts: { filtro: EmpresaFilter; q: string; orden: EmpresaOrder; yo: string }) {
   const ambiente = ambienteActual();
-  const [empresas, creditos, umbral, umbralesSemaforo] = await Promise.all([
+  const [empresas, creditos, umbral, umbralesSemaforo, ajustesSalud] = await Promise.all([
     sql`${empresaSelect()} WHERE e.ambiente = ${ambiente} GROUP BY e.id, a.nombre`,
     sql`
       SELECT c.empresa_id, cr.id, cr.no_credito, cr.en_listado, cr.etapa_manual, cr.monto_credito,
@@ -82,8 +86,17 @@ export async function getEmpresasLista(fechaCorte: string | null, opts: { filtro
     `,
     getSetting("umbral_mora", UMBRAL_MORA_DEFAULT),
     getUmbralesSemaforo(),
+    getAjustesSalud(),
   ]);
-  return buildEmpresasLista(empresas.map(mapEmpresa), creditos.map(mapCredito), umbral, fechaMexico(), opts, umbralesSemaforo);
+  const filas = empresas.map(mapEmpresa);
+  const relacion = await relacionDeEmpresas(
+    filas.map((e) => e.empresaId),
+    ajustesSalud,
+  );
+  return {
+    ...buildEmpresasLista(filas, creditos.map(mapCredito), umbral, fechaMexico(), opts, umbralesSemaforo, { relacion, ajustes: ajustesSalud }),
+    relacion,
+  };
 }
 
 export interface FichaCredito extends CreditoEmpresaRow {
@@ -111,7 +124,7 @@ export async function getEmpresa(id: string) {
   `;
   if (!e) return null;
 
-  const [clientes, creditos, umbral, umbralesSemaforo] = await Promise.all([
+  const [clientes, creditos, umbral, umbralesSemaforo, salud] = await Promise.all([
     sql`SELECT id, numero_cliente, nombre FROM col_clients WHERE empresa_id = ${id} ORDER BY numero_cliente`,
     sql`
       SELECT c.empresa_id, cr.id, cr.client_id, c.numero_cliente, cr.no_credito, cr.tipo_credito, cr.en_listado, cr.etapa_manual,
@@ -133,6 +146,7 @@ export async function getEmpresa(id: string) {
     `,
     getSetting("umbral_mora", UMBRAL_MORA_DEFAULT),
     getUmbralesSemaforo(),
+    getAjustesSalud().then(async (ajustes) => ({ ajustes, relacion: (await relacionDeEmpresas([id], ajustes)).get(id) })),
   ]);
 
   // Un crédito que ya salió del listado conserva su última foto: sus montos ya no cuentan.
@@ -155,6 +169,10 @@ export async function getEmpresa(id: string) {
     };
   });
 
+  const hoy = fechaMexico();
+  const resumen = resumirEmpresa(mapEmpresa(e), fichaCreditos, umbral, hoy, umbralesSemaforo);
+  resumen.salud = calcularSalud(senalesDe(resumen, salud.relacion), salud.ajustes, hoy);
+
   return {
     empresa: {
       ...mapEmpresa(e),
@@ -169,7 +187,7 @@ export async function getEmpresa(id: string) {
     },
     clientes: clientes.map((c) => ({ id: c.id as string, numeroCliente: c.numero_cliente as string, nombre: c.nombre as string })),
     creditos: fichaCreditos,
-    resumen: resumirEmpresa(mapEmpresa(e), fichaCreditos, umbral, fechaMexico(), umbralesSemaforo),
+    resumen,
   };
 }
 

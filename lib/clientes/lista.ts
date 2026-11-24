@@ -7,6 +7,7 @@
 
 import { estaEnMora } from "../collections/rules.ts";
 import { UMBRALES_SEMAFORO_DEFAULT, semaforo, type Semaforo, type UmbralesSemaforo } from "../collections/preventivos.ts";
+import { calcularSalud, compararSalud, senalesDe, type AjustesSalud, type RelacionSalud, type Salud } from "./salud.ts";
 
 /** Días antes del fin del plazo en que un cliente pasa a «Por liquidar». */
 export const VENTANA_POR_LIQUIDAR = 90;
@@ -78,10 +79,12 @@ export interface EmpresaListItem extends EmpresaRow {
   /** Fin de plazo más cercano de sus créditos vigentes que todavía no termina. */
   finPlazo: { fecha: string; dias: number } | null;
   etapa: EtapaCiclo;
+  /** Salud del cliente (lib/clientes/salud.ts); null sin créditos vigentes o si no se calculó. */
+  salud: Salud | null;
 }
 
-export type EmpresaFilter = "todos" | "activos" | "por_liquidar" | "mora" | "especial" | "ex_clientes" | "mios" | "sin_ejecutivo" | "sin_rfc";
-export type EmpresaOrder = "nombre" | "adeudo" | "vencido" | "proximo" | "termino";
+export type EmpresaFilter = "todos" | "activos" | "por_liquidar" | "mora" | "riesgo" | "atencion" | "especial" | "ex_clientes" | "mios" | "sin_ejecutivo" | "sin_rfc";
+export type EmpresaOrder = "nombre" | "salud" | "adeudo" | "vencido" | "proximo" | "termino";
 
 export const FILTROS_EMPRESA: { value: EmpresaFilter; label: string }[] = [
   { value: "todos", label: "Todos" },
@@ -89,6 +92,8 @@ export const FILTROS_EMPRESA: { value: EmpresaFilter; label: string }[] = [
   { value: "activos", label: "Con crédito vigente" },
   { value: "por_liquidar", label: "Por liquidar (90 días)" },
   { value: "mora", label: "En mora" },
+  { value: "riesgo", label: "En riesgo" },
+  { value: "atencion", label: "Atención" },
   { value: "especial", label: "Cobranza especial" },
   { value: "ex_clientes", label: "Ex clientes" },
   { value: "sin_ejecutivo", label: "Sin ejecutivo" },
@@ -97,6 +102,7 @@ export const FILTROS_EMPRESA: { value: EmpresaFilter; label: string }[] = [
 
 export const ORDENES_EMPRESA: { value: EmpresaOrder; label: string }[] = [
   { value: "nombre", label: "Nombre (A–Z)" },
+  { value: "salud", label: "Peor salud" },
   { value: "adeudo", label: "Mayor adeudo" },
   { value: "vencido", label: "Mayor vencido" },
   { value: "proximo", label: "Próximo pago" },
@@ -110,6 +116,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 const porNombre = (a: EmpresaListItem, b: EmpresaListItem) => a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" });
 const COMPARAR: Record<EmpresaOrder, (a: EmpresaListItem, b: EmpresaListItem) => number> = {
   nombre: porNombre,
+  salud: (a, b) => compararSalud(a.salud, b.salud) || porNombre(a, b),
   adeudo: (a, b) => b.adeudo - a.adeudo || porNombre(a, b),
   vencido: (a, b) => b.vencido - a.vencido || b.adeudo - a.adeudo || porNombre(a, b),
   proximo: (a, b) => (a.proximoPago?.fecha ?? "9999").localeCompare(b.proximoPago?.fecha ?? "9999") || porNombre(a, b),
@@ -182,6 +189,7 @@ export function resumirEmpresa(
     proximoPago,
     finPlazo,
     etapa,
+    salud: null,
   };
 }
 
@@ -192,10 +200,16 @@ export function buildEmpresasLista(
   hoy: string,
   opts: { filtro: EmpresaFilter; q: string; orden?: EmpresaOrder; yo: string },
   umbralesSemaforo: UmbralesSemaforo = UMBRALES_SEMAFORO_DEFAULT,
+  /** Con esto se calcula la salud de cada empresa; sin esto queda en null. */
+  salud?: { relacion: Map<string, RelacionSalud>; ajustes: AjustesSalud },
 ): { items: EmpresaListItem[]; conteos: Record<EmpresaFilter, number>; total: number; totales: { adeudo: number; vencido: number } } {
   const porEmpresa = new Map<string, CreditoEmpresaRow[]>();
   for (const c of creditos) porEmpresa.set(c.empresaId, [...(porEmpresa.get(c.empresaId) ?? []), c]);
-  const todos = empresas.map((e) => resumirEmpresa(e, porEmpresa.get(e.empresaId) ?? [], umbral, hoy, umbralesSemaforo));
+  const todos = empresas.map((e) => {
+    const item = resumirEmpresa(e, porEmpresa.get(e.empresaId) ?? [], umbral, hoy, umbralesSemaforo);
+    if (salud) item.salud = calcularSalud(senalesDe(item, salud.relacion.get(e.empresaId)), salud.ajustes, hoy);
+    return item;
+  });
 
   const q = sinAcentos(opts.q.trim());
   const buscados = q
@@ -217,6 +231,8 @@ export function buildEmpresasLista(
     activos: (e) => e.creditosVigentes > 0,
     por_liquidar: (e) => e.etapa === "por_liquidar",
     mora: (e) => e.enMora,
+    riesgo: (e) => e.salud?.nivel === "riesgo",
+    atencion: (e) => e.salud?.nivel === "atencion",
     especial: (e) => e.etapa === "cobranza_especial",
     ex_clientes: (e) => e.etapa === "ex_cliente",
     sin_ejecutivo: (e) => !e.ejecutivoEmail,

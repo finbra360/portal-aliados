@@ -14,6 +14,8 @@ import ProgressBar from "@/components/ui/ProgressBar";
 import PhotoBanner from "../../cobranza/PhotoBanner";
 import SemaforoPill from "../../cobranza/SemaforoPill";
 import EtapaChip from "../EtapaChip";
+import SaludChip from "../SaludChip";
+import type { NivelSalud, Salud } from "@/lib/clientes/salud";
 import EditarEmpresa from "./EditarEmpresa";
 import ContactosEmpresa from "./ContactosEmpresa";
 import RegistrarActividad from "./RegistrarActividad";
@@ -194,6 +196,44 @@ function Renovacion({
   );
 }
 
+const BARRA_SALUD: Record<NivelSalud, string> = { sana: "bg-emerald-500", atencion: "bg-amber-500", riesgo: "bg-red-500" };
+
+/** Tarjeta de salud del Resumen: nivel, puntos y qué le restó cada cosa. */
+function SaludCard({ salud }: { salud: Salud }) {
+  return (
+    <Card>
+      <div className="mb-3 flex items-baseline justify-between gap-2">
+        <h2 className="text-lg font-bold">Salud del cliente</h2>
+        <SaludChip salud={salud} puntos={false} />
+      </div>
+      <div className="space-y-3 text-sm">
+        <div>
+          <p className="text-2xl font-bold tabular-nums">
+            {salud.puntos}
+            <span className="text-sm font-normal text-finbra-gray"> / 100</span>
+          </p>
+          <div className="mt-1 h-2 overflow-hidden rounded-full bg-black/5" aria-hidden>
+            <div className={`h-full rounded-full ${BARRA_SALUD[salud.nivel]}`} style={{ width: `${salud.puntos}%` }} />
+          </div>
+        </div>
+        {salud.razones.length === 0 ? (
+          <p className="text-emerald-800">✓ Al corriente, con contacto reciente y datos completos.</p>
+        ) : (
+          <ul className="space-y-1">
+            {salud.razones.map((x) => (
+              <li key={x.texto} className="flex items-baseline justify-between gap-3">
+                <span>{x.texto}</span>
+                <span className="shrink-0 font-semibold tabular-nums text-red-700">−{x.puntos}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs text-finbra-gray">Cómo va hoy: pago actual y reciente, contacto del equipo y datos clave. Es distinto del historial de pago en SIAC.</p>
+      </div>
+    </Card>
+  );
+}
+
 /** Una tarea abierta: fecha, qué hay que hacer, responsable y, si se puede, los botones para cerrarla. */
 function TareaAbierta({ t, hoy, empresaId, puedeEditar }: { t: Tarea; hoy: string; empresaId: string; puedeEditar: boolean }) {
   return (
@@ -319,6 +359,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
             </p>
             <div className="flex flex-wrap items-start gap-2 pt-1">
               <EtapaChip etapa={r.etapa} />
+              <SaludChip salud={r.salud} />
               <SemaforoPill semaforo={r.semaforo} historial={r.historial} detalle />
             </div>
           </div>
@@ -421,6 +462,8 @@ export default async function FichaClientePage({ params, searchParams }: { param
             </Card>
 
             <div className="space-y-6">
+              {r.salud && <SaludCard salud={r.salud} />}
+
               <Renovacion empresaId={id} creditos={creditos} oportunidades={oportunidades} ajustes={ajustesRenovacion} hoy={hoy} puedeEditar={puedeEditar} />
 
               <Card>

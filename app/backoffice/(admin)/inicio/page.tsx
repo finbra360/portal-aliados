@@ -29,6 +29,13 @@ function SeccionMiCartera({ c, puedeEditar }: { c: MiCartera; puedeEditar: boole
   const despues = c.tareas.length - proximas.length;
   const cifras = [
     { valor: c.clientes, texto: c.clientes === 1 ? "cliente mío" : "clientes míos", clase: "text-finbra-purple" },
+    {
+      valor: c.salud.riesgo,
+      texto: "en riesgo",
+      clase: c.salud.riesgo ? "text-red-700" : "text-finbra-purple",
+      href: "/backoffice/clientes?filtro=mios&orden=salud",
+      titulo: `${c.salud.riesgo} en riesgo y ${c.salud.atencion} en atención. Ver mis clientes, la peor salud primero`,
+    },
     { valor: deHoy, texto: deHoy === 1 ? "tarea para hoy" : "tareas para hoy", clase: deHoy ? "text-amber-700" : "text-finbra-purple" },
     { valor: vencidas, texto: vencidas === 1 ? "tarea vencida" : "tareas vencidas", clase: vencidas ? "text-red-700" : "text-finbra-purple" },
     { valor: c.avisos.length, texto: c.avisos.length === 1 ? "aviso" : "avisos", clase: c.avisos.length ? "text-amber-700" : "text-finbra-purple" },
@@ -39,11 +46,19 @@ function SeccionMiCartera({ c, puedeEditar }: { c: MiCartera; puedeEditar: boole
         <h2 className="text-xs font-bold uppercase tracking-wider text-finbra-gray">Mi cartera</h2>
         <Link href="/backoffice/clientes?filtro=mios" className="text-sm font-medium text-finbra-purple hover:underline">Ir a mis clientes →</Link>
       </div>
-      <dl className="grid grid-cols-2 gap-4 px-6 pt-4 sm:grid-cols-4">
+      <dl className="grid grid-cols-2 gap-4 px-6 pt-4 sm:grid-cols-5">
         {cifras.map((x) => (
-          <div key={x.texto}>
+          <div key={x.texto} className="flex flex-col-reverse">
+            <dt className="text-xs text-finbra-gray">
+              {"href" in x && x.href ? (
+                <Link href={x.href} title={x.titulo} className="hover:underline">
+                  {x.texto} →
+                </Link>
+              ) : (
+                x.texto
+              )}
+            </dt>
             <dd className={`text-2xl font-bold tabular-nums ${x.clase}`}>{x.valor}</dd>
-            <dt className="text-xs text-finbra-gray">{x.texto}</dt>
           </div>
         ))}
       </dl>

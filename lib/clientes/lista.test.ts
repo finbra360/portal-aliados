@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { buildEmpresasLista, resumirEmpresa, type CreditoEmpresaRow, type EmpresaRow } from "./lista.ts";
 import { normalizarRfc, validarRfc } from "./rfc.ts";
+import { AJUSTES_SALUD_DEFAULT, type RelacionSalud } from "./salud.ts";
 
 const HOY = "2026-11-05";
 
@@ -113,7 +114,7 @@ const ids = (opts: Partial<Parameters<typeof buildEmpresasLista>[4]>) => lista(o
 test("filtros y conteos de la lista", () => {
   const r = lista({});
   assert.equal(r.total, 4);
-  assert.deepEqual(r.conteos, { todos: 4, mios: 1, activos: 3, por_liquidar: 1, mora: 1, especial: 1, ex_clientes: 1, sin_ejecutivo: 2, sin_rfc: 3 });
+  assert.deepEqual(r.conteos, { todos: 4, mios: 1, activos: 3, por_liquidar: 1, mora: 1, riesgo: 0, atencion: 0, especial: 1, ex_clientes: 1, sin_ejecutivo: 2, sin_rfc: 3 });
   assert.deepEqual(ids({ filtro: "mora" }), ["b"], "los $300 de la clínica son residuo, no mora");
   assert.deepEqual(ids({ filtro: "por_liquidar" }), ["c"]);
   assert.deepEqual(ids({ filtro: "mios" }), ["a"]);
@@ -150,4 +151,43 @@ test("RFC: normaliza y valida forma y fecha", () => {
   assert.equal(validarRfc("ABC123").ok, false);
   assert.equal(validarRfc("TEF151301AB1").ok, false, "mes 13");
   assert.equal(validarRfc("TEF150100AB1").ok, false, "día 00");
+});
+
+test("salud: se calcula con la relación, filtra En riesgo / Atención y ordena peor primero", () => {
+  const empresas = [
+    empresa({ empresaId: "sana", nombre: "A SANA" }),
+    empresa({ empresaId: "atraso", nombre: "B ATRASO" }),
+    empresa({ empresaId: "olvidada", nombre: "C OLVIDADA" }),
+    empresa({ empresaId: "ex", nombre: "D EX" }),
+  ];
+  const creditos = [
+    credito({ empresaId: "sana", creditId: "1" }),
+    credito({ empresaId: "atraso", creditId: "2", vencido: 50_000, atraso: 12 }),
+    credito({ empresaId: "olvidada", creditId: "3" }),
+    credito({ empresaId: "ex", creditId: "4", enListado: false }),
+  ];
+  const completa = { tienePrincipal: true, ultimoContacto: "2026-11-01T12:00:00.000Z", cuentaPago: true, whatsappValido: true, atrasosRecientes: 0, promesasIncumplidas: 0, clienteDesde: "2025-01-01" };
+  const relacion = new Map<string, RelacionSalud>([
+    ["sana", completa],
+    ["atraso", { ...completa, atrasosRecientes: 1 }],
+    ["olvidada", { ...completa, ultimoContacto: null, tienePrincipal: false }],
+    ["ex", completa],
+  ]);
+  const salud = { relacion, ajustes: AJUSTES_SALUD_DEFAULT };
+  const opts = { q: "", yo: "" };
+  const todos = buildEmpresasLista(empresas, creditos, 1000, HOY, { ...opts, filtro: "todos", orden: "salud" }, undefined, salud);
+  assert.deepEqual(
+    todos.items.map((e) => [e.empresaId, e.salud?.puntos ?? null, e.salud?.nivel ?? null]),
+    [
+      ["atraso", 55, "riesgo"],
+      ["olvidada", 70, "atencion"],
+      ["sana", 100, "sana"],
+      ["ex", null, null],
+    ],
+  );
+  assert.equal(todos.conteos.riesgo, 1);
+  assert.equal(todos.conteos.atencion, 1);
+  assert.deepEqual(buildEmpresasLista(empresas, creditos, 1000, HOY, { ...opts, filtro: "riesgo" }, undefined, salud).items.map((e) => e.empresaId), ["atraso"]);
+  // Sin relación no se calcula.
+  assert.equal(buildEmpresasLista(empresas, creditos, 1000, HOY, { ...opts, filtro: "todos" }).items[0].salud, null);
 });

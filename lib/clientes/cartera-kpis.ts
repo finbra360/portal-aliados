@@ -8,6 +8,7 @@
 // ingresos financieros no vienen en el listado y se muestran como pendientes.
 
 import type { EstadoOportunidad } from "./renovaciones.ts";
+import type { NivelSalud } from "./salud.ts";
 
 export interface EmpresaKpi {
   empresaId: string;
@@ -23,6 +24,8 @@ export interface EmpresaKpi {
   whatsappValido: boolean;
   /** Último contacto de una persona del equipo, ISO. */
   ultimoContacto: string | null;
+  /** Nivel de salud del cliente (lib/clientes/salud.ts); null si no lleva. */
+  salud?: NivelSalud | null;
 }
 
 export interface CreditoKpi {
@@ -129,6 +132,9 @@ export interface FilaEjecutivo {
   nombre: string;
   clientes: number;
   enMora: number;
+  /** Clientes En riesgo y en Atención según su salud. */
+  riesgo: number;
+  atencion: number;
   contactados: number;
   tareasAbiertas: number;
   tareasVencidas: number;
@@ -137,17 +143,24 @@ export interface FilaEjecutivo {
   aTiempo30: number;
 }
 
+/** Cuántos clientes con crédito vigente están Sanos, en Atención y En riesgo. */
+export function distribucionSalud(empresas: EmpresaKpi[]): Record<NivelSalud, number> {
+  const r: Record<NivelSalud, number> = { sana: 0, atencion: 0, riesgo: 0 };
+  for (const e of empresas) if (e.creditosVigentes > 0 && e.salud) r[e.salud]++;
+  return r;
+}
+
 /**
- * Trabajo por ejecutivo: sus clientes con crédito vigente, cuántos en mora y
- * cuántos contactados en 60 días, y sus tareas. «Sin ejecutivo» junta lo que no
- * tiene responsable.
+ * Trabajo por ejecutivo: sus clientes con crédito vigente, cuántos en mora, en
+ * riesgo y en atención, cuántos contactados en 60 días, y sus tareas. «Sin
+ * ejecutivo» junta lo que no tiene responsable.
  */
 export function porEjecutivo(empresas: EmpresaKpi[], tareas: TareaKpi[], nombres: Map<string, string>, hoy: string, ventana = 60): FilaEjecutivo[] {
   const filas = new Map<string | null, FilaEjecutivo>();
   const fila = (email: string | null) => {
     let f = filas.get(email);
     if (!f) {
-      f = { email, nombre: email ? (nombres.get(email) ?? email) : "Sin ejecutivo", clientes: 0, enMora: 0, contactados: 0, tareasAbiertas: 0, tareasVencidas: 0, hechas30: 0, aTiempo30: 0 };
+      f = { email, nombre: email ? (nombres.get(email) ?? email) : "Sin ejecutivo", clientes: 0, enMora: 0, riesgo: 0, atencion: 0, contactados: 0, tareasAbiertas: 0, tareasVencidas: 0, hechas30: 0, aTiempo30: 0 };
       filas.set(email, f);
     }
     return f;
@@ -157,6 +170,8 @@ export function porEjecutivo(empresas: EmpresaKpi[], tareas: TareaKpi[], nombres
     const f = fila(e.ejecutivoEmail);
     f.clientes++;
     if (e.enMora) f.enMora++;
+    if (e.salud === "riesgo") f.riesgo++;
+    if (e.salud === "atencion") f.atencion++;
     if (e.ultimoContacto && Date.parse(e.ultimoContacto) >= limite) f.contactados++;
   }
   for (const t of tareas) {

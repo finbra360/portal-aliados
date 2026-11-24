@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   calidadDeDatos,
   coberturaContacto,
+  distribucionSalud,
   embudoRenovacion,
   finesDePlazo,
   originacionPorMes,
@@ -116,6 +117,25 @@ test("por ejecutivo: clientes, mora, contacto y tareas; «Sin ejecutivo» al fin
       ["Laura", 2, 1, 1, 2, 1, 2, 1],
       ["carlos@x", 0, 0, 0, 0, 0, 0, 0],
       ["Sin ejecutivo", 1, 0, 0, 0, 0, 0, 0],
+    ],
+  );
+});
+
+test("salud: distribución de los clientes vigentes y conteo por ejecutivo", () => {
+  const empresas = [
+    empresa({ empresaId: "a", salud: "riesgo", ejecutivoEmail: "ana@x" }),
+    empresa({ empresaId: "b", salud: "atencion", ejecutivoEmail: "ana@x" }),
+    empresa({ empresaId: "c", salud: "sana", ejecutivoEmail: "ana@x" }),
+    empresa({ empresaId: "d", salud: "riesgo" }),
+    empresa({ empresaId: "e", creditosVigentes: 0, salud: null }),
+  ];
+  assert.deepEqual(distribucionSalud(empresas), { sana: 1, atencion: 1, riesgo: 2 });
+  const filas = porEjecutivo(empresas, [], new Map([["ana@x", "Ana"]]), HOY);
+  assert.deepEqual(
+    filas.map((f) => [f.nombre, f.riesgo, f.atencion]),
+    [
+      ["Ana", 1, 1],
+      ["Sin ejecutivo", 1, 0],
     ],
   );
 });

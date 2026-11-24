@@ -13,6 +13,7 @@ import PhotoBanner from "../cobranza/PhotoBanner";
 import OrdenTh from "../cobranza/OrdenTh";
 import SemaforoPill from "../cobranza/SemaforoPill";
 import EtapaChip from "./EtapaChip";
+import SaludChip from "./SaludChip";
 
 const BASE = "/backoffice/clientes";
 const esFiltro = (f: string | undefined): f is EmpresaFilter => FILTROS_EMPRESA.some((x) => x.value === f);
@@ -66,7 +67,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
           {FILTROS_EMPRESA.map((f) => (
             <Link
               key={f.value}
-              href={href({ filtro: f.value, q, orden: f.value === "por_liquidar" && orden === "nombre" ? "termino" : orden })}
+              href={href({
+                filtro: f.value,
+                q,
+                orden: orden !== "nombre" ? orden : f.value === "por_liquidar" ? "termino" : f.value === "riesgo" || f.value === "atencion" ? "salud" : orden,
+              })}
               className={`rounded-full px-4 py-1.5 text-sm font-medium ${filtro === f.value ? "bg-finbra-purple text-white" : "bg-black/5 text-finbra-gray hover:bg-black/10"}`}
             >
               {f.label} <span className="font-normal">({data.conteos[f.value]})</span>
@@ -103,10 +108,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
         />
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[1150px] text-left text-sm">
+          <table className="w-full min-w-[1300px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                 {th("nombre", "Cliente", "nombre, de la A a la Z", "asc")}
+                {th("salud", "Salud", "la peor salud primero", "asc")}
                 <th scope="col" className="px-4 py-3">Ejecutivo</th>
                 <th scope="col" className="px-4 py-3 text-right">Créditos</th>
                 {th("adeudo", "Adeudo", "mayor adeudo", "desc", "right")}
@@ -129,6 +135,15 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                       {e.industria && <> · {e.industria}</>}
                     </p>
                     {e.numerosCliente.length > 0 && <p className="font-mono text-xs text-finbra-gray">{e.numerosCliente.join(", ")}</p>}
+                  </td>
+                  <td className="px-4 py-3">
+                    <SaludChip salud={e.salud} />
+                    {e.salud && e.salud.razones.length > 0 && (
+                      <p className="mt-1 max-w-48 text-xs text-finbra-gray">
+                        {e.salud.razones[0].texto}
+                        {e.salud.razones.length > 1 && ` y ${e.salud.razones.length - 1} más`}
+                      </p>
+                    )}
                   </td>
                   <td className="px-4 py-3">{e.ejecutivoNombre ?? <span className="text-xs text-amber-800">Sin asignar</span>}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{e.creditosVigentes}</td>

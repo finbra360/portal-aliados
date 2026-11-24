@@ -5,12 +5,12 @@
 import { sql } from "@/lib/db";
 import { ambienteActual, getCollectionsOverview, getPhotoStatus } from "@/lib/db/collections";
 import { getEmpresasLista } from "@/lib/db/empresas";
-import { tieneDestinatarioValido } from "@/lib/collections/store";
 import { fechaMexico } from "@/lib/collections/rules";
 import { getAjustesRenovacion } from "@/lib/db/renovaciones";
 import {
   calidadDeDatos,
   coberturaContacto,
+  distribucionSalud,
   embudoRenovacion,
   finesDePlazo,
   originacionPorMes,
@@ -18,45 +18,6 @@ import {
   type EmpresaKpi,
 } from "@/lib/clientes/cartera-kpis";
 import type { EstadoOportunidad } from "@/lib/clientes/renovaciones";
-
-/** Tipos de col_activities que son un contacto de una persona del equipo con el cliente. */
-export const CONTACTO_COBRANZA = ["llamada", "visita", "correo", "whatsapp_enviado", "promesa_creada"];
-
-export interface RelacionEmpresa {
-  tienePrincipal: boolean;
-  /** Último contacto de una persona del equipo (actividad comercial o gestión de cobranza), ISO. */
-  ultimoContacto: string | null;
-  cuentaPago: boolean;
-  whatsappValido: boolean;
-}
-
-/** Contacto principal, último contacto humano, cuenta de pago y WhatsApp válido de cada empresa. */
-export async function relacionDeEmpresas(ids: string[]): Promise<Map<string, RelacionEmpresa>> {
-  if (!ids.length) return new Map();
-  const rows = await sql`
-    SELECT e.id,
-           EXISTS (SELECT 1 FROM crm_personas p WHERE p.empresa_id = e.id AND p.es_principal AND p.vigente) AS tiene_principal,
-           greatest(
-             (SELECT max(a.ocurrido_at) FROM crm_actividades a WHERE a.empresa_id = e.id AND a.tipo <> 'nota' AND a.actor <> 'sistema'),
-             (SELECT max(a.ocurrido_at) FROM col_activities a JOIN col_clients c ON c.id = a.client_id
-               WHERE c.empresa_id = e.id AND a.actor <> 'sistema' AND a.tipo = ANY(${CONTACTO_COBRANZA}))
-           ) AS ultimo_contacto,
-           EXISTS (SELECT 1 FROM col_clients c WHERE c.empresa_id = e.id AND c.cuenta_pago_id IS NOT NULL) AS cuenta_pago,
-           EXISTS (SELECT 1 FROM col_clients c WHERE c.empresa_id = e.id AND ${tieneDestinatarioValido()}) AS whatsapp
-    FROM crm_empresas e WHERE e.id = ANY(${ids}::uuid[])
-  `;
-  return new Map(
-    rows.map((r) => [
-      r.id as string,
-      {
-        tienePrincipal: !!r.tiene_principal,
-        ultimoContacto: r.ultimo_contacto ? (r.ultimo_contacto as Date).toISOString() : null,
-        cuentaPago: !!r.cuenta_pago,
-        whatsappValido: !!r.whatsapp,
-      },
-    ]),
-  );
-}
 
 export async function getResumenCartera() {
   const hoy = fechaMexico();
@@ -90,9 +51,8 @@ export async function getResumenCartera() {
       `
     : [];
 
-  const relacion = await relacionDeEmpresas(lista.items.map((e) => e.empresaId));
   const empresas: EmpresaKpi[] = lista.items.map((e) => {
-    const r = relacion.get(e.empresaId);
+    const r = lista.relacion.get(e.empresaId);
     return {
       empresaId: e.empresaId,
       creditosVigentes: e.creditosVigentes,
@@ -104,6 +64,7 @@ export async function getResumenCartera() {
       cuentaPago: r?.cuentaPago ?? false,
       whatsappValido: r?.whatsappValido ?? false,
       ultimoContacto: r?.ultimoContacto ?? null,
+      salud: e.salud?.nivel ?? null,
     };
   });
   const creditosKpi = creditos.map((c) => ({
@@ -125,6 +86,7 @@ export async function getResumenCartera() {
     originacion: originacionPorMes(creditosKpi, (primera?.fecha as string) ?? null, hoy),
     primeraFoto: (primera?.fecha as string) ?? null,
     calidad: calidadDeDatos(empresas),
+    salud: distribucionSalud(empresas),
     cobertura: coberturaContacto(empresas, hoy),
     embudo: hayOportunidades
       ? embudoRenovacion(
