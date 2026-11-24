@@ -6,14 +6,21 @@
 // Como en rbac.ts: se revisa SIEMPRE en el servidor (página y acción). Ocultar
 // un botón es solo para no ofrecer lo que no se puede hacer.
 //
-// Por ahora cubre clientes, cartera y cobranza; los demás módulos siguen con sus listas
+// Por ahora cubre clientes, cartera, cobranza y originación; los demás módulos siguen con sus listas
 // de roles (brokers/roles.ts, credit-health/roles.ts…) hasta que se migren.
 
 import type { AdminRole } from "./db/admin-users.ts";
 import type { AdminSessionPayload } from "./admin-auth.ts";
 import { ForbiddenError } from "./rbac.ts";
 
-export type Permiso = "cartera.ver" | "clientes.editar" | "clientes.configurar" | "cobranza.operar" | "cobranza.configurar";
+export type Permiso =
+  | "cartera.ver"
+  | "clientes.editar"
+  | "clientes.configurar"
+  | "cobranza.operar"
+  | "cobranza.configurar"
+  | "originacion.ver"
+  | "originacion.operar";
 
 export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly AdminRole[] }> = {
   "cartera.ver": {
@@ -37,6 +44,15 @@ export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly Ad
   "cobranza.configurar": {
     descripcion: "Prender y apagar los envíos automáticos, activar plantillas, enviar a mano y mandar el reporte a Slack.",
     roles: ["super_admin"],
+  },
+  "originacion.ver": {
+    descripcion: "Ver los negocios de crédito (originación): tablero, lista y ficha de cada negocio.",
+    roles: ["super_admin", "finanzas", "comercial"],
+  },
+  "originacion.operar": {
+    descripcion:
+      "Dar de alta negocios y empresas prospecto, moverlos de etapa y editar monto, responsable y notas. Quién analiza y quién decide en comité se separa en la fase O5.",
+    roles: ["super_admin", "finanzas", "comercial"],
   },
 };
 

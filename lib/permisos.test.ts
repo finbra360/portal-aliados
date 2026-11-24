@@ -5,14 +5,14 @@ import { PERMISOS, puede, requierePermiso, rolPuede, type Permiso } from "./perm
 
 const sesion = (role: "super_admin" | "comercial" | "finanzas") => ({ email: "a@finbra.com", nombre: "A", role });
 
-test("matriz de permisos de cartera y cobranza", () => {
+test("matriz de permisos de cartera, cobranza y originación", () => {
   const matriz = Object.fromEntries(
     (["super_admin", "finanzas", "comercial"] as const).map((r) => [r, (Object.keys(PERMISOS) as Permiso[]).filter((p) => rolPuede(r, p))]),
   );
   assert.deepEqual(matriz, {
-    super_admin: ["cartera.ver", "clientes.editar", "clientes.configurar", "cobranza.operar", "cobranza.configurar"],
-    finanzas: ["cartera.ver", "clientes.editar", "cobranza.operar"],
-    comercial: ["cartera.ver", "clientes.editar"],
+    super_admin: ["cartera.ver", "clientes.editar", "clientes.configurar", "cobranza.operar", "cobranza.configurar", "originacion.ver", "originacion.operar"],
+    finanzas: ["cartera.ver", "clientes.editar", "cobranza.operar", "originacion.ver", "originacion.operar"],
+    comercial: ["cartera.ver", "clientes.editar", "originacion.ver", "originacion.operar"],
   });
 });
 

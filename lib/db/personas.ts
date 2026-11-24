@@ -21,7 +21,9 @@ export interface Persona extends DatosPersona {
 
 export interface Canal {
   id: string;
-  clientId: string;
+  /** cobranza: del expediente de un cliente de SIAC (col_contacts); prospecto: de una empresa que todavía no es cliente (crm_persona_canales). */
+  fuente: "cobranza" | "prospecto";
+  clientId: string | null;
   relacion: "titular" | "aval" | "referencia";
   tipo: "telefono" | "email";
   valor: string;
@@ -39,8 +41,31 @@ async function empresaDelAmbiente(empresaId: string) {
   if (!e) throw new PersonaError("Esa empresa no existe.");
 }
 
+/** Teléfonos y correos guardados para personas de una empresa prospecto (sin cliente de SIAC). */
+async function canalesDeProspecto(empresaId: string): Promise<Canal[]> {
+  const [t] = await sql`SELECT to_regclass('public.crm_persona_canales') IS NOT NULL AS hay`;
+  if (!t?.hay) return [];
+  const rows = await sql`
+    SELECT k.id, k.persona_id, k.tipo, k.valor FROM crm_persona_canales k JOIN crm_personas p ON p.id = k.persona_id
+    WHERE p.empresa_id = ${empresaId} ORDER BY k.tipo, k.created_at
+  `;
+  return rows.map((k) => ({
+    id: k.id as string,
+    fuente: "prospecto",
+    clientId: null,
+    relacion: "titular",
+    tipo: k.tipo as "telefono" | "email",
+    valor: k.valor as string,
+    nombre: null,
+    origen: "manual",
+    estatus: "activo",
+    personaId: k.persona_id as string,
+    recibeRecordatorios: false,
+  }));
+}
+
 export async function getContactos(empresaId: string): Promise<{ personas: Persona[]; canales: Canal[]; clientes: string[] }> {
-  const [personas, clientes, canales] = await Promise.all([
+  const [personas, clientes, canales, deProspecto] = await Promise.all([
     sql`
       SELECT * FROM crm_personas WHERE empresa_id = ${empresaId}
       ORDER BY vigente DESC, es_principal DESC, nombre
@@ -51,6 +76,7 @@ export async function getContactos(empresaId: string): Promise<{ personas: Perso
       WHERE c.empresa_id = ${empresaId}
       ORDER BY k.relacion, k.tipo, k.created_at
     `,
+    canalesDeProspecto(empresaId),
   ]);
 
   const destinatarios = new Set<string>();
@@ -86,18 +112,24 @@ export async function getContactos(empresaId: string): Promise<{ personas: Perso
       updatedBy: p.updated_by,
       updatedAt: (p.updated_at as Date).toISOString(),
     })),
-    canales: canales.map((k) => ({
-      id: k.id,
-      clientId: k.client_id,
-      relacion: k.relacion,
-      tipo: k.tipo,
-      valor: k.valor_original,
-      nombre: k.nombre_contacto,
-      origen: k.origen,
-      estatus: k.estatus,
-      personaId: k.persona_id,
-      recibeRecordatorios: destinatarios.has(k.id),
-    })),
+    canales: [
+      ...canales.map(
+        (k): Canal => ({
+          id: k.id,
+          fuente: "cobranza",
+          clientId: k.client_id,
+          relacion: k.relacion,
+          tipo: k.tipo,
+          valor: k.valor_original,
+          nombre: k.nombre_contacto,
+          origen: k.origen,
+          estatus: k.estatus,
+          personaId: k.persona_id,
+          recibeRecordatorios: destinatarios.has(k.id),
+        }),
+      ),
+      ...deProspecto,
+    ],
     clientes: clientes.map((c) => c.id as string),
   };
 }
@@ -162,7 +194,21 @@ export async function agregarCanal(p: { empresaId: string; personaId: string; ti
   const [per] = await sql`SELECT nombre FROM crm_personas WHERE id = ${p.personaId} AND empresa_id = ${p.empresaId}`;
   if (!per) throw new PersonaError("Esa persona no es de esta empresa.");
   const [cliente] = await sql`SELECT id FROM col_clients WHERE empresa_id = ${p.empresaId} ORDER BY numero_cliente LIMIT 1`;
-  if (!cliente) throw new PersonaError("Esta empresa todavía no tiene cliente en SIAC; por ahora los teléfonos se guardan en el expediente de cobranza.");
+  if (!cliente) {
+    // Prospecto: todavía no tiene expediente de cobranza; se guarda con la persona.
+    const [t] = await sql`SELECT to_regclass('public.crm_persona_canales') IS NOT NULL AS hay`;
+    if (!t?.hay) throw new PersonaError("Esta empresa todavía no tiene cliente en SIAC; por ahora los teléfonos se guardan en el expediente de cobranza.");
+    const valor = p.tipo === "telefono" ? p.valor.replace(/\D/g, "").replace(/^52(\d{10})$/, "$1") : p.valor.trim().toLowerCase();
+    if (p.tipo === "telefono" && valor.length !== 10) throw new PersonaError("El teléfono debe tener 10 dígitos.");
+    if (p.tipo === "email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(valor)) throw new PersonaError("El correo no es válido.");
+    const r = await sql`
+      INSERT INTO crm_persona_canales (persona_id, tipo, valor, created_by) VALUES (${p.personaId}, ${p.tipo}, ${valor}, ${p.actor})
+      ON CONFLICT DO NOTHING RETURNING id
+    `;
+    if (!r.length) throw new PersonaError("Esa persona ya tiene ese teléfono o correo.");
+    await logAudit({ actorEmail: p.actor, action: "alta_canal_prospecto", entityType: "persona", entityId: p.personaId, metadata: { empresaId: p.empresaId, tipo: p.tipo } });
+    return;
+  }
   try {
     await addManualContact({
       clientId: cliente.id,

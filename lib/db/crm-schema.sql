@@ -220,6 +220,63 @@ SET value = value || '{"rescate": true}',
     descripcion = descripcion || ' rescate: llamada de rescate cuando la salud del cliente pasa a En riesgo.'
 WHERE key = 'playbooks' AND NOT (value ? 'rescate');
 
+-- ---------------------------------------------------------------- originación
+-- Teléfonos y correos de las personas de empresas que todavía no son clientes
+-- de SIAC (prospectos). Los de clientes siguen en col_contacts, en su
+-- expediente de cobranza; estos nunca reciben recordatorios.
+CREATE TABLE IF NOT EXISTS crm_persona_canales (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  persona_id UUID NOT NULL REFERENCES crm_personas(id) ON DELETE CASCADE,
+  tipo TEXT NOT NULL CHECK (tipo IN ('telefono', 'email')),
+  valor TEXT NOT NULL CHECK (length(trim(valor)) > 0),
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (persona_id, tipo, valor)
+);
+
+-- Negocio de crédito: una solicitud de una empresa, desde el primer contacto
+-- hasta que el crédito está dispersado en SIAC (lib/clientes/negocios.ts).
+-- Reemplaza al pipeline de negocios de HubSpot. Etapas 1 a 9 en orden, más dos
+-- cierres: pospuesto (volver a buscarlo después) y rechazado.
+CREATE TABLE IF NOT EXISTS crm_negocios_credito (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ambiente TEXT NOT NULL CHECK (ambiente IN ('pruebas', 'produccion')),
+  empresa_id UUID NOT NULL REFERENCES crm_empresas(id) ON DELETE RESTRICT,
+  -- nuevo: primer crédito; renovacion: al terminar uno; incremento: más monto con uno vigente.
+  tipo TEXT NOT NULL DEFAULT 'nuevo' CHECK (tipo IN ('nuevo', 'renovacion', 'incremento')),
+  origen TEXT NOT NULL CHECK (origen IN ('leads', 'credit_health', 'broker', 'renovacion', 'web', 'marketing', 'outbound', 'referido', 'pymio', 'manual')),
+  etapa TEXT NOT NULL DEFAULT 'prospecto' CHECK (etapa IN (
+    'prospecto', 'calificado', 'solicitud', 'analisis', 'oferta', 'expediente', 'comite', 'formalizacion', 'dispersado',
+    'pospuesto', 'rechazado'
+  )),
+  -- Desde cuándo está en su etapa actual (para medir días en etapa).
+  etapa_desde TIMESTAMPTZ NOT NULL DEFAULT now(),
+  -- Monto que se platica: no es una oferta ni una aprobación.
+  monto_estimado NUMERIC(14, 2) CHECK (monto_estimado > 0),
+  responsable_email TEXT REFERENCES admin_users(email) ON UPDATE CASCADE,
+  -- Por qué se pospuso o se rechazó (el catálogo de motivos llega en la fase O2).
+  motivo_cierre TEXT,
+  notas TEXT,
+  created_by TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_crm_negocios_credito_empresa ON crm_negocios_credito(empresa_id);
+CREATE INDEX IF NOT EXISTS idx_crm_negocios_credito_etapa ON crm_negocios_credito(ambiente, etapa);
+
+-- Cada cambio de etapa, con quién y cuándo. La primera fila (de = NULL) es el alta.
+CREATE TABLE IF NOT EXISTS crm_negocio_etapas (
+  id BIGSERIAL PRIMARY KEY,
+  negocio_id UUID NOT NULL REFERENCES crm_negocios_credito(id) ON DELETE CASCADE,
+  de TEXT,
+  a TEXT NOT NULL,
+  motivo TEXT,
+  actor TEXT NOT NULL,
+  ocurrido_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_crm_negocio_etapas_negocio ON crm_negocio_etapas(negocio_id, ocurrido_at);
+
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
 INSERT INTO crm_empresas (ambiente, nombre, razon_social, origen, creada_desde_cliente, ejecutivo_email, created_by)
@@ -245,3 +302,6 @@ ALTER TABLE crm_actividades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_tareas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_oportunidades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_salud_diaria ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_persona_canales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_negocios_credito ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_negocio_etapas ENABLE ROW LEVEL SECURITY;
