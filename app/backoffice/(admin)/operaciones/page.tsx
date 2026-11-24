@@ -1,4 +1,5 @@
-import { listOperations } from "@/lib/db/operations";
+import { redirect } from "next/navigation";
+import { listOperations, operacionesSonNegocios } from "@/lib/db/operations";
 import { getLeaderboard } from "@/lib/db/colocacion";
 import { formatCurrency } from "@/lib/format";
 import Card from "@/components/ui/Card";
@@ -8,6 +9,8 @@ import { createOperationAction, setOperationMessageAction, updateOperationStageA
 import StageSelect from "./StageSelect";
 
 export default async function BackofficeOperacionesPage() {
+  // Desde la fase O4 las operaciones son negocios de crédito: se trabajan en Originación.
+  if (await operacionesSonNegocios()) redirect("/backoffice/negocios?origen=broker");
   let brokers: Awaited<ReturnType<typeof getLeaderboard>>["ranking"] = [];
   let operations: Awaited<ReturnType<typeof listOperations>> = [];
   let loadError = false;
@@ -87,10 +90,10 @@ export default async function BackofficeOperacionesPage() {
                     <td className="px-6 py-4">{op.clienteReferencia}</td>
                     <td className="px-6 py-4 font-semibold">{formatCurrency(op.montoSolicitado)}</td>
                     <td className="px-6 py-4">
-                      <StageSelect id={op.id} current={op.etapa} action={updateOperationStageAction} />
+                      <StageSelect id={Number(op.id)} current={op.etapa} action={updateOperationStageAction} />
                     </td>
                     <td className="px-6 py-4">
-                      <form action={setOperationMessageAction.bind(null, op.id)} className="flex gap-2">
+                      <form action={setOperationMessageAction.bind(null, Number(op.id))} className="flex gap-2">
                         <input
                           name="mensaje"
                           defaultValue={op.mensajeBroker ?? ""}

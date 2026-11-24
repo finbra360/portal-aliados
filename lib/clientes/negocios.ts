@@ -94,7 +94,12 @@ export interface DatosNegocio {
   montoEstimado: number | null;
   responsableEmail: string | null;
   notas: string | null;
+  /** Broker que lo trajo (obligatorio si el origen es «broker»). */
+  brokerId: string | null;
 }
+
+/** Id de broker: el código de Lendia o el B### del backoffice. */
+const BROKER_ID = /^[A-Za-z0-9_-]{1,40}$/;
 
 export type Validado<T> = { ok: true; datos: T } | { ok: false; error: string };
 
@@ -151,8 +156,11 @@ export function validarNegocio(entrada: Record<string, unknown>): Validado<Datos
   if (responsable && !CORREO.test(responsable)) return { ok: false, error: "El responsable no es válido." };
   const notas = limpio(entrada.notas) || null;
   if (notas && notas.length > 4000) return { ok: false, error: "Las notas son demasiado largas (máximo 4,000 caracteres)." };
+  const brokerId = limpio(entrada.brokerId) || null;
+  if (brokerId && !BROKER_ID.test(brokerId)) return { ok: false, error: "El broker no es válido." };
+  if (origen === "broker" && !brokerId) return { ok: false, error: "Elige de qué broker viene el negocio." };
 
-  return { ok: true, datos: { empresa, contacto, tipo, origen, montoEstimado: monto, responsableEmail: responsable, notas } };
+  return { ok: true, datos: { empresa, contacto, tipo, origen, montoEstimado: monto, responsableEmail: responsable, notas, brokerId: origen === "broker" ? brokerId : null } };
 }
 
 // ---------------------------------------------------------------- solicitud (fase O2)
@@ -196,6 +204,8 @@ export interface DatosSolicitud {
   garantiaTipo: TipoGarantia | null;
   garantiaDetalle: string | null;
   garantiaValor: number | null;
+  /** % de comisión por apertura pactado con el cliente (define la comisión del broker). */
+  comisionAperturaPct: number | null;
 }
 
 /** Valida los datos de la solicitud. Todos son opcionales aquí; cada etapa pide los suyos (faltantesPara). */
@@ -218,6 +228,11 @@ export function validarSolicitud(entrada: Record<string, unknown>): Validado<Dat
   const destinoDetalle = limpio(entrada.destinoDetalle) || null;
   const garantiaDetalle = limpio(entrada.garantiaDetalle) || null;
   if ((destinoDetalle?.length ?? 0) > 500 || (garantiaDetalle?.length ?? 0) > 500) return { ok: false, error: "El detalle es demasiado largo (máximo 500 caracteres)." };
+  const comisionTxt = limpio(entrada.comisionAperturaPct).replace("%", "");
+  const comision = comisionTxt ? Number(comisionTxt) : null;
+  if (comision !== null && (!Number.isFinite(comision) || comision < 0 || comision > 20 || Math.round(comision * 100) !== comision * 100)) {
+    return { ok: false, error: "La comisión por apertura va de 0 a 20 %, con hasta dos decimales." };
+  }
   return {
     ok: true,
     datos: {
@@ -229,6 +244,7 @@ export function validarSolicitud(entrada: Record<string, unknown>): Validado<Dat
       garantiaTipo: (garantia || null) as TipoGarantia | null,
       garantiaDetalle: garantia === "sin_garantia" ? null : garantiaDetalle,
       garantiaValor: garantia === "sin_garantia" ? null : valor,
+      comisionAperturaPct: comision,
     },
   };
 }

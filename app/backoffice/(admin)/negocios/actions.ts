@@ -6,7 +6,7 @@ import { getAdminSession } from "@/lib/get-admin-session";
 import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { validarNegocio, validarSolicitud } from "@/lib/clientes/negocios";
-import { NegocioError, cambiarEtapa, crearNegocio, editarNegocio, guardarSolicitud } from "@/lib/db/negocios";
+import { NegocioError, cambiarBroker, cambiarEtapa, crearNegocio, editarNegocio, guardarMensajeBroker, guardarSolicitud } from "@/lib/db/negocios";
 
 export type NegocioResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -15,6 +15,8 @@ const texto = (fd: FormData, k: string) => String(fd.get(k) ?? "");
 function refrescar() {
   revalidatePath("/backoffice/negocios", "layout");
   revalidatePath("/backoffice/clientes", "layout");
+  // El portal del broker muestra sus solicitudes (los negocios con broker).
+  revalidatePath("/operaciones", "layout");
 }
 
 /** Alta de un negocio (y de su empresa prospecto, si es nueva). Al terminar lleva a la ficha del negocio. */
@@ -81,5 +83,36 @@ export async function editarNegocioAction(id: string, _prev: NegocioResult | nul
     if (e instanceof NegocioError) return { ok: false, error: e.message };
     const c = codigoDeError("originación: editar negocio", e);
     return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
+  }
+}
+
+/** Cambia o quita el broker del negocio. */
+export async function cambiarBrokerAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  try {
+    const cambio = await cambiarBroker({ id, brokerId: texto(fd, "brokerId").trim() || null, actor: admin.email });
+    refrescar();
+    return { ok: true, mensaje: cambio ? "Broker actualizado." : "No había cambios." };
+  } catch (e) {
+    if (e instanceof NegocioError) return { ok: false, error: e.message };
+    const c = codigoDeError("originación: cambiar broker", e);
+    return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
+  }
+}
+
+/** Mensaje que el broker ve en su portal. */
+export async function guardarMensajeBrokerAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  const mensaje = texto(fd, "mensajeBroker").trim() || null;
+  if (mensaje && mensaje.length > 1000) return { ok: false, error: "El mensaje es demasiado largo (máximo 1,000 caracteres)." };
+  try {
+    await guardarMensajeBroker({ id, mensaje, actor: admin.email });
+    refrescar();
+    revalidatePath("/operaciones", "layout");
+    return { ok: true, mensaje: mensaje ? "Mensaje guardado: el broker ya lo ve en su portal." : "Mensaje borrado." };
+  } catch (e) {
+    if (e instanceof NegocioError) return { ok: false, error: e.message };
+    const c = codigoDeError("originación: mensaje al broker", e);
+    return { ok: false, error: `No pudimos guardar el mensaje. Intenta de nuevo. (código ${c})` };
   }
 }

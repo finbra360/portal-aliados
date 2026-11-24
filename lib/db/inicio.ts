@@ -2,6 +2,7 @@
 // que atender hoy, por área y según el rol. Solo conteos, cada uno con su link.
 
 import { sql } from "@/lib/db";
+import { countOperationsByStage } from "@/lib/db/operations";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { fechaMexico } from "@/lib/collections/rules";
 import { rolPuede } from "@/lib/permisos";
@@ -62,18 +63,15 @@ async function pendientesCobranza(): Promise<AreaPendientes> {
 }
 
 async function pendientesComercial(): Promise<AreaPendientes[]> {
-  const [[ops], [leads]] = await Promise.all([
-    sql`
-      SELECT count(*) FILTER (WHERE etapa = 'recibida')::int AS recibidas,
-             count(*) FILTER (WHERE etapa = 'documentacion_pendiente')::int AS documentacion,
-             count(*) FILTER (WHERE etapa = 'en_analisis')::int AS analisis
-      FROM operations
-    `,
+  // Solicitudes de brokers: de los negocios (fase O4) o, antes de migrar, de operations.
+  const [porEtapa, [leads]] = await Promise.all([
+    countOperationsByStage(),
     sql`
       SELECT (SELECT count(*)::int FROM lead_companies WHERE categoria = 'hot' AND estatus_comercial = 'nuevo') AS hot_nuevos,
              (SELECT count(*)::int FROM lead_hitl_review WHERE status = 'pendiente') AS revisiones
     `,
   ]);
+  const ops = { recibidas: porEtapa.recibida, documentacion: porEtapa.documentacion_pendiente, analisis: porEtapa.en_analisis };
   const brokers: Pendiente[] = [];
   if (ops.recibidas) brokers.push({ cantidad: ops.recibidas, texto: ops.recibidas === 1 ? "operación nueva por revisar" : "operaciones nuevas por revisar", href: "/backoffice/operaciones", tono: "atencion" });
   if (ops.documentacion) brokers.push({ cantidad: ops.documentacion, texto: ops.documentacion === 1 ? "operación esperando documentación" : "operaciones esperando documentación", href: "/backoffice/operaciones", tono: "normal" });

@@ -296,6 +296,83 @@ CREATE TABLE IF NOT EXISTS crm_negocio_etapas (
 );
 CREATE INDEX IF NOT EXISTS idx_crm_negocio_etapas_negocio ON crm_negocio_etapas(negocio_id, ocurrido_at);
 
+-- Fase O4: negocios de brokers. Reemplazan a la tabla operations: el portal del
+-- broker los lee con las etapas traducidas a las suyas (lib/operaciones-seguimiento.ts).
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS broker_id TEXT REFERENCES brokers(id) ON UPDATE CASCADE;
+-- % de comisión de apertura pactado con el cliente (define la comisión del broker).
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS comision_apertura_pct NUMERIC(5, 2) CHECK (comision_apertura_pct BETWEEN 0 AND 100);
+-- Lo que Finbra le dice al broker de esta solicitud (las notas internas no se le muestran).
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS mensaje_broker TEXT;
+-- La colocación que se creó al dispersar (broker_colocaciones), para no crearla dos veces.
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS colocacion_id BIGINT REFERENCES broker_colocaciones(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_crm_negocios_credito_broker ON crm_negocios_credito(broker_id) WHERE broker_id IS NOT NULL;
+
+-- Una sola vez: cada operación de broker (abierta o cerrada) pasa a ser un
+-- negocio con su historial y su mensaje al broker. La empresa se crea como
+-- prospecto con el nombre de la operación (o se reusa la que tenga ese nombre).
+-- origen_ref 'operacion:<id>' evita pasarla dos veces. Las que ya se fondearon
+-- no crean colocación: esa ya está capturada en broker_colocaciones.
+DO $$
+DECLARE
+  amb TEXT := COALESCE((SELECT ambiente FROM crm_empresas GROUP BY ambiente ORDER BY count(*) DESC LIMIT 1), 'produccion');
+  hay_mensaje BOOLEAN;
+BEGIN
+  IF to_regclass('public.operations') IS NULL THEN
+    RETURN;
+  END IF;
+  hay_mensaje := EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'operations' AND column_name = 'mensaje_broker');
+
+  INSERT INTO crm_empresas (ambiente, nombre, origen, created_by, updated_by)
+  SELECT DISTINCT amb, trim(o.cliente_referencia), 'manual', 'migracion_operaciones', 'migracion_operaciones'
+  FROM operations o
+  WHERE length(trim(o.cliente_referencia)) > 0
+    AND NOT EXISTS (SELECT 1 FROM crm_negocios_credito n WHERE n.origen_ref = 'operacion:' || o.id)
+    AND NOT EXISTS (SELECT 1 FROM crm_empresas e WHERE e.ambiente = amb AND lower(trim(e.nombre)) = lower(trim(o.cliente_referencia)));
+
+  EXECUTE format($q$
+    INSERT INTO crm_negocios_credito (
+      ambiente, empresa_id, tipo, origen, origen_ref, broker_id, etapa, etapa_desde, monto_estimado, notas, mensaje_broker,
+      motivo_cierre, created_by, created_at, updated_by, updated_at
+    )
+    SELECT %L, e.id, 'nuevo', 'broker', 'operacion:' || o.id,
+           CASE WHEN EXISTS (SELECT 1 FROM brokers b WHERE b.id = o.broker_id) THEN o.broker_id END,
+           CASE o.etapa WHEN 'recibida' THEN 'prospecto' WHEN 'documentacion_pendiente' THEN 'solicitud' WHEN 'en_analisis' THEN 'analisis'
+                        WHEN 'aprobada' THEN 'formalizacion' WHEN 'formalizacion' THEN 'formalizacion' WHEN 'fondeada' THEN 'dispersado'
+                        ELSE 'rechazado' END,
+           o.updated_at, NULLIF(o.monto_solicitado, 0), o.notas, %s,
+           CASE WHEN o.etapa = 'rechazada' THEN 'Rechazada en Operaciones (antes de pasar a Negocios).' END,
+           'migracion_operaciones', o.created_at, 'migracion_operaciones', o.updated_at
+    FROM operations o
+    JOIN LATERAL (
+      SELECT id FROM crm_empresas e WHERE e.ambiente = %L AND lower(trim(e.nombre)) = lower(trim(o.cliente_referencia)) ORDER BY e.created_at LIMIT 1
+    ) e ON true
+    WHERE NOT EXISTS (SELECT 1 FROM crm_negocios_credito n WHERE n.origen_ref = 'operacion:' || o.id)
+  $q$, amb, CASE WHEN hay_mensaje THEN 'o.mensaje_broker' ELSE 'NULL' END, amb);
+
+  -- Historial: el de operation_history si existe; si no, el alta en la etapa actual.
+  IF to_regclass('public.operation_history') IS NOT NULL THEN
+    INSERT INTO crm_negocio_etapas (negocio_id, de, a, actor, ocurrido_at)
+    SELECT n.id, h.de, h.a, 'migracion_operaciones', h.created_at
+    FROM (
+      SELECT oh.operation_id, oh.created_at,
+             CASE oh.etapa WHEN 'recibida' THEN 'prospecto' WHEN 'documentacion_pendiente' THEN 'solicitud' WHEN 'en_analisis' THEN 'analisis'
+                           WHEN 'aprobada' THEN 'formalizacion' WHEN 'formalizacion' THEN 'formalizacion' WHEN 'fondeada' THEN 'dispersado'
+                           ELSE 'rechazado' END AS a,
+             LAG(CASE oh.etapa WHEN 'recibida' THEN 'prospecto' WHEN 'documentacion_pendiente' THEN 'solicitud' WHEN 'en_analisis' THEN 'analisis'
+                               WHEN 'aprobada' THEN 'formalizacion' WHEN 'formalizacion' THEN 'formalizacion' WHEN 'fondeada' THEN 'dispersado'
+                               ELSE 'rechazado' END) OVER (PARTITION BY oh.operation_id ORDER BY oh.created_at, oh.id) AS de
+      FROM operation_history oh
+    ) h
+    JOIN crm_negocios_credito n ON n.origen_ref = 'operacion:' || h.operation_id
+    WHERE (h.de IS NULL OR h.de <> h.a)
+      AND NOT EXISTS (SELECT 1 FROM crm_negocio_etapas x WHERE x.negocio_id = n.id);
+  END IF;
+  INSERT INTO crm_negocio_etapas (negocio_id, de, a, actor, ocurrido_at)
+  SELECT n.id, NULL, n.etapa, 'migracion_operaciones', n.created_at
+  FROM crm_negocios_credito n
+  WHERE n.origen_ref LIKE 'operacion:%' AND NOT EXISTS (SELECT 1 FROM crm_negocio_etapas x WHERE x.negocio_id = n.id);
+END $$;
+
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
 INSERT INTO crm_empresas (ambiente, nombre, razon_social, origen, creada_desde_cliente, ejecutivo_email, created_by)

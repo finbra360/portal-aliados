@@ -62,3 +62,44 @@ export function pasosDeSeguimiento(etapaActual: OperationStatus, historial: Etap
 export function diasEntre(desde: string, hasta: string): number {
   return Math.max(0, Math.floor((Date.parse(hasta) - Date.parse(desde)) / 86_400_000));
 }
+
+// ---------------------------------------------------------------- negocios (fase O4)
+// Desde la fase O4 las solicitudes de los brokers son negocios de crédito
+// (lib/clientes/negocios.ts). El broker sigue viendo sus seis pasos de siempre.
+
+const ETAPA_BROKER: Record<string, OperationStatus> = {
+  prospecto: "recibida",
+  calificado: "recibida",
+  solicitud: "documentacion_pendiente",
+  analisis: "en_analisis",
+  oferta: "en_analisis",
+  expediente: "en_analisis",
+  comite: "en_analisis",
+  formalizacion: "formalizacion",
+  dispersado: "fondeada",
+  rechazado: "rechazada",
+};
+
+/**
+ * Lo que ve el broker de la etapa de un negocio. Un pospuesto se sigue viendo
+ * en la etapa en que estaba antes de pausarse (`antesDePausa`).
+ */
+export function etapaParaBroker(etapa: string, antesDePausa: string | null = null): OperationStatus {
+  if (etapa === "pospuesto") return ETAPA_BROKER[antesDePausa ?? ""] ?? "recibida";
+  return ETAPA_BROKER[etapa] ?? "recibida";
+}
+
+/**
+ * Historial del negocio en pasos del broker: cada cambio de etapa traducido,
+ * sin repetir el mismo paso seguido (Análisis → Oferta sigue siendo «En
+ * análisis») y sin los pospuestos (el broker no ve la pausa).
+ */
+export function historialParaBroker(cambios: { a: string; de: string | null; fecha: string }[]): EtapaRegistrada[] {
+  const fuera: EtapaRegistrada[] = [];
+  for (const c of [...cambios].sort((x, y) => Date.parse(x.fecha) - Date.parse(y.fecha))) {
+    if (c.a === "pospuesto") continue;
+    const etapa = etapaParaBroker(c.a);
+    if (fuera[fuera.length - 1]?.etapa !== etapa) fuera.push({ etapa, fecha: c.fecha });
+  }
+  return fuera;
+}
