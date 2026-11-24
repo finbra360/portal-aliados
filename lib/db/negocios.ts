@@ -48,6 +48,8 @@ export interface Negocio {
   recontactarEl: string | null;
   rechazoMotivo: string | null;
   rechazoPor: "finbra" | "cliente" | null;
+  /** De qué salió: 'lead:<id>', 'credit_health:<id>' u 'oportunidad:<id>'. */
+  origenRef: string | null;
   createdAt: string;
   createdBy: string;
 }
@@ -87,6 +89,7 @@ function mapNegocio(r: Record<string, unknown>): Negocio {
     recontactarEl: (r.recontactar as string) ?? null,
     rechazoMotivo: (r.rechazo_motivo as string) ?? null,
     rechazoPor: (r.rechazo_por as "finbra" | "cliente") ?? null,
+    origenRef: (r.origen_ref as string) ?? null,
     createdAt: (r.created_at as Date).toISOString(),
     createdBy: r.created_by as string,
   };
@@ -166,20 +169,50 @@ async function usuarioActivo(email: string | null) {
  * su contacto principal y sus teléfonos) en la misma transacción. El
  * responsable por omisión es quien lo crea; la empresa nueva queda con ese
  * mismo ejecutivo.
+ *
+ * Desde un origen (lead, Credit Health, oportunidad) llega `origenRef`: si ya
+ * hay un negocio de ese origen se regresa ese, sin crear otro. Con
+ * `reusarEmpresa`, una empresa nueva cuyo RFC (o nombre exacto) ya existe se
+ * reusa en vez de dar error. `solicitud` llena de una vez los datos que ya se
+ * conocen.
  */
-export async function crearNegocio(p: { datos: DatosNegocio; actor: string }): Promise<string> {
-  const d = p.datos;
+export async function crearNegocio(p: {
+  datos: DatosNegocio;
+  actor: string;
+  origenRef?: string;
+  solicitud?: Partial<DatosSolicitud>;
+  reusarEmpresa?: boolean;
+}): Promise<string> {
+  const d = { ...p.datos };
   const ambiente = ambienteActual();
   const responsable = d.responsableEmail ?? p.actor;
   await usuarioActivo(responsable);
 
+  if (p.origenRef) {
+    const [ya] = await sql`SELECT id FROM crm_negocios_credito WHERE origen_ref = ${p.origenRef}`;
+    if (ya) return ya.id as string;
+  }
   if ("id" in d.empresa) {
     const [e] = await sql`SELECT id FROM crm_empresas WHERE id = ${d.empresa.id} AND ambiente = ${ambiente}`;
     if (!e) throw new NegocioError("Esa empresa no existe.");
-  } else if (d.empresa.nueva.rfc) {
-    const [otra] = await sql`SELECT nombre FROM crm_empresas WHERE ambiente = ${ambiente} AND rfc = ${d.empresa.nueva.rfc}`;
-    if (otra) throw new NegocioError(`Ese RFC ya es de ${otra.nombre}: elígela en «Empresa de Clientes».`);
+  } else {
+    const nueva = d.empresa.nueva;
+    const [otra] = nueva.rfc
+      ? await sql`SELECT id, nombre FROM crm_empresas WHERE ambiente = ${ambiente} AND rfc = ${nueva.rfc}`
+      : p.reusarEmpresa
+        ? await sql`
+            SELECT id, nombre FROM crm_empresas
+            WHERE ambiente = ${ambiente} AND (lower(trim(nombre)) = lower(trim(${nueva.nombre})) OR lower(trim(razon_social)) = lower(trim(${nueva.razonSocial ?? nueva.nombre})))
+            ORDER BY created_at LIMIT 1
+          `
+        : [];
+    if (otra && !p.reusarEmpresa) throw new NegocioError(`Ese RFC ya es de ${otra.nombre}: elígela en «Empresa de Clientes».`);
+    if (otra) {
+      d.empresa = { id: otra.id as string };
+      d.contacto = null;
+    }
   }
+  const s = p.solicitud ?? {};
 
   const { negocioId, empresaId, empresaNueva } = await transaccion(async (tx) => {
     let empresaId: string;
@@ -208,8 +241,15 @@ export async function crearNegocio(p: { datos: DatosNegocio; actor: string }): P
       }
     }
     const [n] = await tx`
-      INSERT INTO crm_negocios_credito (ambiente, empresa_id, tipo, origen, monto_estimado, responsable_email, notas, created_by, updated_by)
-      VALUES (${ambiente}, ${empresaId}, ${d.tipo}, ${d.origen}, ${d.montoEstimado}, ${responsable}, ${d.notas}, ${p.actor}, ${p.actor})
+      INSERT INTO crm_negocios_credito (
+        ambiente, empresa_id, tipo, origen, origen_ref, monto_estimado, responsable_email, notas,
+        producto, plazo_meses, destino, destino_detalle, garantia_tipo, garantia_detalle, garantia_valor, created_by, updated_by
+      )
+      VALUES (
+        ${ambiente}, ${empresaId}, ${d.tipo}, ${d.origen}, ${p.origenRef ?? null}, ${s.montoEstimado ?? d.montoEstimado}, ${responsable}, ${d.notas},
+        ${s.producto ?? null}, ${s.plazoMeses ?? null}, ${s.destino ?? null}, ${s.destinoDetalle ?? null},
+        ${s.garantiaTipo ?? null}, ${s.garantiaDetalle ?? null}, ${s.garantiaValor ?? null}, ${p.actor}, ${p.actor}
+      )
       RETURNING id
     `;
     await tx`INSERT INTO crm_negocio_etapas (negocio_id, de, a, actor) VALUES (${n.id}, NULL, 'prospecto', ${p.actor})`;
@@ -222,7 +262,7 @@ export async function crearNegocio(p: { datos: DatosNegocio; actor: string }): P
     action: "alta_negocio",
     entityType: "negocio",
     entityId: negocioId,
-    metadata: { empresaId, tipo: d.tipo, origen: d.origen, montoEstimado: d.montoEstimado, responsable },
+    metadata: { empresaId, tipo: d.tipo, origen: d.origen, origenRef: p.origenRef ?? null, montoEstimado: s.montoEstimado ?? d.montoEstimado, responsable },
   });
   return negocioId;
 }

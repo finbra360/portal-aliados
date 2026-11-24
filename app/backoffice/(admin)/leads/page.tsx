@@ -13,7 +13,10 @@ import EmptyState from "@/components/ui/EmptyState";
 import { IconFlame, IconTarget, IconTrendingUp, IconListChecks } from "@/components/ui/icons";
 import CategoriaPill from "./CategoriaPill";
 import EstatusSelect from "./EstatusSelect";
-import { updateLeadEstatusAction, resolveHitlReviewAction, resolverDedupAction } from "./actions";
+import { updateLeadEstatusAction, resolveHitlReviewAction, resolverDedupAction, crearNegocioDesdeLeadAction } from "./actions";
+import { getAdminSession } from "@/lib/get-admin-session";
+import { puede } from "@/lib/permisos";
+import { negociosPorOrigen, refLead } from "@/lib/db/negocios-origenes";
 
 const TABS: { value: string | undefined; label: string }[] = [
   { value: undefined, label: "Todos" },
@@ -46,9 +49,11 @@ function buildHref(base: string, params: Record<string, string | number | undefi
 export default async function LeadsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ categoria?: string; page?: string; perPage?: string }>;
+  searchParams: Promise<{ categoria?: string; page?: string; perPage?: string; error?: string }>;
 }) {
-  const { categoria, page: pageParam, perPage: perPageParam } = await searchParams;
+  const { categoria, page: pageParam, perPage: perPageParam, error } = await searchParams;
+  const session = await getAdminSession();
+  const puedeCrearNegocio = !!session && ["super_admin", "comercial"].includes(session.role) && puede(session, "originacion.operar");
 
   const page = Math.max(1, Number(pageParam) || 1);
   const perPage = (LEAD_PAGE_SIZES.includes(Number(perPageParam) as LeadPageSize)
@@ -79,6 +84,8 @@ export default async function LeadsPage({
   }
 
   const { items: leads, total } = leadsPage;
+  // Si la tabla de negocios no existe todavía, simplemente no hay negocios ligados.
+  const negocios = await negociosPorOrigen(leads.map((l) => refLead(l.id))).catch(() => new Map<string, string>());
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   const rangeStart = total === 0 ? 0 : (page - 1) * perPage + 1;
   const rangeEnd = Math.min(total, page * perPage);
@@ -86,6 +93,11 @@ export default async function LeadsPage({
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Leads</h1>
+      {error && (
+        <p className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+          No se creó el negocio: {error.slice(0, 300)}
+        </p>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <StatCard label="Hot" value={String(counts.hot)} icon={<IconFlame />} />
@@ -143,21 +155,22 @@ export default async function LeadsPage({
         />
       ) : (
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[1100px] table-fixed text-left text-sm">
+          <table className="w-full min-w-[1220px] table-fixed text-left text-sm">
             <colgroup>
               {/* Contacto se lleva el ancho que sobra de Ubicación: los correos
                   corporativos son largos y truncados no sirven de nada. Empresa y
                   Antigüedad se mantienen porque el nombre es el identificador y
                   "9.9 años" no debe partirse en dos líneas. */}
-              <col className="w-[22%]" />
-              <col className="w-[19%]" />
-              <col className="w-[10%]" />
+              <col className="w-[20%]" />
+              <col className="w-[17%]" />
+              <col className="w-[9%]" />
+              <col className="w-[6%]" />
+              <col className="w-[8%]" />
+              <col className="w-[8%]" />
+              <col className="w-[8%]" />
+              <col className="w-[8%]" />
               <col className="w-[7%]" />
-              <col className="w-[8%]" />
               <col className="w-[9%]" />
-              <col className="w-[9%]" />
-              <col className="w-[8%]" />
-              <col className="w-[8%]" />
             </colgroup>
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
@@ -170,6 +183,7 @@ export default async function LeadsPage({
                 <th scope="col" className="px-4 py-3">Score</th>
                 <th scope="col" className="px-4 py-3">Categoría</th>
                 <th scope="col" className="px-4 py-3">Estatus</th>
+                <th scope="col" className="px-4 py-3">Negocio</th>
               </tr>
             </thead>
             <tbody>
@@ -268,6 +282,22 @@ export default async function LeadsPage({
                     </td>
                     <td className="px-4 py-3">
                       <EstatusSelect id={lead.id} current={lead.estatusComercial} action={updateLeadEstatusAction} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {negocios.get(refLead(lead.id)) ? (
+                        <Link href={`/backoffice/negocios/${negocios.get(refLead(lead.id))}`} className="whitespace-nowrap text-xs font-semibold text-finbra-purple hover:underline">
+                          Ver negocio →
+                        </Link>
+                      ) : puedeCrearNegocio && lead.categoria !== "discarded" ? (
+                        <form action={crearNegocioDesdeLeadAction}>
+                          <input type="hidden" name="leadId" value={lead.id} />
+                          <button type="submit" className="whitespace-nowrap rounded-lg border border-finbra-purple/30 px-2.5 py-1 text-xs font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5">
+                            Crear negocio
+                          </button>
+                        </form>
+                      ) : (
+                        <span className="text-xs text-finbra-gray">—</span>
+                      )}
                     </td>
                   </tr>
                 );

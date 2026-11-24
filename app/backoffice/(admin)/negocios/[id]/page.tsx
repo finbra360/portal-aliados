@@ -62,6 +62,12 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
             <p className="text-sm text-finbra-gray">
               {n.producto ? PRODUCTOS[n.producto] : TIPOS_NEGOCIO[n.tipo]}{n.producto && n.tipo !== "nuevo" ? ` (${TIPOS_NEGOCIO[n.tipo].toLowerCase()})` : ""}{n.plazoMeses ? ` a ${n.plazoMeses} meses` : ""} · llegó por {ORIGENES_NEGOCIO[n.origen]} · alta el {formatFecha(n.createdAt.slice(0, 10))}
               {!n.esCliente && " · la empresa es prospecto"}
+              {n.origenRef?.startsWith("credit_health:") && (
+                <>
+                  {" · "}
+                  <Link href={`/backoffice/credit-health/prospectos/${n.origenRef.slice(14)}`} className="text-finbra-purple hover:underline">ver su diagnóstico en Credit Health</Link>
+                </>
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
               <EtapaNegocioChip etapa={n.etapa} />

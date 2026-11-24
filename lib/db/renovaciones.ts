@@ -4,6 +4,8 @@
 
 import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
+import { crearNegocioDeRenovacion } from "@/lib/db/negocios-origenes";
+import { codigoDeError } from "@/lib/collections/errors";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getSetting } from "@/lib/collections/store";
 import { UMBRAL_MORA_DEFAULT, fechaMexico } from "@/lib/collections/rules";
@@ -212,6 +214,15 @@ export async function cambiarEstadoOportunidad(p: { empresaId: string; id: strin
     });
   }
   await logAudit({ actorEmail: p.actor, action: "cambiar_oportunidad", entityType: "oportunidad", entityId: p.id, metadata: { empresaId: p.empresaId, de: o.estado, a: v.estado } });
+  // Interesado: el cliente quiere renovar; se abre su negocio en Originación. Si
+  // falla, el cambio de la oportunidad ya quedó: se registra y no se interrumpe.
+  if (v.estado === "interesado") {
+    try {
+      await crearNegocioDeRenovacion(p.id, p.actor);
+    } catch (e) {
+      codigoDeError("renovación: crear negocio", e);
+    }
+  }
 }
 
 export interface Oportunidad {

@@ -19,7 +19,9 @@ import {
 } from "@/lib/credit-health/catalogo";
 import { obtenerProspecto, revelarContacto, type ProspectoDetalle } from "@/lib/credit-health/prospectos";
 import type { EntradaCH, ReglaCH, ResultadoCH } from "@/lib/credit-health/tipos";
-import { agregarNotaAction, asignarAction, cambiarEstadoAction, eliminarAction } from "../../actions";
+import { agregarNotaAction, asignarAction, cambiarEstadoAction, crearNegocioAction, eliminarAction } from "../../actions";
+import { puede } from "@/lib/permisos";
+import { negociosPorOrigen, refCreditHealth } from "@/lib/db/negocios-origenes";
 import { ClasificacionPill, ContactoPill, DemoPill, ErrorCarga, fechaHora, pesos, veces } from "../../ui";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -66,6 +68,9 @@ export default async function ProspectoDetallePage({ params, searchParams }: { p
   const r = p.resultado;
   const e = p.entrada;
   const puedeOperar = hasRole(session, CH_OPERAN);
+  const puedeCrearNegocio = puedeOperar && puede(session, "originacion.operar") && !p.isDemo;
+  const comparteConFinbra = !!consentimientos.find((c) => c.tipo === "share_with_finbra")?.otorgado;
+  const negocioId = (await negociosPorOrigen([refCreditHealth(p.id)]).catch(() => new Map<string, string>())).get(refCreditHealth(p.id)) ?? null;
   const puedeVerContacto = hasRole(session, CH_VEN_CONTACTO);
   const contacto = sp.contacto === "1" && puedeVerContacto ? await revelarContacto(p, session).catch(() => null) : null;
 
@@ -129,6 +134,27 @@ export default async function ProspectoDetallePage({ params, searchParams }: { p
               <p className="mt-1.5 text-[11px] text-finbra-gray">Se conserva hasta {fechaHora(p.retentionUntil)}.</p>
             </div>
           </Card>
+
+          {(negocioId || puedeCrearNegocio) && (
+            <Card>
+              <h2 className="font-semibold">Negocio de crédito</h2>
+              {negocioId ? (
+                <p className="mt-2 text-sm">
+                  Ya tiene su negocio en Originación.{" "}
+                  <Link href={`/backoffice/negocios/${negocioId}`} className="font-semibold text-finbra-purple hover:underline">Ver negocio →</Link>
+                </p>
+              ) : comparteConFinbra ? (
+                <form action={crearNegocioAction} className="mt-2 space-y-2">
+                  <input type="hidden" name="id" value={p.id} />
+                  <p className="text-xs text-finbra-gray">Crea la empresa prospecto con su contacto y RFC, y lleva monto, plazo, destino y garantía declarados. El prospecto queda como «Convertido».</p>
+                  <button type="submit" className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90">Crear negocio</button>
+                </form>
+              ) : (
+                <p className="mt-2 text-sm text-finbra-gray">No aceptó compartir sus datos con Finbra; no se puede crear su negocio.</p>
+              )}
+              {sp.negocio && <p className="mt-2 text-sm text-red-700" role="alert">{sp.negocio.slice(0, 300)}</p>}
+            </Card>
+          )}
 
           {puedeOperar ? (
             <Card>

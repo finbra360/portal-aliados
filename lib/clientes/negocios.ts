@@ -342,3 +342,83 @@ export function totalesPorEtapa(negocios: NegocioResumen[]): Record<EtapaNegocio
   }
   return t;
 }
+
+// ---------------------------------------------------------------- orígenes (fase O3)
+
+/** Destino de Credit Health → destino del negocio (los que no existen aquí se aproximan y se anotan). */
+const DESTINO_CH: Record<string, Destino> = {
+  capital_trabajo: "capital_trabajo",
+  inventario: "capital_trabajo",
+  liquidez_puntual: "capital_trabajo",
+  maquinaria_equipo: "compra_activo",
+  expansion: "expansion",
+  refinanciamiento: "refinanciamiento",
+  otro: "otro",
+};
+const GARANTIA_CH: Record<string, TipoGarantia> = { vehicular: "vehicular", inmobiliaria: "inmobiliaria", otra: "otra", ninguna: "sin_garantia" };
+
+const pesosEnteros = (n: number) => `$${Math.round(n).toLocaleString("es-MX")}`;
+
+export interface ProspectoParaNegocio {
+  folio: string;
+  requestedAmount: number | null;
+  termMonths: number | null;
+  purpose: string | null;
+  /** Etiqueta del destino en Credit Health, para anotarlo si aquí se aproxima. */
+  purposeLabel: string | null;
+  collateralType: string | null;
+  clasificacion: string | null;
+  preliminaryAmount: number | null;
+  dscrProjected: number | null;
+}
+
+/** Solicitud y notas de un negocio que sale de un prospecto de Credit Health (lo que declaró el cliente). */
+export function negocioDesdeCreditHealth(p: ProspectoParaNegocio): { solicitud: Partial<DatosSolicitud>; notas: string } {
+  const destino = p.purpose ? (DESTINO_CH[p.purpose] ?? "otro") : null;
+  const monto = p.requestedAmount !== null && p.requestedAmount > 0 && p.requestedAmount <= MONTO_MAXIMO ? Math.round(p.requestedAmount * 100) / 100 : null;
+  const plazo = p.termMonths !== null && Number.isInteger(p.termMonths) && p.termMonths >= 1 && p.termMonths <= 120 ? p.termMonths : null;
+  const notas = [
+    `Viene de Credit Health, folio ${p.folio}. Datos declarados por el cliente en el diagnóstico.`,
+    p.clasificacion && `Clasificación: ${p.clasificacion}.`,
+    p.preliminaryAmount !== null && `Monto preliminar del diagnóstico: ${pesosEnteros(p.preliminaryAmount)}.`,
+    p.dscrProjected !== null && `DSCR proyectado: ${p.dscrProjected.toFixed(2)}.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return {
+    solicitud: {
+      montoEstimado: monto,
+      plazoMeses: plazo,
+      destino,
+      destinoDetalle: destino && p.purposeLabel && p.purpose !== destino ? p.purposeLabel : null,
+      garantiaTipo: p.collateralType ? (GARANTIA_CH[p.collateralType] ?? null) : null,
+    },
+    notas,
+  };
+}
+
+export interface LeadParaNegocio {
+  empleadosEstimado: number | null;
+  ventasEstimadoMxn: number | null;
+  antiguedadAnios: number | null;
+  tieneGarantiaVehicular: boolean;
+  tieneGarantiaInmobiliaria: boolean;
+  totalScore: number | null;
+  categoria: string | null;
+}
+
+/** Solicitud y notas de un negocio que sale de un lead del motor de prospección (estimados, no confirmados). */
+export function negocioDesdeLead(l: LeadParaNegocio): { solicitud: Partial<DatosSolicitud>; notas: string } {
+  const garantia: TipoGarantia | null = l.tieneGarantiaVehicular ? "vehicular" : l.tieneGarantiaInmobiliaria ? "inmobiliaria" : null;
+  const notas = [
+    "Viene del motor de prospección (Leads). Las cifras son estimadas, no confirmadas con el cliente.",
+    l.empleadosEstimado !== null && `Empleados: ~${l.empleadosEstimado}.`,
+    l.ventasEstimadoMxn !== null && `Ventas anuales: ~${pesosEnteros(l.ventasEstimadoMxn)}.`,
+    l.antiguedadAnios !== null && `Antigüedad: ~${l.antiguedadAnios} años.`,
+    l.tieneGarantiaVehicular && l.tieneGarantiaInmobiliaria && "Podría tener garantía vehicular e inmobiliaria.",
+    l.totalScore !== null && `Score ${Math.round(l.totalScore)}${l.categoria ? ` (${l.categoria})` : ""}.`,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return { solicitud: { garantiaTipo: garantia }, notas };
+}

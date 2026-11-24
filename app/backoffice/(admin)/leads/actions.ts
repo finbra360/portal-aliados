@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { requireRole } from "@/lib/rbac";
+import { redirect } from "next/navigation";
+import { requierePermiso } from "@/lib/permisos";
+import { NegocioError } from "@/lib/db/negocios";
+import { crearNegocioDesdeLead } from "@/lib/db/negocios-origenes";
 import {
   updateLeadEstatusComercial,
   resolveHitlReview,
@@ -44,4 +48,22 @@ export async function resolverDedupAction(formData: FormData) {
 
   await resolverDedupHitl({ id, decision, actorEmail: admin.email, nota });
   revalidatePath("/backoffice/leads");
+}
+
+/** Crea el negocio de crédito de un lead (o lleva al que ya tiene). */
+export async function crearNegocioDesdeLeadAction(formData: FormData) {
+  const session = await getAdminSession();
+  requireRole(session, ["super_admin", "comercial"]);
+  const admin = requierePermiso(session, "originacion.operar");
+  const leadId = String(formData.get("leadId") ?? "");
+  let id: string;
+  try {
+    id = await crearNegocioDesdeLead(leadId, admin.email);
+  } catch (e) {
+    if (e instanceof NegocioError) redirect(`/backoffice/leads?error=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  revalidatePath("/backoffice/leads", "layout");
+  revalidatePath("/backoffice/negocios", "layout");
+  redirect(`/backoffice/negocios/${id}`);
 }
