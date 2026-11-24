@@ -1,11 +1,26 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { CIERRES, ETAPAS_NEGOCIO, estaAbierto, type EtapaNegocio } from "@/lib/clientes/negocios";
+import {
+  CIERRES,
+  DESTINOS,
+  ETAPAS_NEGOCIO,
+  ETIQUETA_ETAPA,
+  GARANTIAS,
+  MOTIVOS_RECHAZO,
+  PRODUCTOS,
+  estaAbierto,
+  faltantesPara,
+  listaLegible,
+  type DatosSolicitud,
+  type EtapaNegocio,
+  type ParaRequisitos,
+} from "@/lib/clientes/negocios";
 import { enviarSinBorrar } from "../../cobranza/enviarSinBorrar";
-import { cambiarEtapaAction, editarNegocioAction, type NegocioResult } from "../actions";
+import { cambiarEtapaAction, editarNegocioAction, guardarSolicitudAction, type NegocioResult } from "../actions";
 
 const campo = "w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm";
+const etiqueta = "block text-sm font-medium";
 const boton = "rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50";
 
 function Aviso({ r }: { r: NegocioResult | null }) {
@@ -18,30 +33,37 @@ function Aviso({ r }: { r: NegocioResult | null }) {
 }
 
 const ORDEN = new Map(ETAPAS_NEGOCIO.map((e, i) => [e.value, i]));
+const mananaDe = (hoy: string) => new Date(Date.parse(`${hoy}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
-/** Mover el negocio a otra etapa. Posponer, rechazar y regresar piden motivo. */
-export function MoverEtapa({ id, etapa }: { id: string; etapa: EtapaNegocio }) {
+/**
+ * Mover el negocio a otra etapa. Al posponer pide motivo y fecha para volver a
+ * contactarlo; al rechazar, el motivo del catálogo; al regresar, el motivo. Al
+ * avanzar avisa qué datos de la solicitud faltan (el servidor no lo deja pasar).
+ */
+export function MoverEtapa({ id, etapa, requisitos, hoy }: { id: string; etapa: EtapaNegocio; requisitos: ParaRequisitos; hoy: string }) {
   const [r, accion, guardando] = useActionState(cambiarEtapaAction.bind(null, id), null);
-  const siguiente = ETAPAS_NEGOCIO.find((e, i) => estaAbierto(etapa) && i === (ORDEN.get(etapa) ?? 0) + 1)?.value;
-  const [nueva, setNueva] = useState<string>(siguiente ?? "");
-  // Al moverse el negocio, la etapa propuesta vuelve a ser la siguiente de la nueva.
+  const siguienteDe = (e: EtapaNegocio) => (estaAbierto(e) ? ETAPAS_NEGOCIO[(ORDEN.get(e) ?? 0) + 1]?.value : undefined);
+  const [nueva, setNueva] = useState<string>(siguienteDe(etapa) ?? "");
   const [motivo, setMotivo] = useState("");
+  // Al moverse el negocio, la etapa propuesta vuelve a ser la siguiente de la nueva.
   const [deEtapa, setDeEtapa] = useState(etapa);
   if (deEtapa !== etapa) {
     setDeEtapa(etapa);
-    setNueva(siguiente ?? "");
+    setNueva(siguienteDe(etapa) ?? "");
     setMotivo("");
   }
-  const pideMotivo =
-    CIERRES.includes(nueva as EtapaNegocio) || (estaAbierto(etapa) && estaAbierto(nueva as EtapaNegocio) && (ORDEN.get(nueva as EtapaNegocio) ?? 0) < (ORDEN.get(etapa) ?? 0));
 
   if (etapa === "dispersado") return <p className="text-sm text-finbra-gray">El crédito ya está dispersado; el negocio no cambia de etapa.</p>;
+  const destino = nueva as EtapaNegocio;
+  const regresa = !!nueva && estaAbierto(etapa) && estaAbierto(destino) && (ORDEN.get(destino) ?? 0) < (ORDEN.get(etapa) ?? 0);
+  const faltan = nueva && !regresa && !CIERRES.includes(destino) ? faltantesPara(destino, requisitos) : [];
+  const siguiente = siguienteDe(etapa);
+
   return (
-    // Sin limpiar el formulario al enviar: si hay un error, se conserva lo escrito.
     <form onSubmit={enviarSinBorrar(accion)} className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-48 flex-1 space-y-1">
-          <label htmlFor="etapa" className="block text-sm font-medium">Mover a</label>
+          <label htmlFor="etapa" className={etiqueta}>Mover a</label>
           <select id="etapa" name="etapa" required value={nueva} onChange={(e) => setNueva(e.target.value)} className={campo}>
             <option value="" disabled>Elige la etapa</option>
             {ETAPAS_NEGOCIO.filter((e) => e.value !== etapa).map((e) => (
@@ -52,17 +74,62 @@ export function MoverEtapa({ id, etapa }: { id: string; etapa: EtapaNegocio }) {
             ))}
           </select>
         </div>
-        <button type="submit" disabled={guardando || !nueva} className={boton}>
+        <button type="submit" disabled={guardando || !nueva || faltan.length > 0} className={boton}>
           {guardando ? "Moviendo…" : "Mover"}
         </button>
       </div>
+
+      {faltan.length > 0 && (
+        <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          Para pasar a {ETIQUETA_ETAPA[destino]} falta: {listaLegible(faltan)}. Captúralo en «Solicitud»{faltan.includes("RFC de la empresa") ? " (el RFC, en los datos de la empresa)" : ""}.
+        </p>
+      )}
+
+      {nueva === "pospuesto" && (
+        <div className="space-y-1">
+          <label htmlFor="recontactarEl" className={etiqueta}>Volver a contactarlo el</label>
+          <input id="recontactarEl" name="recontactarEl" type="date" required min={mananaDe(hoy)} className={`${campo} sm:w-56`} />
+          <p className="text-xs text-finbra-gray">Queda una tarea para el responsable en esa fecha.</p>
+        </div>
+      )}
+      {nueva === "rechazado" && (
+        <div className="space-y-1">
+          <label htmlFor="motivoRechazo" className={etiqueta}>Motivo del rechazo</label>
+          <select id="motivoRechazo" name="motivoRechazo" required defaultValue="" className={campo}>
+            <option value="" disabled>Elige el motivo</option>
+            <optgroup label="Finbra no lo aprobó">
+              {Object.entries(MOTIVOS_RECHAZO)
+                .filter(([, m]) => m.por === "finbra")
+                .map(([k, m]) => (
+                  <option key={k} value={k}>{m.label}</option>
+                ))}
+            </optgroup>
+            <optgroup label="El cliente desistió">
+              {Object.entries(MOTIVOS_RECHAZO)
+                .filter(([, m]) => m.por === "cliente")
+                .map(([k, m]) => (
+                  <option key={k} value={k}>{m.label}</option>
+                ))}
+            </optgroup>
+          </select>
+        </div>
+      )}
       {nueva && (
         <div className="space-y-1">
-          <label htmlFor="motivo" className="block text-sm font-medium">
-            {nueva === "pospuesto" ? "Por qué se pospone" : nueva === "rechazado" ? "Por qué se rechaza" : "Motivo"}
-            {!pideMotivo && <span className="font-normal text-finbra-gray"> (opcional)</span>}
+          <label htmlFor="motivo" className={etiqueta}>
+            {nueva === "pospuesto" ? "Por qué se pospone" : nueva === "rechazado" ? "Detalle" : "Motivo"}
+            {nueva !== "pospuesto" && !regresa && <span className="font-normal text-finbra-gray"> (opcional)</span>}
           </label>
-          <textarea id="motivo" name="motivo" rows={2} maxLength={1000} required={pideMotivo} value={motivo} onChange={(e) => setMotivo(e.target.value)} className={campo} />
+          <textarea
+            id="motivo"
+            name="motivo"
+            rows={2}
+            maxLength={1000}
+            required={nueva === "pospuesto" || regresa}
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            className={campo}
+          />
         </div>
       )}
       <Aviso r={r} />
@@ -70,40 +137,94 @@ export function MoverEtapa({ id, etapa }: { id: string; etapa: EtapaNegocio }) {
   );
 }
 
-/** Monto estimado, responsable y notas. */
-export function EditarNegocio({
-  id,
-  monto,
-  responsable,
-  notas,
-  ejecutivos,
-}: {
-  id: string;
-  monto: number | null;
-  responsable: string | null;
-  notas: string | null;
-  ejecutivos: { email: string; nombre: string }[];
-}) {
-  const [r, accion, guardando] = useActionState(editarNegocioAction.bind(null, id), null);
+/** Producto, monto, plazo, destino y garantía. */
+export function Solicitud({ id, s }: { id: string; s: DatosSolicitud }) {
+  const [r, accion, guardando] = useActionState(guardarSolicitudAction.bind(null, id), null);
+  const [garantia, setGarantia] = useState<string>(s.garantiaTipo ?? "");
+  const pesos = (n: number | null) => (n !== null ? n.toLocaleString("es-MX") : "");
   return (
-    <form onSubmit={enviarSinBorrar(accion)} className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
+    <form onSubmit={enviarSinBorrar(accion)} className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1">
-          <label htmlFor="montoEstimado" className="block text-sm font-medium">Monto estimado</label>
-          <input id="montoEstimado" name="montoEstimado" inputMode="decimal" defaultValue={monto !== null ? monto.toLocaleString("es-MX") : ""} className={`${campo} tabular-nums`} />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="responsableEmail" className="block text-sm font-medium">Responsable</label>
-          <select id="responsableEmail" name="responsableEmail" defaultValue={responsable ?? ""} className={campo}>
-            <option value="">Sin responsable</option>
-            {ejecutivos.map((u) => (
-              <option key={u.email} value={u.email}>{u.nombre}</option>
+          <label htmlFor="producto" className={etiqueta}>Producto</label>
+          <select id="producto" name="producto" defaultValue={s.producto ?? ""} className={campo}>
+            <option value="">Sin definir</option>
+            {Object.entries(PRODUCTOS).map(([v, t]) => (
+              <option key={v} value={v}>{t}</option>
             ))}
           </select>
         </div>
+        <div className="space-y-1">
+          <label htmlFor="montoEstimado" className={etiqueta}>Monto</label>
+          <input id="montoEstimado" name="montoEstimado" inputMode="decimal" defaultValue={pesos(s.montoEstimado)} placeholder="1,500,000" className={`${campo} tabular-nums`} />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="plazoMeses" className={etiqueta}>Plazo (meses)</label>
+          <input id="plazoMeses" name="plazoMeses" type="number" min={1} max={120} step={1} defaultValue={s.plazoMeses ?? ""} className={`${campo} tabular-nums`} />
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1">
+          <label htmlFor="destino" className={etiqueta}>Destino del crédito</label>
+          <select id="destino" name="destino" defaultValue={s.destino ?? ""} className={campo}>
+            <option value="">Sin definir</option>
+            {Object.entries(DESTINOS).map(([v, t]) => (
+              <option key={v} value={v}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="destinoDetalle" className={etiqueta}>Detalle del destino <span className="font-normal text-finbra-gray">(opcional)</span></label>
+          <input id="destinoDetalle" name="destinoDetalle" maxLength={500} defaultValue={s.destinoDetalle ?? ""} className={campo} />
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-1">
+          <label htmlFor="garantiaTipo" className={etiqueta}>Garantía</label>
+          <select id="garantiaTipo" name="garantiaTipo" value={garantia} onChange={(e) => setGarantia(e.target.value)} className={campo}>
+            <option value="">Sin definir</option>
+            {Object.entries(GARANTIAS).map(([v, t]) => (
+              <option key={v} value={v}>{t}</option>
+            ))}
+          </select>
+        </div>
+        {garantia !== "sin_garantia" && (
+          <>
+            <div className="space-y-1">
+              <label htmlFor="garantiaDetalle" className={etiqueta}>Qué es <span className="font-normal text-finbra-gray">(opcional)</span></label>
+              <input id="garantiaDetalle" name="garantiaDetalle" maxLength={500} defaultValue={s.garantiaDetalle ?? ""} placeholder="3 tractocamiones 2021" className={campo} />
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="garantiaValor" className={etiqueta}>Valor estimado <span className="font-normal text-finbra-gray">(opcional)</span></label>
+              <input id="garantiaValor" name="garantiaValor" inputMode="decimal" defaultValue={pesos(s.garantiaValor)} className={`${campo} tabular-nums`} />
+            </div>
+          </>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <button type="submit" disabled={guardando} className={boton}>{guardando ? "Guardando…" : "Guardar solicitud"}</button>
+        <Aviso r={r} />
+      </div>
+    </form>
+  );
+}
+
+/** Responsable y notas. */
+export function EditarNegocio({ id, responsable, notas, ejecutivos }: { id: string; responsable: string | null; notas: string | null; ejecutivos: { email: string; nombre: string }[] }) {
+  const [r, accion, guardando] = useActionState(editarNegocioAction.bind(null, id), null);
+  return (
+    <form onSubmit={enviarSinBorrar(accion)} className="space-y-3">
+      <div className="space-y-1">
+        <label htmlFor="responsableEmail" className={etiqueta}>Responsable</label>
+        <select id="responsableEmail" name="responsableEmail" defaultValue={responsable ?? ""} className={`${campo} sm:w-72`}>
+          <option value="">Sin responsable</option>
+          {ejecutivos.map((u) => (
+            <option key={u.email} value={u.email}>{u.nombre}</option>
+          ))}
+        </select>
       </div>
       <div className="space-y-1">
-        <label htmlFor="notas" className="block text-sm font-medium">Notas</label>
+        <label htmlFor="notas" className={etiqueta}>Notas</label>
         <textarea id="notas" name="notas" rows={3} maxLength={4000} defaultValue={notas ?? ""} className={campo} />
       </div>
       <div className="flex flex-wrap items-center gap-3">

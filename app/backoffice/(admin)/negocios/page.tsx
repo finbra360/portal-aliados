@@ -5,7 +5,7 @@ import { codigoDeError } from "@/lib/collections/errors";
 import { fechaMexico } from "@/lib/collections/rules";
 import { formatFecha, formatMoney } from "@/lib/format";
 import { getNegocios, hayNegocios, type Negocio } from "@/lib/db/negocios";
-import { CIERRES, ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, ORIGENES_NEGOCIO, diasEnEtapa, totalesPorEtapa, type EtapaNegocio } from "@/lib/clientes/negocios";
+import { CIERRES, ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, ORIGENES_NEGOCIO, PRODUCTOS, diasEnEtapa, totalesPorEtapa, type EtapaNegocio } from "@/lib/clientes/negocios";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import EtapaNegocioChip from "./EtapaNegocioChip";
@@ -34,6 +34,12 @@ function Tarjeta({ n, hoy }: { n: Negocio; hoy: string }) {
       <Link href={`${BASE}/${n.id}`} className="block space-y-1 rounded-lg border border-black/5 bg-white p-3 text-sm shadow-sm hover:border-finbra-purple/40">
         <p className="break-words font-semibold leading-snug [overflow-wrap:anywhere]">{n.empresa}</p>
         <p className="tabular-nums">{n.montoEstimado !== null ? formatMoney(n.montoEstimado) : <span className="text-finbra-gray">Sin monto</span>}</p>
+        {n.producto && (
+          <p className="text-xs text-finbra-gray">
+            {PRODUCTOS[n.producto]}
+            {n.plazoMeses ? ` · ${n.plazoMeses} m` : ""}
+          </p>
+        )}
         <p className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-finbra-gray">
           <span>{n.responsableNombre ?? "Sin responsable"}</span>
           <span className={dias > 14 ? "font-semibold text-amber-800" : ""}>{dias === 0 ? "hoy" : `${dias} ${dias === 1 ? "día" : "días"}`}</span>
@@ -149,11 +155,12 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
             ))}
           </div>
           <Card className="overflow-x-auto p-0">
-            <table className="w-full min-w-[900px] text-left text-sm">
+            <table className="w-full min-w-[1000px] text-left text-sm">
               <thead>
                 <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                   <th scope="col" className="px-4 py-3">Empresa</th>
                   <th scope="col" className="px-4 py-3">Etapa</th>
+                  <th scope="col" className="px-4 py-3">Producto</th>
                   <th scope="col" className="px-4 py-3 text-right">Monto estimado</th>
                   <th scope="col" className="px-4 py-3">Origen</th>
                   <th scope="col" className="px-4 py-3">Responsable</th>
@@ -170,8 +177,15 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
                         <Link href={`${BASE}/${n.id}`} className="font-medium text-finbra-purple hover:underline">{n.empresa}</Link>
                         {!n.esCliente && <span className="ml-2 text-xs text-finbra-gray">Prospecto</span>}
                         {n.motivoCierre && <p className="text-xs text-finbra-gray">{n.motivoCierre}</p>}
+                        {n.etapa === "pospuesto" && n.recontactarEl && (
+                          <p className={`text-xs ${n.recontactarEl <= hoy ? "font-semibold text-amber-800" : "text-finbra-gray"}`}>Volver a contactar el {formatFecha(n.recontactarEl)}</p>
+                        )}
                       </td>
                       <td className="px-4 py-3"><EtapaNegocioChip etapa={n.etapa} /></td>
+                      <td className="px-4 py-3">
+                        {n.producto ? PRODUCTOS[n.producto] : <span className="text-finbra-gray">—</span>}
+                        {n.plazoMeses && <span className="block text-xs text-finbra-gray">{n.plazoMeses} meses</span>}
+                      </td>
                       <td className="px-4 py-3 text-right tabular-nums">{n.montoEstimado !== null ? formatMoney(n.montoEstimado) : "—"}</td>
                       <td className="px-4 py-3">{ORIGENES_NEGOCIO[n.origen]}</td>
                       <td className="px-4 py-3">{n.responsableNombre ?? <span className="text-xs text-amber-800">Sin responsable</span>}</td>

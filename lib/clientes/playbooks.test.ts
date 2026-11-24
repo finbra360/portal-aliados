@@ -113,6 +113,7 @@ test("apagado: no crea nada", () => {
 test("origen de la tarea", () => {
   assert.equal(playbookDeOrigen("playbook:bienvenida"), "Crédito nuevo");
   assert.equal(playbookDeOrigen("oportunidad:12"), "Renovación");
+  assert.equal(playbookDeOrigen("negocio:3f1c"), "Negocio pospuesto");
   assert.equal(playbookDeOrigen("manual"), null);
   assert.equal(playbookDeOrigen("playbook:otro"), null);
 });

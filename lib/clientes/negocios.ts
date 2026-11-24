@@ -155,23 +155,170 @@ export function validarNegocio(entrada: Record<string, unknown>): Validado<Datos
   return { ok: true, datos: { empresa, contacto, tipo, origen, montoEstimado: monto, responsableEmail: responsable, notas } };
 }
 
+// ---------------------------------------------------------------- solicitud (fase O2)
+
+export type Producto = "pyme" | "simple" | "arrendamiento";
+export const PRODUCTOS: Record<Producto, string> = { pyme: "Crédito PyME", simple: "Crédito simple", arrendamiento: "Arrendamiento" };
+
+export type Destino = "capital_trabajo" | "compra_activo" | "refinanciamiento" | "expansion" | "otro";
+export const DESTINOS: Record<Destino, string> = {
+  capital_trabajo: "Capital de trabajo",
+  compra_activo: "Compra de activo (vehículo, maquinaria)",
+  refinanciamiento: "Refinanciamiento de deuda",
+  expansion: "Expansión",
+  otro: "Otro",
+};
+
+export type TipoGarantia = "vehicular" | "inmobiliaria" | "otra" | "sin_garantia";
+export const GARANTIAS: Record<TipoGarantia, string> = { vehicular: "Vehicular", inmobiliaria: "Inmobiliaria", otra: "Otra", sin_garantia: "Sin garantía" };
+
+/** Motivos de rechazo, cada uno con quién cerró: Finbra (no aprobó) o el cliente (desistió). */
+export const MOTIVOS_RECHAZO: Record<string, { label: string; por: "finbra" | "cliente" }> = {
+  capacidad: { label: "Capacidad de pago insuficiente", por: "finbra" },
+  buro: { label: "Historial de crédito o buró", por: "finbra" },
+  garantia: { label: "Garantía insuficiente o no válida", por: "finbra" },
+  politica: { label: "Giro, antigüedad o tamaño fuera de política", por: "finbra" },
+  documentacion: { label: "Documentación incompleta o inconsistente", por: "finbra" },
+  costo: { label: "Tasa o costo", por: "cliente" },
+  monto: { label: "El monto no le alcanza", por: "cliente" },
+  otro_financiamiento: { label: "Consiguió otro financiamiento", por: "cliente" },
+  ya_no_necesita: { label: "Ya no lo necesita", por: "cliente" },
+  no_responde: { label: "Dejó de responder", por: "cliente" },
+  tiempos: { label: "Tiempos del proceso", por: "cliente" },
+};
+
+export interface DatosSolicitud {
+  producto: Producto | null;
+  montoEstimado: number | null;
+  plazoMeses: number | null;
+  destino: Destino | null;
+  destinoDetalle: string | null;
+  garantiaTipo: TipoGarantia | null;
+  garantiaDetalle: string | null;
+  garantiaValor: number | null;
+}
+
+/** Valida los datos de la solicitud. Todos son opcionales aquí; cada etapa pide los suyos (faltantesPara). */
+export function validarSolicitud(entrada: Record<string, unknown>): Validado<DatosSolicitud> {
+  const producto = limpio(entrada.producto);
+  if (producto && !(producto in PRODUCTOS)) return { ok: false, error: "El producto no es válido." };
+  const monto = leerMonto(entrada.montoEstimado);
+  if (monto === "invalido") return { ok: false, error: "El monto no es válido. Escríbelo sin letras, por ejemplo 1,500,000." };
+  if (monto !== null && monto > MONTO_MAXIMO) return { ok: false, error: `El monto pasa de ${MONTO_MAXIMO.toLocaleString("es-MX")}. Revisa que no sobre un cero.` };
+  const plazoTxt = limpio(entrada.plazoMeses);
+  const plazo = plazoTxt ? Number(plazoTxt) : null;
+  if (plazo !== null && (!Number.isInteger(plazo) || plazo < 1 || plazo > 120)) return { ok: false, error: "El plazo va de 1 a 120 meses." };
+  const destino = limpio(entrada.destino);
+  if (destino && !(destino in DESTINOS)) return { ok: false, error: "El destino no es válido." };
+  const garantia = limpio(entrada.garantiaTipo);
+  if (garantia && !(garantia in GARANTIAS)) return { ok: false, error: "El tipo de garantía no es válido." };
+  const valor = leerMonto(entrada.garantiaValor);
+  if (valor === "invalido") return { ok: false, error: "El valor de la garantía no es válido." };
+  if (valor !== null && valor > MONTO_MAXIMO * 4) return { ok: false, error: "El valor de la garantía es demasiado alto. Revisa que no sobre un cero." };
+  const destinoDetalle = limpio(entrada.destinoDetalle) || null;
+  const garantiaDetalle = limpio(entrada.garantiaDetalle) || null;
+  if ((destinoDetalle?.length ?? 0) > 500 || (garantiaDetalle?.length ?? 0) > 500) return { ok: false, error: "El detalle es demasiado largo (máximo 500 caracteres)." };
+  return {
+    ok: true,
+    datos: {
+      producto: (producto || null) as Producto | null,
+      montoEstimado: monto,
+      plazoMeses: plazo,
+      destino: (destino || null) as Destino | null,
+      destinoDetalle,
+      garantiaTipo: (garantia || null) as TipoGarantia | null,
+      garantiaDetalle: garantia === "sin_garantia" ? null : garantiaDetalle,
+      garantiaValor: garantia === "sin_garantia" ? null : valor,
+    },
+  };
+}
+
+/** Lo que hace falta saber del negocio para decidir si puede avanzar. */
+export interface ParaRequisitos {
+  producto: Producto | null;
+  montoEstimado: number | null;
+  plazoMeses: number | null;
+  destino: Destino | null;
+  garantiaTipo: TipoGarantia | null;
+  rfcEmpresa: string | null;
+}
+
+/** Datos mínimos de cada etapa; las siguientes heredan los de las anteriores. */
+const REQUISITOS: { desde: EtapaNegocio; texto: string; cumple: (n: ParaRequisitos) => boolean }[] = [
+  { desde: "calificado", texto: "producto", cumple: (n) => !!n.producto },
+  { desde: "calificado", texto: "monto estimado", cumple: (n) => n.montoEstimado !== null },
+  { desde: "calificado", texto: "tipo de garantía", cumple: (n) => !!n.garantiaTipo },
+  { desde: "solicitud", texto: "RFC de la empresa", cumple: (n) => !!n.rfcEmpresa },
+  { desde: "solicitud", texto: "plazo", cumple: (n) => n.plazoMeses !== null },
+  { desde: "solicitud", texto: "destino del crédito", cumple: (n) => !!n.destino },
+];
+
+/** Lo que le falta al negocio para estar en `etapa` (vacío si no le falta nada o si es un cierre). */
+export function faltantesPara(etapa: EtapaNegocio, n: ParaRequisitos): string[] {
+  if (CIERRES.includes(etapa)) return [];
+  const hasta = ORDEN.get(etapa)!;
+  return REQUISITOS.filter((r) => ORDEN.get(r.desde)! <= hasta && !r.cumple(n)).map((r) => r.texto);
+}
+
+/** Lista legible: «producto, monto estimado y plazo». */
+export const listaLegible = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
+
+export interface CambioValidado {
+  etapa: EtapaNegocio;
+  /** Texto que queda en el historial (y en motivo_cierre si es un cierre). */
+  motivo: string | null;
+  recontactarEl: string | null;
+  rechazoMotivo: string | null;
+  rechazoPor: "finbra" | "cliente" | null;
+}
+
+const MAX_RECONTACTO_DIAS = 730;
+
 /**
  * Revisa un cambio de etapa. Dispersado no se puede dejar (el crédito ya está
- * en SIAC). Pide motivo al posponer, al rechazar y al regresar a una etapa
- * anterior. Reabrir un pospuesto o un rechazado es avanzar a una etapa abierta.
+ * en SIAC). Posponer pide motivo y la fecha para volver a contactarlo (después
+ * de hoy, a lo más dos años). Rechazar pide un motivo del catálogo (el detalle
+ * es opcional). Regresar a una etapa anterior pide motivo. Avanzar, o reabrir
+ * un pospuesto o un rechazado, pide los datos de esa etapa (faltantesPara).
  */
-export function validarCambioEtapa(actual: EtapaNegocio, nueva: string, motivo: string): Validado<{ etapa: EtapaNegocio; motivo: string | null }> {
+export function validarCambioEtapa(
+  actual: EtapaNegocio,
+  nueva: string,
+  entrada: { motivo?: string; recontactarEl?: string; motivoRechazo?: string },
+  hoy: string,
+  datos: ParaRequisitos,
+): Validado<CambioValidado> {
   if (!ORDEN.has(nueva as EtapaNegocio)) return { ok: false, error: "Esa etapa no existe." };
   const etapa = nueva as EtapaNegocio;
   if (etapa === actual) return { ok: false, error: "El negocio ya está en esa etapa." };
   if (actual === "dispersado") return { ok: false, error: "Un negocio dispersado ya no cambia de etapa: el crédito ya está en SIAC." };
-  const m = motivo.trim();
+  const m = (entrada.motivo ?? "").trim();
   if (m.length > 1000) return { ok: false, error: "El motivo es demasiado largo (máximo 1,000 caracteres)." };
-  const regresa = estaAbierto(actual) && estaAbierto(etapa) && ORDEN.get(etapa)! < ORDEN.get(actual)!;
-  if ((CIERRES.includes(etapa) || regresa) && !m) {
-    return { ok: false, error: etapa === "pospuesto" ? "Escribe por qué se pospone." : etapa === "rechazado" ? "Escribe por qué se rechaza." : "Escribe por qué regresa a una etapa anterior." };
+  const base = { etapa, motivo: m || null, recontactarEl: null, rechazoMotivo: null, rechazoPor: null };
+
+  if (etapa === "pospuesto") {
+    if (!m) return { ok: false, error: "Escribe por qué se pospone." };
+    const f = (entrada.recontactarEl ?? "").trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f) || Number.isNaN(Date.parse(`${f}T00:00:00Z`))) return { ok: false, error: "Elige cuándo volver a contactarlo." };
+    if (f <= hoy) return { ok: false, error: "La fecha para volver a contactarlo tiene que ser después de hoy." };
+    if (diasEnEtapa(hoy, f) > MAX_RECONTACTO_DIAS) return { ok: false, error: "La fecha para volver a contactarlo es de más de dos años; elige una más cercana." };
+    return { ok: true, datos: { ...base, recontactarEl: f } };
   }
-  return { ok: true, datos: { etapa, motivo: m || null } };
+  if (etapa === "rechazado") {
+    const clave = (entrada.motivoRechazo ?? "").trim();
+    const motivo = MOTIVOS_RECHAZO[clave];
+    if (!motivo) return { ok: false, error: "Elige el motivo del rechazo." };
+    return { ok: true, datos: { ...base, motivo: m ? `${motivo.label}: ${m}` : motivo.label, rechazoMotivo: clave, rechazoPor: motivo.por } };
+  }
+
+  const regresa = estaAbierto(actual) && ORDEN.get(etapa)! < ORDEN.get(actual)!;
+  if (regresa) {
+    if (!m) return { ok: false, error: "Escribe por qué regresa a una etapa anterior." };
+    return { ok: true, datos: base };
+  }
+  const faltan = faltantesPara(etapa, datos);
+  if (faltan.length) return { ok: false, error: `Para pasar a ${ETIQUETA_ETAPA[etapa]} falta: ${listaLegible(faltan)}.` };
+  return { ok: true, datos: base };
 }
 
 const MS_DIA = 86_400_000;

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { diasEnEtapa, leerMonto, leerTelefono, totalesPorEtapa, validarCambioEtapa, validarNegocio } from "./negocios.ts";
+import { diasEnEtapa, faltantesPara, leerMonto, leerTelefono, totalesPorEtapa, validarCambioEtapa, validarNegocio, validarSolicitud, type ParaRequisitos } from "./negocios.ts";
 
 const EMPRESA = "0f8fad5b-d9cb-469f-a165-70867728950e";
 
@@ -50,15 +50,67 @@ test("rechaza lo que falta o no sirve, con un mensaje claro", () => {
   assert.deepEqual(validarNegocio({ empresaNombre: "X", origen: "web", tipo: "renovacion" }), { ok: false, error: "Una empresa nueva solo puede tener un crédito nuevo." });
 });
 
-test("cambio de etapa: avanzar libre; posponer, rechazar y regresar piden motivo; dispersado no cambia", () => {
-  assert.deepEqual(validarCambioEtapa("prospecto", "solicitud", ""), { ok: true, datos: { etapa: "solicitud", motivo: null } });
-  assert.equal(validarCambioEtapa("prospecto", "pospuesto", " ").ok, false);
-  assert.deepEqual(validarCambioEtapa("oferta", "rechazado", "No le alcanzó el flujo"), { ok: true, datos: { etapa: "rechazado", motivo: "No le alcanzó el flujo" } });
-  assert.deepEqual(validarCambioEtapa("comite", "expediente", ""), { ok: false, error: "Escribe por qué regresa a una etapa anterior." });
-  assert.equal(validarCambioEtapa("pospuesto", "calificado", "").ok, true);
-  assert.equal(validarCambioEtapa("dispersado", "comite", "error").ok, false);
-  assert.equal(validarCambioEtapa("solicitud", "solicitud", "").ok, false);
-  assert.equal(validarCambioEtapa("solicitud", "ganado", "").ok, false);
+const HOY = "2026-11-24";
+const COMPLETO: ParaRequisitos = { producto: "pyme", montoEstimado: 2_000_000, plazoMeses: 36, destino: "capital_trabajo", garantiaTipo: "vehicular", rfcEmpresa: "TFI200101AB1" };
+const VACIO: ParaRequisitos = { producto: null, montoEstimado: null, plazoMeses: null, destino: null, garantiaTipo: null, rfcEmpresa: null };
+const mover = (actual: Parameters<typeof validarCambioEtapa>[0], nueva: string, entrada = {}, datos = COMPLETO) => validarCambioEtapa(actual, nueva, entrada, HOY, datos);
+
+test("cambio de etapa: avanzar con los datos completos; regresar pide motivo; dispersado no cambia", () => {
+  assert.deepEqual(mover("prospecto", "solicitud"), { ok: true, datos: { etapa: "solicitud", motivo: null, recontactarEl: null, rechazoMotivo: null, rechazoPor: null } });
+  assert.deepEqual(mover("comite", "expediente"), { ok: false, error: "Escribe por qué regresa a una etapa anterior." });
+  assert.equal(mover("comite", "expediente", { motivo: "Falta un documento" }).ok, true);
+  assert.equal(mover("dispersado", "comite", { motivo: "error" }).ok, false);
+  assert.equal(mover("solicitud", "solicitud").ok, false);
+  assert.equal(mover("solicitud", "ganado").ok, false);
+});
+
+test("requisitos por etapa: calificado pide producto, monto y garantía; solicitud además RFC, plazo y destino", () => {
+  assert.deepEqual(faltantesPara("prospecto", VACIO), []);
+  assert.deepEqual(faltantesPara("calificado", VACIO), ["producto", "monto estimado", "tipo de garantía"]);
+  assert.deepEqual(faltantesPara("comite", { ...COMPLETO, rfcEmpresa: null, plazoMeses: null }), ["RFC de la empresa", "plazo"]);
+  assert.deepEqual(faltantesPara("rechazado", VACIO), []);
+  assert.deepEqual(mover("prospecto", "calificado", {}, { ...VACIO, producto: "pyme" }), {
+    ok: false,
+    error: "Para pasar a Calificado falta: monto estimado y tipo de garantía.",
+  });
+  // Regresar no pide datos; reabrir un pospuesto sí.
+  assert.equal(mover("solicitud", "prospecto", { motivo: "Se enfrió" }, VACIO).ok, true);
+  assert.equal(mover("pospuesto", "solicitud", {}, VACIO).ok, false);
+});
+
+test("posponer pide motivo y una fecha futura de hasta dos años", () => {
+  assert.deepEqual(mover("oferta", "pospuesto", { recontactarEl: "2027-01-15" }), { ok: false, error: "Escribe por qué se pospone." });
+  assert.deepEqual(mover("oferta", "pospuesto", { motivo: "Temporada alta" }), { ok: false, error: "Elige cuándo volver a contactarlo." });
+  assert.equal(mover("oferta", "pospuesto", { motivo: "x", recontactarEl: HOY }).ok, false);
+  assert.equal(mover("oferta", "pospuesto", { motivo: "x", recontactarEl: "2029-01-01" }).ok, false);
+  const r = mover("oferta", "pospuesto", { motivo: "Temporada alta", recontactarEl: "2027-01-15" }, VACIO);
+  assert.deepEqual(r, { ok: true, datos: { etapa: "pospuesto", motivo: "Temporada alta", recontactarEl: "2027-01-15", rechazoMotivo: null, rechazoPor: null } });
+});
+
+test("rechazar pide un motivo del catálogo y guarda quién cerró", () => {
+  assert.deepEqual(mover("oferta", "rechazado", { motivo: "No le alcanzó" }), { ok: false, error: "Elige el motivo del rechazo." });
+  assert.deepEqual(mover("oferta", "rechazado", { motivoRechazo: "costo" }, VACIO), {
+    ok: true,
+    datos: { etapa: "rechazado", motivo: "Tasa o costo", recontactarEl: null, rechazoMotivo: "costo", rechazoPor: "cliente" },
+  });
+  const r = mover("analisis", "rechazado", { motivoRechazo: "capacidad", motivo: "DSCR de 0.9" });
+  assert.equal(r.ok && r.datos.motivo, "Capacidad de pago insuficiente: DSCR de 0.9");
+  assert.equal(r.ok && r.datos.rechazoPor, "finbra");
+});
+
+test("solicitud: valida catálogos, plazo y montos; sin garantía borra su detalle", () => {
+  const r = validarSolicitud({ producto: "pyme", montoEstimado: "2,000,000", plazoMeses: "36", destino: "capital_trabajo", garantiaTipo: "vehicular", garantiaValor: "3,500,000" });
+  assert.deepEqual(r, {
+    ok: true,
+    datos: { producto: "pyme", montoEstimado: 2_000_000, plazoMeses: 36, destino: "capital_trabajo", destinoDetalle: null, garantiaTipo: "vehicular", garantiaDetalle: null, garantiaValor: 3_500_000 },
+  });
+  assert.equal(validarSolicitud({}).ok, true);
+  assert.deepEqual(validarSolicitud({ plazoMeses: "0" }), { ok: false, error: "El plazo va de 1 a 120 meses." });
+  assert.deepEqual(validarSolicitud({ plazoMeses: "12.5" }), { ok: false, error: "El plazo va de 1 a 120 meses." });
+  assert.equal(validarSolicitud({ producto: "hipoteca" }).ok, false);
+  const s = validarSolicitud({ garantiaTipo: "sin_garantia", garantiaDetalle: "algo", garantiaValor: "100" });
+  assert.equal(s.ok && s.datos.garantiaDetalle, null);
+  assert.equal(s.ok && s.datos.garantiaValor, null);
 });
 
 test("días en etapa y totales por etapa", () => {
