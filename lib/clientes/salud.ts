@@ -236,3 +236,18 @@ export function compararSalud(a: Salud | null, b: Salud | null): number {
   if (!a || !b) return (a ? 0 : 1) - (b ? 0 : 1);
   return a.puntos - b.puntos;
 }
+
+/**
+ * Puntos de hace `dias` días según la historia guardada: el día guardado más
+ * reciente que no sea posterior a esa fecha (por si el cron no corrió ese día),
+ * siempre que no tenga más de 3 días de diferencia. null si no hay.
+ */
+export function puntosHace(historia: { fecha: string; puntos: number }[], hoy: string, dias: number): number | null {
+  const objetivo = Date.parse(`${hoy}T00:00:00Z`) - dias * MS_DIA;
+  let mejor: { fecha: string; puntos: number } | null = null;
+  for (const h of historia) {
+    const t = Date.parse(`${h.fecha}T00:00:00Z`);
+    if (t <= objetivo && objetivo - t <= 3 * MS_DIA && (!mejor || h.fecha > mejor.fecha)) mejor = h;
+  }
+  return mejor ? mejor.puntos : null;
+}

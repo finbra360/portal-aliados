@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { AJUSTES_SALUD_DEFAULT, calcularSalud, compararSalud, leerAjustesSalud, senalesDe, type SenalesSalud } from "./salud.ts";
+import { AJUSTES_SALUD_DEFAULT, calcularSalud, compararSalud, leerAjustesSalud, puntosHace, senalesDe, type SenalesSalud } from "./salud.ts";
 
 const HOY = "2026-11-24";
 const A = AJUSTES_SALUD_DEFAULT;
@@ -137,4 +137,17 @@ test("compararSalud: peor primero y sin salud al final", () => {
   const x = calcularSalud(sana({ atrasosRecientes: 2 }), A, HOY);
   const y = calcularSalud(sana(), A, HOY);
   assert.deepEqual([y, null, x].sort(compararSalud), [x, y, null]);
+});
+
+test("puntosHace: el día guardado más cercano sin pasarse, con hasta 3 días de hueco", () => {
+  const historia = [
+    { fecha: "2026-10-25", puntos: 90 },
+    { fecha: "2026-11-16", puntos: 80 },
+    { fecha: "2026-11-23", puntos: 70 },
+  ];
+  assert.equal(puntosHace(historia, HOY, 7), 80); // hace 7 días = 17-nov: el 16-nov (1 día antes)
+  assert.equal(puntosHace(historia, HOY, 30), 90); // 25-oct exacto
+  assert.equal(puntosHace(historia, HOY, 1), 70);
+  assert.equal(puntosHace(historia, HOY, 60), null); // nada cerca del 25-sep
+  assert.equal(puntosHace([], HOY, 7), null);
 });

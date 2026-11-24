@@ -188,6 +188,7 @@ export async function getEmpresa(id: string) {
     clientes: clientes.map((c) => ({ id: c.id as string, numeroCliente: c.numero_cliente as string, nombre: c.nombre as string })),
     creditos: fichaCreditos,
     resumen,
+    ajustesSalud: salud.ajustes,
   };
 }
 

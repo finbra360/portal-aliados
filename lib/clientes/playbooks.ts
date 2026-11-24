@@ -6,13 +6,16 @@
 // Cada tarea lleva una llave única (dedupe_key): una vez creada, aunque ya se
 // haya cerrado, el mismo momento no vuelve a generar otra.
 
-export type ClavePlaybook = "bienvenida" | "primer_pago" | "revision" | "liquidacion";
+import { NIVELES_SALUD, type NivelSalud } from "./salud.ts";
+
+export type ClavePlaybook = "bienvenida" | "primer_pago" | "revision" | "liquidacion" | "rescate";
 
 export const PLAYBOOKS: Record<ClavePlaybook, string> = {
   bienvenida: "Crédito nuevo",
   primer_pago: "Primer pago",
   revision: "Revisión periódica",
   liquidacion: "Salida del listado",
+  rescate: "Pasó a En riesgo",
 };
 
 export interface AjustesPlaybooks {
@@ -25,6 +28,8 @@ export interface AjustesPlaybooks {
   /** Tope de tareas de revisión nuevas por día, para no saturar al equipo al arrancar. */
   revisionMaxPorDia: number;
   liquidacion: boolean;
+  /** Llamada de rescate cuando la salud del cliente pasa a En riesgo. */
+  rescate: boolean;
 }
 
 export const AJUSTES_PLAYBOOKS_DEFAULT: AjustesPlaybooks = {
@@ -34,6 +39,7 @@ export const AJUSTES_PLAYBOOKS_DEFAULT: AjustesPlaybooks = {
   revisionDias: 90,
   revisionMaxPorDia: 5,
   liquidacion: true,
+  rescate: true,
 };
 
 const entero = (v: unknown, def: number, max: number) => {
@@ -53,6 +59,7 @@ export function leerAjustesPlaybooks(raw: unknown): AjustesPlaybooks {
     revisionDias: entero(r.revision_dias, d.revisionDias, 365),
     revisionMaxPorDia: entero(r.revision_max_por_dia, d.revisionMaxPorDia, 100),
     liquidacion: bool(r.liquidacion, d.liquidacion),
+    rescate: bool(r.rescate, d.rescate),
   };
 }
 
@@ -83,6 +90,10 @@ export interface EmpresaPlaybook {
   ultimaRevision: string | null;
   /** Tiene una oportunidad de renovación abierta (esa ya pide contactarlo). */
   oportunidadAbierta: boolean;
+  /** Salud de hoy (lib/clientes/salud.ts) y lo que le restó; null sin créditos vigentes. */
+  salud?: { nivel: NivelSalud; puntos: number; razones: string[] } | null;
+  /** Nivel guardado más reciente antes de hoy; null si todavía no hay historia. */
+  nivelAnterior?: NivelSalud | null;
 }
 
 export interface TareaPlaybook {
@@ -120,6 +131,9 @@ export const DIAS_RECIENTE = 7;
  *   viejo primero, con tope diario.
  * - Salida del listado: el crédito dejó de aparecer; confirmar si se liquidó
  *   y, si sí, carta, liberación de garantía y referidos.
+ * - Rescate: su salud pasó a En riesgo desde otro nivel (contra el último día
+ *   guardado). Sin historia no cuenta como caída: al arrancar no se crea una
+ *   tarea por cada cliente que ya estaba en riesgo.
  */
 export function planPlaybooks(p: {
   creditos: CreditoPlaybook[];
@@ -199,6 +213,25 @@ export function planPlaybooks(p: {
           "Si se liquidó: carta de liquidación, liberar la garantía y el GPS, preguntar cómo le fue y pedir referidos. Si fue reestructura o castigo, avisar a Cobranza.",
         tipo: "revision",
         venceEl: mas(hoy, 1),
+      });
+    }
+  }
+
+  if (a.rescate) {
+    for (const e of p.empresas) {
+      if (e.salud?.nivel !== "riesgo" || !e.nivelAnterior || e.nivelAnterior === "riesgo") continue;
+      tareas.push({
+        clave: "rescate",
+        empresaId: e.empresaId,
+        creditId: null,
+        dedupeKey: `playbook:rescate:${e.empresaId}:${hoy}`,
+        titulo: `Llamada de rescate: su salud pasó a En riesgo (${e.salud.puntos}/100)`,
+        descripcion:
+          `Antes estaba en ${NIVELES_SALUD[e.nivelAnterior]}. ` +
+          (e.salud.razones.length ? `Qué le resta: ${e.salud.razones.join("; ")}. ` : "") +
+          "Hablar con el cliente, entender qué cambió y acordar el siguiente paso.",
+        tipo: "llamada",
+        venceEl: hoy,
       });
     }
   }

@@ -116,3 +116,24 @@ test("origen de la tarea", () => {
   assert.equal(playbookDeOrigen("manual"), null);
   assert.equal(playbookDeOrigen("playbook:otro"), null);
 });
+
+test("rescate: solo cuando la salud pasa a En riesgo desde otro nivel guardado", () => {
+  const riesgo = { nivel: "riesgo" as const, puntos: 55, razones: ["12 días de atraso hoy"] };
+  const t = plan(
+    [],
+    [
+      empresa({ empresaId: "cayo", salud: riesgo, nivelAnterior: "atencion" }),
+      empresa({ empresaId: "ya-estaba", salud: riesgo, nivelAnterior: "riesgo" }),
+      empresa({ empresaId: "sin-historia", salud: riesgo, nivelAnterior: null }),
+      empresa({ empresaId: "mejoro", salud: { nivel: "atencion", puntos: 70, razones: [] }, nivelAnterior: "riesgo" }),
+    ],
+  );
+  const rescates = t.filter((x) => x.clave === "rescate");
+  assert.deepEqual(llaves(rescates), [`playbook:rescate:cayo:${HOY}`]);
+  assert.equal(rescates[0].titulo, "Llamada de rescate: su salud pasó a En riesgo (55/100)");
+  assert.match(rescates[0].descripcion, /Antes estaba en Atención\. Qué le resta: 12 días de atraso hoy\./);
+  assert.equal(rescates[0].tipo, "llamada");
+  // Apagado en los ajustes: no crea nada.
+  assert.equal(plan([], [empresa({ empresaId: "cayo", salud: riesgo, nivelAnterior: "sana" })], { ...A, rescate: false }).filter((x) => x.clave === "rescate").length, 0);
+  assert.equal(playbookDeOrigen("playbook:rescate"), "Pasó a En riesgo");
+});

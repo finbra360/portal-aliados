@@ -156,8 +156,8 @@ ON CONFLICT (key) DO NOTHING;
 -- de la foto diaria (lib/db/playbooks.ts); las reglas están en lib/clientes/playbooks.ts.
 INSERT INTO crm_settings (key, value, descripcion) VALUES
   ('playbooks',
-   '{"activo": true, "bienvenida": true, "primer_pago_dias": 5, "revision_dias": 90, "revision_max_por_dia": 5, "liquidacion": true}',
-   'Tareas automáticas. activo: prende o apaga todos. bienvenida: llamada, cuenta de pago y contacto de pagos cuando aparece un crédito nuevo. primer_pago_dias: días antes del primer vencimiento para confirmar la CLABE (0 = apagado). revision_dias: días sin contacto del equipo para pedir una llamada de revisión (0 = apagado). revision_max_por_dia: tope de revisiones nuevas por día. liquidacion: tarea cuando un crédito sale del listado.')
+   '{"activo": true, "bienvenida": true, "primer_pago_dias": 5, "revision_dias": 90, "revision_max_por_dia": 5, "liquidacion": true, "rescate": true}',
+   'Tareas automáticas. activo: prende o apaga todos. bienvenida: llamada, cuenta de pago y contacto de pagos cuando aparece un crédito nuevo. primer_pago_dias: días antes del primer vencimiento para confirmar la CLABE (0 = apagado). revision_dias: días sin contacto del equipo para pedir una llamada de revisión (0 = apagado). revision_max_por_dia: tope de revisiones nuevas por día. liquidacion: tarea cuando un crédito sale del listado. rescate: llamada de rescate cuando la salud del cliente pasa a En riesgo.')
 ON CONFLICT (key) DO NOTHING;
 
 -- Oportunidad comercial. Solo autoriza a contactar al cliente: NO es una
@@ -198,6 +198,28 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_oportunidades_abierta ON crm_oportunid
 CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_oportunidades_credito ON crm_oportunidades(credit_id, tipo) WHERE origen = 'radar';
 CREATE INDEX IF NOT EXISTS idx_crm_oportunidades_empresa ON crm_oportunidades(empresa_id);
 
+-- Salud del cliente de cada día (lib/clientes/salud.ts), guardada después de la
+-- foto diaria. Sirve para ver la tendencia y para el playbook «pasó a En riesgo»,
+-- que compara contra el día guardado anterior. Una fila por empresa y día; si el
+-- cron corre dos veces, la segunda reemplaza a la primera.
+CREATE TABLE IF NOT EXISTS crm_salud_diaria (
+  empresa_id UUID NOT NULL REFERENCES crm_empresas(id) ON DELETE CASCADE,
+  fecha DATE NOT NULL,
+  puntos INTEGER NOT NULL CHECK (puntos BETWEEN 0 AND 100),
+  nivel TEXT NOT NULL CHECK (nivel IN ('sana', 'atencion', 'riesgo')),
+  -- [{texto, puntos}] de lo que le restó, de mayor a menor.
+  razones JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (empresa_id, fecha)
+);
+CREATE INDEX IF NOT EXISTS idx_crm_salud_diaria_fecha ON crm_salud_diaria(fecha);
+
+-- Playbook nuevo «rescate» (pasó a En riesgo): prendido en la fila que ya existe.
+UPDATE crm_settings
+SET value = value || '{"rescate": true}',
+    descripcion = descripcion || ' rescate: llamada de rescate cuando la salud del cliente pasa a En riesgo.'
+WHERE key = 'playbooks' AND NOT (value ? 'rescate');
+
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
 INSERT INTO crm_empresas (ambiente, nombre, razon_social, origen, creada_desde_cliente, ejecutivo_email, created_by)
@@ -222,3 +244,4 @@ ALTER TABLE crm_personas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_actividades ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_tareas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_oportunidades ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_salud_diaria ENABLE ROW LEVEL SECURITY;

@@ -6,15 +6,17 @@ import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { correrRadar } from "@/lib/db/renovaciones";
 import { correrPlaybooks } from "@/lib/db/playbooks";
+import { guardarSaludDiaria } from "@/lib/db/salud-diaria";
 
 export type RadarActionResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
-/** Corre a mano el radar y los playbooks (Super Admin). Es lo mismo que hace el cron después de la foto. */
+/** Corre a mano el radar, guarda la salud de hoy y corre los playbooks (Super Admin). Es lo mismo que hace el cron después de la foto. */
 export async function correrRadarAction(): Promise<RadarActionResult> {
   const admin = requierePermiso(await getAdminSession(), "clientes.configurar");
   try {
     const r = await correrRadar({ actor: admin.email });
     if (!r.corrio) return { ok: false, error: r.motivo };
+    await guardarSaludDiaria();
     const pb = await correrPlaybooks({ actor: admin.email });
     revalidatePath("/backoffice/clientes", "layout");
     revalidatePath("/backoffice/inicio");
