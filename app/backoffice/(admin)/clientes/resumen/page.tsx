@@ -187,7 +187,24 @@ export default async function ResumenCarteraPage() {
 
       <section className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-finbra-gray">Relación y datos de los clientes activos</h2>
-        <div className="grid gap-4 lg:grid-cols-2">
+        <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+          <Card className="space-y-3">
+            <h3 className="font-semibold">Salud de los clientes</h3>
+            {(() => {
+              const de = d.salud.sana + d.salud.atencion + d.salud.riesgo;
+              return (
+                <>
+                  <Barra etiqueta="En riesgo" p={{ n: d.salud.riesgo, de }} />
+                  <Barra etiqueta="Atención" p={{ n: d.salud.atencion, de }} />
+                  <Barra etiqueta="Sanos" p={{ n: d.salud.sana, de }} />
+                </>
+              );
+            })()}
+            <p className="text-xs text-finbra-gray">
+              Cómo va cada relación hoy: pago actual y reciente, contacto del equipo y datos clave (100 puntos menos lo que resta cada señal).{" "}
+              <Link href="/backoffice/clientes?filtro=riesgo&orden=salud" className="text-finbra-purple hover:underline">Ver los clientes en riesgo →</Link>
+            </p>
+          </Card>
           <Card className="space-y-3">
             <h3 className="font-semibold">Cobertura de contacto</h3>
             <Barra etiqueta="Contactados en los últimos 60 días" p={d.cobertura} />
@@ -210,12 +227,14 @@ export default async function ResumenCarteraPage() {
       <section className="space-y-3">
         <h2 className="text-xs font-bold uppercase tracking-wider text-finbra-gray">Por ejecutivo</h2>
         <Card className="overflow-x-auto p-0">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[900px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
                 <th scope="col" className="px-6 py-3">Ejecutivo</th>
                 <th scope="col" className="px-4 py-3 text-right">Clientes activos</th>
                 <th scope="col" className="px-4 py-3 text-right">En mora</th>
+                <th scope="col" className="px-4 py-3 text-right">En riesgo</th>
+                <th scope="col" className="px-4 py-3 text-right">Atención</th>
                 <th scope="col" className="px-4 py-3 text-right">Contactados 60 d</th>
                 <th scope="col" className="px-4 py-3 text-right">Tareas abiertas</th>
                 <th scope="col" className="px-4 py-3 text-right">Vencidas</th>
@@ -228,6 +247,8 @@ export default async function ResumenCarteraPage() {
                   <td className={`px-6 py-3 ${f.email ? "font-semibold" : "text-amber-800"}`}>{f.nombre}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{f.clientes}</td>
                   <td className={`px-4 py-3 text-right tabular-nums ${f.enMora ? "text-red-700" : ""}`}>{f.enMora}</td>
+                  <td className={`px-4 py-3 text-right tabular-nums ${f.riesgo ? "font-semibold text-red-700" : ""}`}>{f.riesgo}</td>
+                  <td className={`px-4 py-3 text-right tabular-nums ${f.atencion ? "text-amber-800" : ""}`}>{f.atencion}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{f.clientes ? `${f.contactados} de ${f.clientes}` : "—"}</td>
                   <td className="px-4 py-3 text-right tabular-nums">{f.tareasAbiertas}</td>
                   <td className={`px-4 py-3 text-right tabular-nums ${f.tareasVencidas ? "text-red-700" : ""}`}>{f.tareasVencidas}</td>

@@ -5,7 +5,6 @@ import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getEmpresasLista } from "@/lib/db/empresas";
-import { relacionDeEmpresas } from "@/lib/db/cartera";
 import { fechaMexico } from "@/lib/collections/rules";
 import { leerAjustesPlaybooks, planPlaybooks, type AjustesPlaybooks, type ClavePlaybook } from "@/lib/clientes/playbooks";
 
@@ -55,7 +54,7 @@ export async function correrPlaybooks(p: { actor: string }): Promise<ResultadoPl
       : [],
   );
   const ultimaRevision = new Map(revisiones.map((r) => [r.empresa_id as string, r.ultima as string]));
-  const relacion = await relacionDeEmpresas(lista.items.map((e) => e.empresaId));
+  const relacion = lista.relacion;
 
   const tareas = planPlaybooks({
     creditos: creditos.map((c) => ({

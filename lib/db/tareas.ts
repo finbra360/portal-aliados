@@ -4,7 +4,6 @@ import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getEmpresasLista } from "@/lib/db/empresas";
-import { relacionDeEmpresas } from "@/lib/db/cartera";
 import { fechaMexico } from "@/lib/collections/rules";
 import { TIPOS_TAREA, avisosDeCartera, type DatosTarea, type TipoTarea } from "@/lib/clientes/tareas";
 
@@ -113,7 +112,7 @@ export async function getMiCartera(email: string) {
       ORDER BY t.vence_el, t.id LIMIT 200
     `,
   ]);
-  const porId = await relacionDeEmpresas(lista.items.map((e) => e.empresaId));
+  const porId = lista.relacion;
   const clientes = lista.items.map((e) => {
     const x = porId.get(e.empresaId);
     return {
@@ -126,5 +125,9 @@ export async function getMiCartera(email: string) {
       ultimoContacto: x?.ultimoContacto ?? null,
     };
   });
-  return { hoy, clientes: clientes.length, tareas: tareas.map(mapTarea), avisos: avisosDeCartera(clientes, hoy) };
+  const salud = {
+    riesgo: lista.items.filter((e) => e.salud?.nivel === "riesgo").length,
+    atencion: lista.items.filter((e) => e.salud?.nivel === "atencion").length,
+  };
+  return { hoy, clientes: clientes.length, salud, tareas: tareas.map(mapTarea), avisos: avisosDeCartera(clientes, hoy) };
 }
