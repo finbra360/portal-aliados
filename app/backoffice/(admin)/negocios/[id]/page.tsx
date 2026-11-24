@@ -10,12 +10,12 @@ import { listEjecutivos } from "@/lib/db/empresas";
 import { getHistorial } from "@/lib/db/personas";
 import { getTareasEmpresa } from "@/lib/db/tareas";
 import { TIPOS_TAREA } from "@/lib/clientes/tareas";
-import { ETAPAS_NEGOCIO, ETIQUETA_ETAPA, ORIGENES_NEGOCIO, TIPOS_NEGOCIO, diasEnEtapa, estaAbierto } from "@/lib/clientes/negocios";
+import { DESTINOS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, GARANTIAS, ORIGENES_NEGOCIO, PRODUCTOS, TIPOS_NEGOCIO, diasEnEtapa, estaAbierto, type ParaRequisitos } from "@/lib/clientes/negocios";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import PlazoChip from "../../clientes/PlazoChip";
 import EtapaNegocioChip from "../EtapaNegocioChip";
-import { EditarNegocio, MoverEtapa } from "./Controles";
+import { EditarNegocio, MoverEtapa, Solicitud } from "./Controles";
 
 const PASOS = ETAPAS_NEGOCIO.filter((e) => e.value !== "pospuesto" && e.value !== "rechazado");
 
@@ -48,6 +48,7 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
   const dias = diasEnEtapa(n.etapaDesde, hoy);
   const actual = PASOS.findIndex((p) => p.value === n.etapa);
   const ficha = `/backoffice/clientes/${n.empresaId}`;
+  const requisitos: ParaRequisitos = { producto: n.producto, montoEstimado: n.montoEstimado, plazoMeses: n.plazoMeses, destino: n.destino, garantiaTipo: n.garantiaTipo, rfcEmpresa: n.rfcEmpresa };
 
   return (
     <div className="space-y-6">
@@ -59,7 +60,7 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
               <Link href={ficha} className="hover:text-finbra-purple hover:underline">{n.empresa}</Link>
             </h1>
             <p className="text-sm text-finbra-gray">
-              {TIPOS_NEGOCIO[n.tipo]} · llegó por {ORIGENES_NEGOCIO[n.origen]} · alta el {formatFecha(n.createdAt.slice(0, 10))}
+              {n.producto ? PRODUCTOS[n.producto] : TIPOS_NEGOCIO[n.tipo]}{n.producto && n.tipo !== "nuevo" ? ` (${TIPOS_NEGOCIO[n.tipo].toLowerCase()})` : ""}{n.plazoMeses ? ` a ${n.plazoMeses} meses` : ""} · llegó por {ORIGENES_NEGOCIO[n.origen]} · alta el {formatFecha(n.createdAt.slice(0, 10))}
               {!n.esCliente && " · la empresa es prospecto"}
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -100,6 +101,8 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
         {!estaAbierto(n.etapa) && n.etapa !== "dispersado" && (
           <p className="mt-3 text-sm">
             <span className="font-semibold">{ETIQUETA_ETAPA[n.etapa]}:</span> {n.motivoCierre ?? "sin motivo"}
+            {n.etapa === "pospuesto" && n.recontactarEl && <span className="text-finbra-gray"> · volver a contactar el {formatFecha(n.recontactarEl)}</span>}
+            {n.etapa === "rechazado" && n.rechazoPor && <span className="text-finbra-gray"> · {n.rechazoPor === "finbra" ? "Finbra no lo aprobó" : "el cliente desistió"}</span>}
           </p>
         )}
       </Card>
@@ -109,17 +112,41 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
           {puedeOperar && (
             <Card className="space-y-3">
               <h2 className="text-lg font-bold">Etapa</h2>
-              <MoverEtapa id={n.id} etapa={n.etapa} />
+              <MoverEtapa id={n.id} etapa={n.etapa} hoy={hoy} requisitos={requisitos} />
             </Card>
           )}
           <Card className="space-y-3">
-            <h2 className="text-lg font-bold">Datos del negocio</h2>
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <h2 className="text-lg font-bold">Solicitud</h2>
+              <span className="text-xs text-finbra-gray">
+                RFC de la empresa: {n.rfcEmpresa ? <span className="font-mono">{n.rfcEmpresa}</span> : <Link href={`${ficha}?tab=datos`} className="text-finbra-purple hover:underline">falta capturarlo</Link>}
+              </span>
+            </div>
             {puedeOperar ? (
-              <EditarNegocio id={n.id} monto={n.montoEstimado} responsable={n.responsableEmail} notas={n.notas} ejecutivos={ejecutivos} />
+              <Solicitud id={n.id} s={n} />
+            ) : (
+              <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                <div><dt className="text-finbra-gray">Producto</dt><dd>{n.producto ? PRODUCTOS[n.producto] : "—"}</dd></div>
+                <div><dt className="text-finbra-gray">Plazo</dt><dd>{n.plazoMeses ? `${n.plazoMeses} meses` : "—"}</dd></div>
+                <div><dt className="text-finbra-gray">Destino</dt><dd>{n.destino ? DESTINOS[n.destino] : "—"}{n.destinoDetalle && ` · ${n.destinoDetalle}`}</dd></div>
+                <div>
+                  <dt className="text-finbra-gray">Garantía</dt>
+                  <dd>
+                    {n.garantiaTipo ? GARANTIAS[n.garantiaTipo] : "—"}
+                    {n.garantiaDetalle && ` · ${n.garantiaDetalle}`}
+                    {n.garantiaValor !== null && ` · ${formatMoney(n.garantiaValor)}`}
+                  </dd>
+                </div>
+              </dl>
+            )}
+          </Card>
+          <Card className="space-y-3">
+            <h2 className="text-lg font-bold">Responsable y notas</h2>
+            {puedeOperar ? (
+              <EditarNegocio id={n.id} responsable={n.responsableEmail} notas={n.notas} ejecutivos={ejecutivos} />
             ) : (
               <p className="whitespace-pre-line text-sm">{n.notas ?? <span className="text-finbra-gray">Sin notas.</span>}</p>
             )}
-            <p className="text-xs text-finbra-gray">Producto, plazo, destino y garantía se capturan en la fase O2.</p>
           </Card>
           <Card className="space-y-3">
             <h2 className="text-lg font-bold">Historial de etapas</h2>

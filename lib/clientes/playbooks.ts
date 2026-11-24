@@ -277,6 +277,7 @@ export function planPlaybooks(p: {
 /** Nombre del playbook a partir del origen de la tarea ('playbook:<clave>'), o null si no es de un playbook. */
 export function playbookDeOrigen(origen: string): string | null {
   if (origen.startsWith("oportunidad:")) return "Renovación";
+  if (origen.startsWith("negocio:")) return "Negocio pospuesto";
   const clave = origen.startsWith("playbook:") ? (origen.slice(9) as ClavePlaybook) : null;
   return clave && clave in PLAYBOOKS ? PLAYBOOKS[clave] : null;
 }

@@ -6,7 +6,18 @@
 import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
-import { validarCambioEtapa, type DatosNegocio, type EtapaNegocio, type OrigenNegocio, type TipoNegocio } from "@/lib/clientes/negocios";
+import { fechaMexico } from "@/lib/collections/rules";
+import {
+  validarCambioEtapa,
+  type DatosNegocio,
+  type DatosSolicitud,
+  type Destino,
+  type EtapaNegocio,
+  type OrigenNegocio,
+  type Producto,
+  type TipoGarantia,
+  type TipoNegocio,
+} from "@/lib/clientes/negocios";
 
 export class NegocioError extends Error {}
 
@@ -25,12 +36,25 @@ export interface Negocio {
   responsableNombre: string | null;
   motivoCierre: string | null;
   notas: string | null;
+  rfcEmpresa: string | null;
+  producto: Producto | null;
+  plazoMeses: number | null;
+  destino: Destino | null;
+  destinoDetalle: string | null;
+  garantiaTipo: TipoGarantia | null;
+  garantiaDetalle: string | null;
+  garantiaValor: number | null;
+  /** Pospuesto: cuándo volver a contactarlo (YYYY-MM-DD). */
+  recontactarEl: string | null;
+  rechazoMotivo: string | null;
+  rechazoPor: "finbra" | "cliente" | null;
   createdAt: string;
   createdBy: string;
 }
 
 const SELECT_NEGOCIO = () => sql`
-  SELECT n.*, e.nombre AS empresa, a.nombre AS responsable_nombre,
+  SELECT n.*, e.nombre AS empresa, e.rfc AS rfc_empresa, a.nombre AS responsable_nombre,
+         to_char(n.recontactar_el, 'YYYY-MM-DD') AS recontactar,
          EXISTS (SELECT 1 FROM col_clients c WHERE c.empresa_id = e.id) AS es_cliente
   FROM crm_negocios_credito n
   JOIN crm_empresas e ON e.id = n.empresa_id
@@ -52,6 +76,17 @@ function mapNegocio(r: Record<string, unknown>): Negocio {
     responsableNombre: (r.responsable_nombre as string) ?? null,
     motivoCierre: (r.motivo_cierre as string) ?? null,
     notas: (r.notas as string) ?? null,
+    rfcEmpresa: (r.rfc_empresa as string) ?? null,
+    producto: (r.producto as Producto) ?? null,
+    plazoMeses: r.plazo_meses === null || r.plazo_meses === undefined ? null : Number(r.plazo_meses),
+    destino: (r.destino as Destino) ?? null,
+    destinoDetalle: (r.destino_detalle as string) ?? null,
+    garantiaTipo: (r.garantia_tipo as TipoGarantia) ?? null,
+    garantiaDetalle: (r.garantia_detalle as string) ?? null,
+    garantiaValor: r.garantia_valor === null || r.garantia_valor === undefined ? null : Number(r.garantia_valor),
+    recontactarEl: (r.recontactar as string) ?? null,
+    rechazoMotivo: (r.rechazo_motivo as string) ?? null,
+    rechazoPor: (r.rechazo_por as "finbra" | "cliente") ?? null,
     createdAt: (r.created_at as Date).toISOString(),
     createdBy: r.created_by as string,
   };
@@ -192,41 +227,109 @@ export async function crearNegocio(p: { datos: DatosNegocio; actor: string }): P
   return negocioId;
 }
 
-/** Mueve un negocio de etapa (con las reglas de validarCambioEtapa) y lo deja en el historial. */
-export async function cambiarEtapa(p: { id: string; etapa: string; motivo: string; actor: string }): Promise<EtapaNegocio> {
+/**
+ * Mueve un negocio de etapa con las reglas de validarCambioEtapa y lo deja en
+ * el historial. Al posponerlo crea la tarea para volver a contactarlo; al
+ * sacarlo de pospuesto cancela esa tarea si sigue abierta.
+ */
+export async function cambiarEtapa(p: {
+  id: string;
+  etapa: string;
+  entrada: { motivo?: string; recontactarEl?: string; motivoRechazo?: string };
+  actor: string;
+}): Promise<EtapaNegocio> {
+  const hoy = fechaMexico();
   const r = await transaccion(async (tx) => {
-    const [n] = await tx`SELECT etapa FROM crm_negocios_credito WHERE id = ${p.id} AND ambiente = ${ambienteActual()} FOR UPDATE`;
+    const [n] = await tx`
+      SELECT n.etapa, n.empresa_id, n.responsable_email, n.producto, n.monto_estimado, n.plazo_meses, n.destino, n.garantia_tipo, e.rfc
+      FROM crm_negocios_credito n JOIN crm_empresas e ON e.id = n.empresa_id
+      WHERE n.id = ${p.id} AND n.ambiente = ${ambienteActual()} FOR UPDATE OF n
+    `;
     if (!n) throw new NegocioError("Ese negocio no existe.");
-    const v = validarCambioEtapa(n.etapa as EtapaNegocio, p.etapa, p.motivo);
+    const v = validarCambioEtapa(n.etapa as EtapaNegocio, p.etapa, p.entrada, hoy, {
+      producto: n.producto ?? null,
+      montoEstimado: n.monto_estimado === null ? null : Number(n.monto_estimado),
+      plazoMeses: n.plazo_meses === null ? null : Number(n.plazo_meses),
+      destino: n.destino ?? null,
+      garantiaTipo: n.garantia_tipo ?? null,
+      rfcEmpresa: n.rfc ?? null,
+    });
     if (!v.ok) throw new NegocioError(v.error);
-    const cierre = v.datos.etapa === "pospuesto" || v.datos.etapa === "rechazado";
+    const d = v.datos;
+    const cierre = d.etapa === "pospuesto" || d.etapa === "rechazado";
     await tx`
       UPDATE crm_negocios_credito
-      SET etapa = ${v.datos.etapa}, etapa_desde = now(), motivo_cierre = ${cierre ? v.datos.motivo : null},
+      SET etapa = ${d.etapa}, etapa_desde = now(), motivo_cierre = ${cierre ? d.motivo : null},
+          recontactar_el = ${d.recontactarEl}, rechazo_motivo = ${d.rechazoMotivo}, rechazo_por = ${d.rechazoPor},
           updated_by = ${p.actor}, updated_at = now()
       WHERE id = ${p.id}
     `;
-    await tx`INSERT INTO crm_negocio_etapas (negocio_id, de, a, motivo, actor) VALUES (${p.id}, ${n.etapa}, ${v.datos.etapa}, ${v.datos.motivo}, ${p.actor})`;
-    return { de: n.etapa as EtapaNegocio, a: v.datos.etapa, motivo: v.datos.motivo };
+    await tx`INSERT INTO crm_negocio_etapas (negocio_id, de, a, motivo, actor) VALUES (${p.id}, ${n.etapa}, ${d.etapa}, ${d.motivo}, ${p.actor})`;
+    const origen = `negocio:${p.id}`;
+    if (n.etapa === "pospuesto") {
+      await tx`
+        UPDATE crm_tareas SET estado = 'cancelada', resultado = 'El negocio salió de pospuesto antes de la fecha.', cerrada_por = ${p.actor}, cerrada_at = now()
+        WHERE origen = ${origen} AND estado = 'abierta' AND dedupe_key LIKE ${origen + ":recontactar:%"}
+      `;
+    }
+    if (d.etapa === "pospuesto") {
+      const dedupe = `${origen}:recontactar:${d.recontactarEl}`;
+      await tx`
+        INSERT INTO crm_tareas (empresa_id, titulo, descripcion, tipo, vence_el, responsable_email, origen, dedupe_key, created_by)
+        SELECT ${n.empresa_id}, 'Volver a contactar: negocio pospuesto', ${d.motivo}, 'seguimiento', ${d.recontactarEl},
+               ${n.responsable_email ?? p.actor}, ${origen}, ${dedupe}, ${p.actor}
+        WHERE NOT EXISTS (SELECT 1 FROM crm_tareas WHERE dedupe_key = ${dedupe} AND estado = 'abierta')
+      `;
+    }
+    return { de: n.etapa as EtapaNegocio, a: d.etapa, motivo: d.motivo, recontactarEl: d.recontactarEl, rechazoMotivo: d.rechazoMotivo, rechazoPor: d.rechazoPor };
   });
   await logAudit({ actorEmail: p.actor, action: "etapa_negocio", entityType: "negocio", entityId: p.id, metadata: r });
   return r.a;
 }
 
-/** Cambia monto estimado, responsable y notas. */
-export async function editarNegocio(p: { id: string; montoEstimado: number | null; responsableEmail: string | null; notas: string | null; actor: string }) {
+/** Guarda los datos de la solicitud (producto, monto, plazo, destino y garantía). Regresa si cambió algo. */
+export async function guardarSolicitud(p: { id: string; datos: DatosSolicitud; actor: string }): Promise<boolean> {
+  const [antes] = await sql`
+    SELECT producto, monto_estimado, plazo_meses, destino, destino_detalle, garantia_tipo, garantia_detalle, garantia_valor
+    FROM crm_negocios_credito WHERE id = ${p.id} AND ambiente = ${ambienteActual()}
+  `;
+  if (!antes) throw new NegocioError("Ese negocio no existe.");
+  const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+  const d = p.datos;
+  const pares: [string, unknown, unknown][] = [
+    ["producto", antes.producto ?? null, d.producto],
+    ["monto_estimado", num(antes.monto_estimado), d.montoEstimado],
+    ["plazo_meses", num(antes.plazo_meses), d.plazoMeses],
+    ["destino", antes.destino ?? null, d.destino],
+    ["destino_detalle", antes.destino_detalle ?? null, d.destinoDetalle],
+    ["garantia_tipo", antes.garantia_tipo ?? null, d.garantiaTipo],
+    ["garantia_detalle", antes.garantia_detalle ?? null, d.garantiaDetalle],
+    ["garantia_valor", num(antes.garantia_valor), d.garantiaValor],
+  ];
+  const cambios = Object.fromEntries(pares.filter(([, a, b]) => a !== b).map(([k, a, b]) => [k, { antes: a, despues: b }]));
+  if (Object.keys(cambios).length === 0) return false;
+  await sql`
+    UPDATE crm_negocios_credito SET
+      producto = ${d.producto}, monto_estimado = ${d.montoEstimado}, plazo_meses = ${d.plazoMeses}, destino = ${d.destino},
+      destino_detalle = ${d.destinoDetalle}, garantia_tipo = ${d.garantiaTipo}, garantia_detalle = ${d.garantiaDetalle},
+      garantia_valor = ${d.garantiaValor}, updated_by = ${p.actor}, updated_at = now()
+    WHERE id = ${p.id}
+  `;
+  await logAudit({ actorEmail: p.actor, action: "solicitud_negocio", entityType: "negocio", entityId: p.id, metadata: { cambios } });
+  return true;
+}
+
+/** Cambia responsable y notas. */
+export async function editarNegocio(p: { id: string; responsableEmail: string | null; notas: string | null; actor: string }) {
   await usuarioActivo(p.responsableEmail);
-  const [antes] = await sql`SELECT monto_estimado, responsable_email, notas FROM crm_negocios_credito WHERE id = ${p.id} AND ambiente = ${ambienteActual()}`;
+  const [antes] = await sql`SELECT responsable_email, notas FROM crm_negocios_credito WHERE id = ${p.id} AND ambiente = ${ambienteActual()}`;
   if (!antes) throw new NegocioError("Ese negocio no existe.");
   const cambios: Record<string, { antes: unknown; despues: unknown } | true> = {};
-  const montoAntes = antes.monto_estimado === null ? null : Number(antes.monto_estimado);
-  if (montoAntes !== p.montoEstimado) cambios.monto_estimado = { antes: montoAntes, despues: p.montoEstimado };
   if ((antes.responsable_email ?? null) !== p.responsableEmail) cambios.responsable_email = { antes: antes.responsable_email ?? null, despues: p.responsableEmail };
   if ((antes.notas ?? null) !== p.notas) cambios.notas = true;
   if (Object.keys(cambios).length === 0) return false;
   await sql`
-    UPDATE crm_negocios_credito SET monto_estimado = ${p.montoEstimado}, responsable_email = ${p.responsableEmail}, notas = ${p.notas},
-      updated_by = ${p.actor}, updated_at = now()
+    UPDATE crm_negocios_credito SET responsable_email = ${p.responsableEmail}, notas = ${p.notas}, updated_by = ${p.actor}, updated_at = now()
     WHERE id = ${p.id}
   `;
   await logAudit({ actorEmail: p.actor, action: "editar_negocio", entityType: "negocio", entityId: p.id, metadata: { cambios } });

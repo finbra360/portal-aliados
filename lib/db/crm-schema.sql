@@ -262,6 +262,20 @@ CREATE TABLE IF NOT EXISTS crm_negocios_credito (
   updated_by TEXT,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Fase O2: la solicitud (lib/clientes/negocios.ts valida los valores) y los cierres.
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS producto TEXT CHECK (producto IN ('pyme', 'simple', 'arrendamiento'));
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS plazo_meses INTEGER CHECK (plazo_meses BETWEEN 1 AND 120);
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS destino TEXT CHECK (destino IN ('capital_trabajo', 'compra_activo', 'refinanciamiento', 'expansion', 'otro'));
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS destino_detalle TEXT;
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS garantia_tipo TEXT CHECK (garantia_tipo IN ('vehicular', 'inmobiliaria', 'otra', 'sin_garantia'));
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS garantia_detalle TEXT;
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS garantia_valor NUMERIC(14, 2) CHECK (garantia_valor > 0);
+-- Pospuesto: cuándo volver a contactarlo (crea una tarea para esa fecha).
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS recontactar_el DATE;
+-- Rechazado: motivo del catálogo y quién cerró (Finbra o el cliente).
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS rechazo_motivo TEXT;
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS rechazo_por TEXT CHECK (rechazo_por IN ('finbra', 'cliente'));
+
 CREATE INDEX IF NOT EXISTS idx_crm_negocios_credito_empresa ON crm_negocios_credito(empresa_id);
 CREATE INDEX IF NOT EXISTS idx_crm_negocios_credito_etapa ON crm_negocios_credito(ambiente, etapa);
 
