@@ -172,11 +172,14 @@ export default function ContactosEmpresa({
   personas,
   canales,
   puedeEditar,
+  esProspecto = false,
 }: {
   empresaId: string;
   personas: Persona[];
   canales: Canal[];
   puedeEditar: boolean;
+  /** La empresa todavía no tiene cliente en SIAC. */
+  esProspecto?: boolean;
 }) {
   const [nueva, setNueva] = useState(false);
   const [editando, setEditando] = useState<string | null>(null);
@@ -216,7 +219,7 @@ export default function ContactosEmpresa({
         {suyos.length > 0 && (
           <ul className="divide-y divide-black/5">
             {suyos.map((k) => (
-              <CanalFila key={k.id} canal={k} extra={puedeEditar ? <AsignarCanal empresaId={empresaId} canal={k} personas={vigentes} /> : undefined} />
+              <CanalFila key={k.id} canal={k} extra={puedeEditar && k.fuente === "cobranza" ? <AsignarCanal empresaId={empresaId} canal={k} personas={vigentes} /> : undefined} />
             ))}
           </ul>
         )}
@@ -229,8 +232,9 @@ export default function ContactosEmpresa({
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="max-w-2xl text-sm text-finbra-gray">
-          Las personas de la empresa y cómo prefieren que las contactemos. Los teléfonos y correos son los del expediente de cobranza: asignarlos a una persona no
-          cambia a quién le llegan los recordatorios.
+          {!esProspecto
+            ? "Las personas de la empresa y cómo prefieren que las contactemos. Los teléfonos y correos son los del expediente de cobranza: asignarlos a una persona no cambia a quién le llegan los recordatorios."
+            : "Las personas de la empresa y cómo prefieren que las contactemos. Como todavía no es cliente de SIAC, sus teléfonos y correos se guardan aquí y no reciben recordatorios de cobranza."}
         </p>
         {puedeEditar && !nueva && <button type="button" onClick={() => setNueva(true)} className={boton}>Agregar persona</button>}
       </div>

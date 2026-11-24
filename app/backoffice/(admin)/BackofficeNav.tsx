@@ -35,6 +35,16 @@ const NAV: NavEntry[] = [
   },
   {
     type: "group",
+    label: "Originación",
+    icon: <IconTrendingUp />,
+    roles: PERMISOS["originacion.ver"].roles,
+    items: [
+      { href: "/backoffice/negocios", label: "Negocios", excluir: ["/backoffice/negocios/nuevo"] },
+      { href: "/backoffice/negocios/nuevo", label: "Nuevo negocio", permiso: "originacion.operar" },
+    ],
+  },
+  {
+    type: "group",
     label: "Brokers",
     icon: <IconUsers />,
     items: [

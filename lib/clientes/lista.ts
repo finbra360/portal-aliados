@@ -52,7 +52,7 @@ export interface CreditoEmpresaRow {
  * - por_liquidar: algún crédito vigente termina en los próximos 90 días;
  * - activo: tiene créditos vigentes;
  * - ex_cliente: tuvo créditos y ya ninguno está en el listado;
- * - sin_creditos: todavía no tiene créditos en SIAC.
+ * - sin_creditos: todavía no tiene créditos en SIAC (prospecto).
  */
 export type EtapaCiclo = "cobranza_especial" | "por_liquidar" | "activo" | "ex_cliente" | "sin_creditos";
 
@@ -61,7 +61,7 @@ export const ETAPAS_CICLO: Record<EtapaCiclo, string> = {
   por_liquidar: "Por liquidar",
   cobranza_especial: "Cobranza especial",
   ex_cliente: "Ex cliente",
-  sin_creditos: "Sin créditos",
+  sin_creditos: "Prospecto",
 };
 
 export interface EmpresaListItem extends EmpresaRow {

@@ -17,6 +17,9 @@ import EtapaChip from "../EtapaChip";
 import SaludChip from "../SaludChip";
 import { puntosHace, type AjustesSalud, type NivelSalud, type Salud } from "@/lib/clientes/salud";
 import { getTendenciaSalud, type PuntoSalud } from "@/lib/db/salud-diaria";
+import { getNegociosEmpresa, type Negocio } from "@/lib/db/negocios";
+import { ORIGENES_NEGOCIO, TIPOS_NEGOCIO } from "@/lib/clientes/negocios";
+import EtapaNegocioChip from "../../negocios/EtapaNegocioChip";
 import EditarEmpresa from "./EditarEmpresa";
 import ContactosEmpresa from "./ContactosEmpresa";
 import RegistrarActividad from "./RegistrarActividad";
@@ -39,6 +42,7 @@ const PESTANAS = [
   { value: "contactos", label: "Contactos" },
   { value: "actividad", label: "Actividad" },
   { value: "tareas", label: "Tareas" },
+  { value: "negocios", label: "Negocios" },
   { value: "creditos", label: "Créditos" },
   { value: "datos", label: "Datos de la empresa" },
 ] as const;
@@ -364,8 +368,9 @@ export default async function FichaClientePage({ params, searchParams }: { param
   let oportunidades: Oportunidad[] = [];
   let ajustesRenovacion: AjustesRenovacion = AJUSTES_RENOVACION_DEFAULT;
   let tendencia: PuntoSalud[] = [];
+  let negocios: Negocio[] = [];
   try {
-    [ficha, status, ejecutivos, contactos, historial, tareas, oportunidades, ajustesRenovacion, tendencia] = await Promise.all([
+    [ficha, status, ejecutivos, contactos, historial, tareas, oportunidades, ajustesRenovacion, tendencia, negocios] = await Promise.all([
       getEmpresa(id),
       getPhotoStatus(),
       (pestana === "datos" || pestana === "tareas") && puedeEditar ? listEjecutivos() : Promise.resolve([]),
@@ -375,6 +380,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
       pestana === "resumen" ? getOportunidadesEmpresa(id) : Promise.resolve([]),
       pestana === "resumen" ? getAjustesRenovacion() : Promise.resolve(ajustesRenovacion),
       pestana === "resumen" ? getTendenciaSalud(id) : Promise.resolve([]),
+      puede(session, "originacion.ver") ? getNegociosEmpresa(id) : Promise.resolve([]),
     ]);
   } catch (e) {
     const c = codigoDeError("ficha de cliente", e);
@@ -440,6 +446,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
             {p.label}
             {p.value === "creditos" && <span className="font-normal"> ({creditos.length})</span>}
             {p.value === "tareas" && tareas.abiertas.length > 0 && <span className="font-normal"> ({tareas.abiertas.length})</span>}
+            {p.value === "negocios" && negocios.length > 0 && <span className="font-normal"> ({negocios.length})</span>}
           </Link>
         ))}
       </nav>
@@ -590,7 +597,40 @@ export default async function FichaClientePage({ params, searchParams }: { param
         </>
       )}
 
-      {pestana === "contactos" && <ContactosEmpresa empresaId={id} personas={contactos.personas} canales={contactos.canales} puedeEditar={puedeEditar} />}
+      {pestana === "negocios" && (
+        <Card className="space-y-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-3">
+            <p className="text-sm text-finbra-gray">Solicitudes de crédito de la empresa, desde el primer contacto hasta la dispersión.</p>
+            {puede(session, "originacion.operar") && (
+              <Link href={`/backoffice/negocios/nuevo?empresa=${id}`} className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90">
+                Nuevo negocio
+              </Link>
+            )}
+          </div>
+          {!puede(session, "originacion.ver") ? (
+            <p className="text-sm text-finbra-gray">Tu rol no puede ver los negocios.</p>
+          ) : negocios.length === 0 ? (
+            <p className="text-sm text-finbra-gray">Todavía no tiene negocios.</p>
+          ) : (
+            <ul className="divide-y divide-black/5">
+              {negocios.map((n) => (
+                <li key={n.id}>
+                  <Link href={`/backoffice/negocios/${n.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-3 hover:bg-black/[0.02]">
+                    <EtapaNegocioChip etapa={n.etapa} />
+                    <span className="text-sm font-semibold">{TIPOS_NEGOCIO[n.tipo]}</span>
+                    <span className="text-sm tabular-nums">{n.montoEstimado !== null ? formatMoney(n.montoEstimado) : "Sin monto"}</span>
+                    <span className="text-xs text-finbra-gray">
+                      {ORIGENES_NEGOCIO[n.origen]} · {n.responsableNombre ?? "Sin responsable"} · alta el {formatFecha(n.createdAt.slice(0, 10))}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
+
+      {pestana === "contactos" && <ContactosEmpresa empresaId={id} personas={contactos.personas} canales={contactos.canales} puedeEditar={puedeEditar} esProspecto={contactos.clientes.length === 0} />}
 
       {pestana === "actividad" && (
         <div className="space-y-6">
