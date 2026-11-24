@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { avisosDeCartera, plazoDe, validarTarea, type ClienteCartera } from "./tareas.ts";
+import { avisosDeCartera, plazoDe, validarTarea } from "./tareas.ts";
+import type { Salud, SenalSalud } from "./salud.ts";
 
 const HOY = "2026-11-05";
 
@@ -21,34 +22,26 @@ test("plazo de una tarea: vencida, hoy, en la semana o después", () => {
   assert.equal(plazoDe("2026-11-13", HOY), "despues");
 });
 
-const cliente = (over: Partial<ClienteCartera>): ClienteCartera => ({
-  empresaId: "e",
-  nombre: "Empresa",
-  enMora: false,
-  maxAtraso: 0,
-  creditosVigentes: 1,
-  tienePrincipal: true,
-  ultimoContacto: "2026-11-01T16:00:00.000Z",
-  ...over,
+const salud = (puntos: number, nivel: "sana" | "atencion" | "riesgo", ...razones: [SenalSalud, string][]): Salud => ({
+  puntos,
+  nivel,
+  razones: razones.map(([senal, texto]) => ({ senal, texto, puntos: 5 })),
 });
 
-test("avisos de cartera: mora primero; sin contacto solo con crédito vigente", () => {
-  const avisos = avisosDeCartera(
-    [
-      cliente({ empresaId: "ok", nombre: "Al día" }),
-      cliente({ empresaId: "m", nombre: "Morosa", enMora: true, maxAtraso: 45 }),
-      cliente({ empresaId: "s", nombre: "Silenciosa", ultimoContacto: "2026-08-01T16:00:00.000Z" }),
-      cliente({ empresaId: "n", nombre: "Nunca", ultimoContacto: null }),
-      cliente({ empresaId: "x", nombre: "Ex cliente", creditosVigentes: 0, ultimoContacto: null }),
-      cliente({ empresaId: "d", nombre: "Datos", tienePrincipal: false }),
-    ],
-    HOY,
-  );
+test("avisos de cartera: solo Atención y En riesgo, del peor al mejor, con la pestaña donde se atiende", () => {
+  const avisos = avisosDeCartera([
+    { empresaId: "ok", nombre: "Sana", salud: salud(100, "sana") },
+    { empresaId: "ex", nombre: "Ex cliente", salud: null },
+    { empresaId: "c", nombre: "Callada", salud: salud(70, "atencion", ["contacto", "Sin contacto registrado del equipo"], ["datos", "Sin contacto principal"]) },
+    { empresaId: "m", nombre: "Morosa", salud: salud(55, "riesgo", ["pago", "12 días de atraso hoy"]) },
+    { empresaId: "d", nombre: "Datos", salud: salud(75, "atencion", ["datos", "Sin contacto principal"]) },
+  ]);
   assert.deepEqual(
-    avisos.map((a) => [a.empresaId, a.tipo]),
-    [["m", "mora"], ["n", "sin_contacto"], ["s", "sin_contacto"], ["d", "sin_principal"]],
+    avisos.map((a) => [a.empresaId, a.salud.nivel, a.pestana]),
+    [
+      ["m", "riesgo", ""],
+      ["c", "atencion", "actividad"],
+      ["d", "atencion", "contactos"],
+    ],
   );
-  assert.equal(avisos[0].texto, "En mora: 45 días de atraso");
-  assert.equal(avisos.find((a) => a.empresaId === "s")!.texto, "Sin contacto hace 95 días");
-  assert.equal(avisos.find((a) => a.empresaId === "n")!.texto, "Sin contacto registrado");
 });

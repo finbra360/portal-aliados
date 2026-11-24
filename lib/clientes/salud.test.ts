@@ -43,7 +43,7 @@ test("ejemplos del diseño", () => {
   const s2 = calcularSalud(sana({ atrasoDias: 5, enMora: true, atrasosRecientes: 1 }), A, HOY)!;
   assert.equal(s2.puntos, 75);
   assert.equal(s2.nivel, "atencion");
-  assert.deepEqual(s2.razones, [{ texto: "5 días de atraso hoy", puntos: 25 }]);
+  assert.deepEqual(s2.razones, [{ texto: "5 días de atraso hoy", puntos: 25, senal: "pago" }]);
 
   // 12 días de atraso.
   const s3 = calcularSalud(sana({ atrasoDias: 12, enMora: true, atrasosRecientes: 1 }), A, HOY)!;
@@ -53,7 +53,7 @@ test("ejemplos del diseño", () => {
   // Paga, pero se atrasó 2 veces este trimestre.
   const s4 = calcularSalud(sana({ atrasosRecientes: 2 }), A, HOY)!;
   assert.equal(s4.puntos, 75);
-  assert.deepEqual(s4.razones, [{ texto: "Se atrasó 2 veces en los últimos 90 días", puntos: 25 }]);
+  assert.deepEqual(s4.razones, [{ texto: "Se atrasó 2 veces en los últimos 90 días", puntos: 25, senal: "pago" }]);
 });
 
 test("más de 30 días de atraso o cobranza especial dejan al cliente En riesgo aunque todo lo demás esté bien", () => {
@@ -76,7 +76,7 @@ test("atrasos anteriores al de hoy sí restan, con el texto que lo aclara", () =
 
 test("promesas incumplidas restan una sola vez", () => {
   const s = calcularSalud(sana({ promesasIncumplidas: 3 }), A, HOY)!;
-  assert.deepEqual(s.razones, [{ texto: "3 promesas de pago incumplidas en los últimos 60 días", puntos: 15 }]);
+  assert.deepEqual(s.razones, [{ texto: "3 promesas de pago incumplidas en los últimos 60 días", puntos: 15, senal: "pago" }]);
 });
 
 test("contacto por tramos: 30 días no resta, 31 resta 5, 61 resta 15, 91 resta 25", () => {
@@ -150,4 +150,16 @@ test("puntosHace: el día guardado más cercano sin pasarse, con hasta 3 días d
   assert.equal(puntosHace(historia, HOY, 1), 70);
   assert.equal(puntosHace(historia, HOY, 60), null); // nada cerca del 25-sep
   assert.equal(puntosHace([], HOY, 7), null);
+});
+
+test("cada razón dice si es de pago, contacto o datos", () => {
+  const s = calcularSalud(sana({ atrasoDias: 5, enMora: true, atrasosRecientes: 1, ultimoContacto: null, tienePrincipal: false }), A, HOY)!;
+  assert.deepEqual(
+    s.razones.map((r) => [r.senal, r.texto]),
+    [
+      ["pago", "5 días de atraso hoy"],
+      ["contacto", "Sin contacto registrado del equipo"],
+      ["datos", "Sin contacto principal"],
+    ],
+  );
 });

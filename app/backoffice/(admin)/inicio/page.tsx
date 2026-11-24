@@ -5,17 +5,12 @@ import { codigoDeError } from "@/lib/collections/errors";
 import Card from "@/components/ui/Card";
 import { puede } from "@/lib/permisos";
 import { getMiCartera } from "@/lib/db/tareas";
-import { TIPOS_TAREA, plazoDe, type TipoAviso } from "@/lib/clientes/tareas";
+import { TIPOS_TAREA, plazoDe } from "@/lib/clientes/tareas";
 import { playbookDeOrigen } from "@/lib/clientes/playbooks";
 import PlazoChip from "../clientes/PlazoChip";
+import SaludChip from "../clientes/SaludChip";
 import CerrarTarea from "../clientes/[id]/CerrarTarea";
 
-const AVISO: Record<TipoAviso, { clase: string; tab: string }> = {
-  mora: { clase: "bg-red-100 text-red-700", tab: "" },
-  sin_contacto: { clase: "bg-amber-100 text-amber-800", tab: "?tab=actividad" },
-  sin_principal: { clase: "bg-black/5 text-black/70", tab: "?tab=contactos" },
-};
-const AVISO_CORTO: Record<TipoAviso, string> = { mora: "Mora", sin_contacto: "Contacto", sin_principal: "Datos" };
 const MAX_TAREAS = 10;
 const MAX_AVISOS = 8;
 
@@ -93,16 +88,22 @@ function SeccionMiCartera({ c, puedeEditar }: { c: MiCartera; puedeEditar: boole
 
       <h3 className="px-6 pt-5 text-sm font-semibold">Avisos de mis clientes</h3>
       {c.avisos.length === 0 ? (
-        <p className="px-6 pb-5 pt-2 text-sm text-emerald-700">✓ {c.clientes ? "Todo en orden" : "Todavía no tienes clientes asignados"}</p>
+        <p className="px-6 pb-5 pt-2 text-sm text-emerald-700">✓ {c.clientes ? "Todos tus clientes están sanos" : "Todavía no tienes clientes asignados"}</p>
       ) : (
         <ul className="mt-2 divide-y divide-black/5 pb-2">
           {c.avisos.slice(0, MAX_AVISOS).map((a) => (
-            <li key={`${a.empresaId}-${a.tipo}`}>
-              <Link href={`/backoffice/clientes/${a.empresaId}${AVISO[a.tipo].tab}`} className="flex items-center gap-4 px-6 py-3 hover:bg-black/[0.02]">
-                <span className={`min-w-20 rounded-full px-3 py-1 text-center text-xs font-bold ${AVISO[a.tipo].clase}`}>{AVISO_CORTO[a.tipo]}</span>
+            <li key={a.empresaId}>
+              <Link href={`/backoffice/clientes/${a.empresaId}${a.pestana ? `?tab=${a.pestana}` : ""}`} className="flex items-center gap-4 px-6 py-3 hover:bg-black/[0.02]">
+                <span className="w-32 shrink-0">
+                  <SaludChip salud={a.salud} />
+                </span>
                 <span className="flex-1 text-sm">
                   <span className="font-semibold">{a.nombre}</span>
-                  <span className="text-finbra-gray"> · {a.texto}</span>
+                  <span className="text-finbra-gray">
+                    {" "}
+                    · {a.salud.razones[0]?.texto}
+                    {a.salud.razones.length > 1 && ` y ${a.salud.razones.length - 1} más`}
+                  </span>
                 </span>
                 <span className="text-finbra-gray" aria-hidden>›</span>
               </Link>
@@ -110,7 +111,12 @@ function SeccionMiCartera({ c, puedeEditar }: { c: MiCartera; puedeEditar: boole
           ))}
         </ul>
       )}
-      {c.avisos.length > MAX_AVISOS && <p className="px-6 pb-5 text-xs text-finbra-gray">y {c.avisos.length - MAX_AVISOS} avisos más.</p>}
+      {c.avisos.length > MAX_AVISOS && (
+        <p className="px-6 pb-5 text-xs text-finbra-gray">
+          y {c.avisos.length - MAX_AVISOS} más.{" "}
+          <Link href="/backoffice/clientes?filtro=mios&orden=salud" className="text-finbra-purple hover:underline">Ver todos →</Link>
+        </p>
+      )}
     </Card>
   );
 }
