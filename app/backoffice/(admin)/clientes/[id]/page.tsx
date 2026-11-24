@@ -15,7 +15,8 @@ import PhotoBanner from "../../cobranza/PhotoBanner";
 import SemaforoPill from "../../cobranza/SemaforoPill";
 import EtapaChip from "../EtapaChip";
 import SaludChip from "../SaludChip";
-import type { NivelSalud, Salud } from "@/lib/clientes/salud";
+import { puntosHace, type AjustesSalud, type NivelSalud, type Salud } from "@/lib/clientes/salud";
+import { getTendenciaSalud, type PuntoSalud } from "@/lib/db/salud-diaria";
 import EditarEmpresa from "./EditarEmpresa";
 import ContactosEmpresa from "./ContactosEmpresa";
 import RegistrarActividad from "./RegistrarActividad";
@@ -198,8 +199,31 @@ function Renovacion({
 
 const BARRA_SALUD: Record<NivelSalud, string> = { sana: "bg-emerald-500", atencion: "bg-amber-500", riesgo: "bg-red-500" };
 
-/** Tarjeta de salud del Resumen: nivel, puntos y qué le restó cada cosa. */
-function SaludCard({ salud }: { salud: Salud }) {
+/** Línea de los puntos guardados (0 a 100), con los cortes de Sana y Atención punteados. */
+function LineaSalud({ tendencia, corteSana, corteAtencion }: { tendencia: PuntoSalud[]; corteSana: number; corteAtencion: number }) {
+  if (tendencia.length < 2) return null;
+  const W = 240;
+  const H = 48;
+  const x0 = Date.parse(tendencia[0].fecha);
+  const rango = Math.max(1, Date.parse(tendencia[tendencia.length - 1].fecha) - x0);
+  const x = (f: string) => ((Date.parse(f) - x0) / rango) * W;
+  const y = (p: number) => H - (p / 100) * H;
+  const puntos = tendencia.map((t) => `${x(t.fecha).toFixed(1)},${y(t.puntos).toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-12 w-full overflow-visible" role="img" aria-label={`Salud de los últimos ${tendencia.length} días guardados`}>
+      <line x1={0} x2={W} y1={y(corteSana)} y2={y(corteSana)} className="stroke-emerald-500/40" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+      <line x1={0} x2={W} y1={y(corteAtencion)} y2={y(corteAtencion)} className="stroke-red-500/40" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+      <polyline points={puntos} fill="none" className="stroke-finbra-purple" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
+/** Tarjeta de salud del Resumen: nivel, puntos, qué le restó cada cosa y cómo venía. */
+function SaludCard({ salud, tendencia, hoy, ajustes }: { salud: Salud; tendencia: PuntoSalud[]; hoy: string; ajustes: AjustesSalud }) {
+  const comparar = [
+    { texto: "hace 7 días", puntos: puntosHace(tendencia, hoy, 7) },
+    { texto: "hace 30 días", puntos: puntosHace(tendencia, hoy, 30) },
+  ].filter((c) => c.puntos !== null);
   return (
     <Card>
       <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -227,6 +251,25 @@ function SaludCard({ salud }: { salud: Salud }) {
               </li>
             ))}
           </ul>
+        )}
+        {(comparar.length > 0 || tendencia.length >= 2) && (
+          <div className="space-y-1 border-t border-black/5 pt-3">
+            {comparar.length > 0 && (
+              <p className="text-xs text-finbra-gray">
+                {comparar.map((c, i) => {
+                  const d = salud.puntos - c.puntos!;
+                  return (
+                    <span key={c.texto}>
+                      {i > 0 && " · "}
+                      {c.texto}: <span className="font-semibold text-black/70 tabular-nums">{c.puntos}</span>
+                      {d !== 0 && <span className={d > 0 ? "text-emerald-700" : "text-red-700"}> ({d > 0 ? `+${d}` : d})</span>}
+                    </span>
+                  );
+                })}
+              </p>
+            )}
+            <LineaSalud tendencia={tendencia} corteSana={ajustes.corteSana} corteAtencion={ajustes.corteAtencion} />
+          </div>
         )}
         <p className="text-xs text-finbra-gray">Cómo va hoy: pago actual y reciente, contacto del equipo y datos clave. Es distinto del historial de pago en SIAC.</p>
       </div>
@@ -320,8 +363,9 @@ export default async function FichaClientePage({ params, searchParams }: { param
   let tareas: Awaited<ReturnType<typeof getTareasEmpresa>> = { abiertas: [], cerradas: [] };
   let oportunidades: Oportunidad[] = [];
   let ajustesRenovacion: AjustesRenovacion = AJUSTES_RENOVACION_DEFAULT;
+  let tendencia: PuntoSalud[] = [];
   try {
-    [ficha, status, ejecutivos, contactos, historial, tareas, oportunidades, ajustesRenovacion] = await Promise.all([
+    [ficha, status, ejecutivos, contactos, historial, tareas, oportunidades, ajustesRenovacion, tendencia] = await Promise.all([
       getEmpresa(id),
       getPhotoStatus(),
       (pestana === "datos" || pestana === "tareas") && puedeEditar ? listEjecutivos() : Promise.resolve([]),
@@ -330,6 +374,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
       pestana === "resumen" || pestana === "tareas" ? getTareasEmpresa(id) : Promise.resolve(tareas),
       pestana === "resumen" ? getOportunidadesEmpresa(id) : Promise.resolve([]),
       pestana === "resumen" ? getAjustesRenovacion() : Promise.resolve(ajustesRenovacion),
+      pestana === "resumen" ? getTendenciaSalud(id) : Promise.resolve([]),
     ]);
   } catch (e) {
     const c = codigoDeError("ficha de cliente", e);
@@ -462,7 +507,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
             </Card>
 
             <div className="space-y-6">
-              {r.salud && <SaludCard salud={r.salud} />}
+              {r.salud && <SaludCard salud={r.salud} tendencia={tendencia} hoy={hoy} ajustes={ficha.ajustesSalud} />}
 
               <Renovacion empresaId={id} creditos={creditos} oportunidades={oportunidades} ajustes={ajustesRenovacion} hoy={hoy} puedeEditar={puedeEditar} />
 

@@ -5,6 +5,7 @@ import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getEmpresasLista } from "@/lib/db/empresas";
+import { nivelAnteriorDeSalud } from "@/lib/db/salud-diaria";
 import { fechaMexico } from "@/lib/collections/rules";
 import { leerAjustesPlaybooks, planPlaybooks, type AjustesPlaybooks, type ClavePlaybook } from "@/lib/clientes/playbooks";
 
@@ -27,7 +28,7 @@ export async function correrPlaybooks(p: { actor: string }): Promise<ResultadoPl
   if (!ajustes.activo) return { corrio: false, motivo: "Los playbooks están apagados (crm_settings → playbooks)" };
 
   const ambiente = ambienteActual();
-  const [lista, creditos, [primera], revisiones, [{ hayOportunidades }], [porOmision]] = await Promise.all([
+  const [lista, creditos, [primera], revisiones, [{ hayOportunidades }], [porOmision], nivelAnterior] = await Promise.all([
     getEmpresasLista(hoy, { filtro: "todos", q: "", orden: "nombre", yo: "" }),
     sql`
       SELECT cr.id, c.empresa_id, cr.no_credito, cr.en_listado,
@@ -47,6 +48,7 @@ export async function correrPlaybooks(p: { actor: string }): Promise<ResultadoPl
     `,
     sql`SELECT to_regclass('public.crm_oportunidades') IS NOT NULL AS "hayOportunidades"`,
     sql`SELECT a.email FROM crm_settings s JOIN admin_users a ON a.email = s.value->>'email' AND a.activo WHERE s.key = 'ejecutivo_por_omision'`,
+    nivelAnteriorDeSalud(hoy),
   ]);
   const conOportunidad = new Set<string>(
     hayOportunidades
@@ -79,6 +81,8 @@ export async function correrPlaybooks(p: { actor: string }): Promise<ResultadoPl
         ultimoContacto: r?.ultimoContacto ?? null,
         ultimaRevision: ultimaRevision.get(e.empresaId) ?? null,
         oportunidadAbierta: conOportunidad.has(e.empresaId),
+        salud: e.salud ? { nivel: e.salud.nivel, puntos: e.salud.puntos, razones: e.salud.razones.map((x) => x.texto) } : null,
+        nivelAnterior: nivelAnterior.get(e.empresaId) ?? null,
       };
     }),
     ajustes,

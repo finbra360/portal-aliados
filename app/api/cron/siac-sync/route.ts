@@ -8,6 +8,7 @@ import { enviarReporteDiario } from "@/lib/db/reporte";
 import { runCorreosMora, runCorreosPreventivos, type CorreosRunResult } from "@/lib/db/correos-cobranza";
 import { correrRadar, type ResultadoRadar } from "@/lib/db/renovaciones";
 import { correrPlaybooks, type ResultadoPlaybooks } from "@/lib/db/playbooks";
+import { guardarSaludDiaria, type ResultadoSaludDiaria } from "@/lib/db/salud-diaria";
 
 // Una sola llamada a SIAC para la foto y, a las 9:00, hasta MAX_CONSULTAS_MONTO consultas de saldo (montos de
 // preventivos) y max_envios_mora_por_dia mensajes de WhatsApp (~0.75 s cada uno).
@@ -23,8 +24,8 @@ export const dynamic = "force-dynamic";
  *                                                 después los recordatorios de WhatsApp (mora y preventivos)
  *                                                 y al final el reporte diario a Slack
  *
- * En las dos, con la foto de hoy, corren el radar de renovación y los playbooks de clientes
- * (no duplican nada si corren dos veces).
+ * En las dos, con la foto de hoy, corren el radar de renovación, se guarda la salud de los
+ * clientes y corren los playbooks de clientes (no duplican nada si corren dos veces).
  *
  * Con el mismo secreto se puede correr a mano para otra fecha: ?fecha=2026-10-01
  */
@@ -60,7 +61,17 @@ export async function GET(req: NextRequest) {
         await notifySlack(`:warning: El radar de renovación no pudo correr: ${(e as Error).message}`);
       }
     }
-    // Playbooks: tareas automáticas (crédito nuevo, primer pago, revisión, salida del listado).
+    // Salud del cliente de hoy, para la tendencia y el playbook de rescate.
+    let salud: ResultadoSaludDiaria | { error: string } | null = null;
+    if (result.status !== "error") {
+      try {
+        salud = await guardarSaludDiaria();
+      } catch (e) {
+        salud = { error: (e as Error).message };
+        await notifySlack(`:warning: No se pudo guardar la salud de los clientes: ${(e as Error).message}`);
+      }
+    }
+    // Playbooks: tareas automáticas (crédito nuevo, primer pago, revisión, salida del listado, rescate).
     let playbooks: ResultadoPlaybooks | { error: string } | null = null;
     if (result.status !== "error") {
       try {
@@ -136,7 +147,7 @@ export async function GET(req: NextRequest) {
         console.error("Cobranza: no se pudo armar el reporte diario:", (e as Error).message);
       }
     }
-    return NextResponse.json({ ...result, radar, playbooks, whatsapp, correos, reporte },{ status: result.status === "error" ? 500 : 200 });
+    return NextResponse.json({ ...result, radar, salud, playbooks, whatsapp, correos, reporte },{ status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     // Errores antes de poder registrar la corrida (base caída, fecha inválida).
     const mensaje = (e as Error).message;
