@@ -10,6 +10,10 @@ import StatCard from "@/components/ui/StatCard";
 import EmptyState from "@/components/ui/EmptyState";
 import { IconFlame, IconTarget, IconListChecks, IconUsers } from "@/components/ui/icons";
 import { marcarAtendidaAction } from "./actions";
+import { crearNegocioDesdeLeadAction } from "../actions";
+import { getAdminSession } from "@/lib/get-admin-session";
+import { puede } from "@/lib/permisos";
+import { negociosPorOrigen, refLead } from "@/lib/db/negocios-origenes";
 
 const HORA_MX = new Intl.DateTimeFormat("es-MX", {
   timeZone: "America/Mexico_City",
@@ -71,7 +75,7 @@ function Dato({ etiqueta, valor }: { etiqueta: string; valor: string }) {
   );
 }
 
-function Conversacion({ c, ahora }: { c: ConversacionPendiente; ahora: number }) {
+function Conversacion({ c, ahora, negocioId, puedeCrearNegocio }: { c: ConversacionPendiente; ahora: number; negocioId: string | null; puedeCrearNegocio: boolean }) {
   const v = ventana(c.ultimoMensaje, ahora);
   const wa = waHref(c.telefono);
 
@@ -129,6 +133,20 @@ function Conversacion({ c, ahora }: { c: ConversacionPendiente; ahora: number })
         ) : (
           <span className="text-xs text-finbra-gray">Sin teléfono utilizable para WhatsApp.</span>
         )}
+        {negocioId ? (
+          <Link href={`/backoffice/negocios/${negocioId}`} className="rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5">
+            Ver negocio
+          </Link>
+        ) : (
+          puedeCrearNegocio && (
+            <form action={crearNegocioDesdeLeadAction}>
+              <input type="hidden" name="leadId" value={c.companyId} />
+              <button type="submit" className="rounded-lg border border-finbra-purple/30 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/5">
+                Crear negocio
+              </button>
+            </form>
+          )
+        )}
 
         <form action={marcarAtendidaAction} className="flex flex-1 flex-wrap items-center gap-2">
           <input type="hidden" name="companyId" value={c.companyId} />
@@ -172,6 +190,9 @@ export default async function ConversacionesPage() {
   }
 
   const ahora = Date.now();
+  const session = await getAdminSession();
+  const puedeCrearNegocio = !!session && ["super_admin", "comercial"].includes(session.role) && puede(session, "originacion.operar");
+  const negocios = await negociosPorOrigen(conversaciones.map((c) => refLead(c.companyId))).catch(() => new Map<string, string>());
   const criticas = conversaciones.filter((c) => {
     const v = ventana(c.ultimoMensaje, ahora);
     return v.urgencia === "critica";
@@ -209,7 +230,7 @@ export default async function ConversacionesPage() {
       ) : (
         <div className="space-y-4">
           {conversaciones.map((c) => (
-            <Conversacion key={c.companyId} c={c} ahora={ahora} />
+            <Conversacion key={c.companyId} c={c} ahora={ahora} negocioId={negocios.get(refLead(c.companyId)) ?? null} puedeCrearNegocio={puedeCrearNegocio} />
           ))}
         </div>
       )}

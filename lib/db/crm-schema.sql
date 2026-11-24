@@ -276,6 +276,11 @@ ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS recontactar_el DATE;
 ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS rechazo_motivo TEXT;
 ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS rechazo_por TEXT CHECK (rechazo_por IN ('finbra', 'cliente'));
 
+-- Fase O3: de qué lead, prospecto de Credit Health u oportunidad de renovación
+-- salió ('lead:<id>', 'credit_health:<id>', 'oportunidad:<id>'). Uno por origen.
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS origen_ref TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_negocios_credito_origen_ref ON crm_negocios_credito(origen_ref) WHERE origen_ref IS NOT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_crm_negocios_credito_empresa ON crm_negocios_credito(empresa_id);
 CREATE INDEX IF NOT EXISTS idx_crm_negocios_credito_etapa ON crm_negocios_credito(ambiente, etapa);
 

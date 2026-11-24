@@ -9,6 +9,9 @@ import { ESTADOS_CONTACTO, type EstadoContacto } from "@/lib/credit-health/catal
 import { agregarNota, asignarProspecto, cambiarEstadoContacto, eliminarProspecto } from "@/lib/credit-health/prospectos";
 import { activarVersion, guardarBorrador } from "@/lib/credit-health/politicas";
 import type { PoliticaCH } from "@/lib/credit-health/politica-tipos";
+import { requierePermiso } from "@/lib/permisos";
+import { NegocioError } from "@/lib/db/negocios";
+import { crearNegocioDesdeCreditHealth } from "@/lib/db/negocios-origenes";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ruta = (id: string) => `/backoffice/credit-health/prospectos/${id}`;
@@ -83,4 +86,22 @@ export async function activarPoliticaAction(formData: FormData) {
   const res = await activarVersion(id, admin);
   if (!res.ok) throw new Error(res.error);
   revalidatePath("/backoffice/credit-health/politicas");
+}
+
+/** Crea el negocio de crédito del prospecto (o lleva al que ya tiene). Pide su consentimiento de compartir con Finbra. */
+export async function crearNegocioAction(formData: FormData) {
+  const session = await getAdminSession();
+  requireRole(session, CH_OPERAN);
+  const admin = requierePermiso(session, "originacion.operar");
+  const id = idValido(formData);
+  let negocioId: string;
+  try {
+    negocioId = await crearNegocioDesdeCreditHealth(id, admin);
+  } catch (e) {
+    if (e instanceof NegocioError) redirect(`${ruta(id)}?negocio=${encodeURIComponent(e.message)}`);
+    throw e;
+  }
+  revalidatePath(ruta(id));
+  revalidatePath("/backoffice/negocios", "layout");
+  redirect(`/backoffice/negocios/${negocioId}`);
 }
