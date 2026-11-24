@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { puede } from "@/lib/permisos";
 import { getPhotoStatus } from "@/lib/db/collections";
-import { getEmpresasLista } from "@/lib/db/empresas";
+import { getEmpresasLista, listEjecutivos } from "@/lib/db/empresas";
 import { FILTROS_EMPRESA, ORDENES_EMPRESA, type EmpresaFilter, type EmpresaOrder } from "@/lib/clientes/lista";
 import { codigoDeError } from "@/lib/collections/errors";
 import { formatFecha, formatMoney } from "@/lib/format";
@@ -14,6 +14,7 @@ import OrdenTh from "../cobranza/OrdenTh";
 import SemaforoPill from "../cobranza/SemaforoPill";
 import EtapaChip from "./EtapaChip";
 import SaludChip from "./SaludChip";
+import AsignarEjecutivo, { FORM_ASIGNAR } from "./AsignarEjecutivo";
 
 const BASE = "/backoffice/clientes";
 const esFiltro = (f: string | undefined): f is EmpresaFilter => FILTROS_EMPRESA.some((x) => x.value === f);
@@ -38,11 +39,16 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
   const q = (sp.q ?? "").slice(0, 100);
   const orden: EmpresaOrder = esOrden(sp.orden) ? sp.orden : "nombre";
 
+  const puedeEditar = puede(session, "clientes.editar");
   let status: Awaited<ReturnType<typeof getPhotoStatus>>;
   let data: Awaited<ReturnType<typeof getEmpresasLista>>;
+  let ejecutivos: Awaited<ReturnType<typeof listEjecutivos>> = [];
   try {
     status = await getPhotoStatus();
-    data = await getEmpresasLista(status.fechaCorte, { filtro, q, orden, yo: session.email });
+    [data, ejecutivos] = await Promise.all([
+      getEmpresasLista(status.fechaCorte, { filtro, q, orden, yo: session.email }),
+      puedeEditar ? listEjecutivos() : Promise.resolve([]),
+    ]);
   } catch (e) {
     const c = codigoDeError("clientes 360", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar la lista de clientes en este momento. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -100,6 +106,8 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
         </form>
       </div>
 
+      {puedeEditar && <AsignarEjecutivo ejecutivos={ejecutivos} visibles={data.items.length} />}
+
       {data.items.length === 0 ? (
         <EmptyState
           icon={<IconBuilding />}
@@ -111,6 +119,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
           <table className="w-full min-w-[1300px] text-left text-sm">
             <thead>
               <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
+                {puedeEditar && (
+                  <th scope="col" className="w-10 py-3 pl-4">
+                    <span className="sr-only">Elegir</span>
+                  </th>
+                )}
                 {th("nombre", "Cliente", "nombre, de la A a la Z", "asc")}
                 {th("salud", "Salud", "la peor salud primero", "asc")}
                 <th scope="col" className="px-4 py-3">Ejecutivo</th>
@@ -126,6 +139,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
             <tbody>
               {data.items.map((e) => (
                 <tr key={e.empresaId} className="border-b border-black/5 align-top last:border-0">
+                  {puedeEditar && (
+                    <td className="py-3 pl-4">
+                      <input type="checkbox" name="empresa" value={e.empresaId} form={FORM_ASIGNAR} aria-label={`Elegir ${e.nombre}`} className="mt-0.5 h-4 w-4 accent-finbra-purple" />
+                    </td>
+                  )}
                   <td className="px-4 py-3">
                     <Link href={`${BASE}/${e.empresaId}`} className="font-medium text-finbra-purple hover:underline">
                       {e.nombre}
