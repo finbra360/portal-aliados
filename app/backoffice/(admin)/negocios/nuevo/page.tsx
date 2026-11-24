@@ -2,7 +2,7 @@ import Link from "next/link";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { puede } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
-import { empresasParaNegocio, hayNegocios } from "@/lib/db/negocios";
+import { brokersParaNegocio, empresasParaNegocio, hayNegocios } from "@/lib/db/negocios";
 import { listEjecutivos } from "@/lib/db/empresas";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
@@ -17,11 +17,12 @@ export default async function NuevoNegocioPage({ searchParams }: { searchParams:
 
   let empresas: Awaited<ReturnType<typeof empresasParaNegocio>>;
   let ejecutivos: Awaited<ReturnType<typeof listEjecutivos>>;
+  let brokers: Awaited<ReturnType<typeof brokersParaNegocio>>;
   try {
     if (!(await hayNegocios())) {
       return <EmptyState title="Falta preparar la base de datos" description="Corre lib/db/crm-schema.sql y después security.sql en Supabase para activar los negocios de crédito." />;
     }
-    [empresas, ejecutivos] = await Promise.all([empresasParaNegocio(), listEjecutivos()]);
+    [empresas, ejecutivos, brokers] = await Promise.all([empresasParaNegocio(), listEjecutivos(), brokersParaNegocio()]);
   } catch (e) {
     const c = codigoDeError("originación: nuevo negocio", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar el formulario. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -35,7 +36,7 @@ export default async function NuevoNegocioPage({ searchParams }: { searchParams:
         <p className="mt-1 text-sm text-finbra-gray">Una solicitud de crédito de una empresa. Si la empresa todavía no es cliente, se da de alta como prospecto.</p>
       </div>
       <Card>
-        <NuevoNegocio empresas={empresas} ejecutivos={ejecutivos} yo={session.email} empresaInicial={empresas.some((e) => e.id === empresa) ? empresa! : null} />
+        <NuevoNegocio empresas={empresas} ejecutivos={ejecutivos} yo={session.email} empresaInicial={empresas.some((e) => e.id === empresa) ? empresa! : null} brokers={brokers} />
       </Card>
     </div>
   );

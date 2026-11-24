@@ -12,7 +12,7 @@ import EtapaNegocioChip from "./EtapaNegocioChip";
 
 const BASE = "/backoffice/negocios";
 type Vista = "tablero" | "lista";
-type Filtro = "todos" | "mios";
+type Filtro = "todos" | "mios" | "brokers";
 
 function href(p: { vista?: Vista; filtro?: Filtro; etapa?: string }) {
   const s = new URLSearchParams();
@@ -49,14 +49,15 @@ function Tarjeta({ n, hoy }: { n: Negocio; hoy: string }) {
   );
 }
 
-export default async function NegociosPage({ searchParams }: { searchParams: Promise<{ vista?: string; filtro?: string; etapa?: string }> }) {
+export default async function NegociosPage({ searchParams }: { searchParams: Promise<{ vista?: string; filtro?: string; etapa?: string; origen?: string }> }) {
   const session = await getAdminSession();
   if (!puede(session, "originacion.ver")) {
     return <EmptyState title="No tienes acceso a Negocios" description="Tu rol no puede ver la originación. Si la necesitas, pídele a un Super Admin que cambie tu rol en Usuarios." />;
   }
   const sp = await searchParams;
   const vista: Vista = sp.vista === "lista" ? "lista" : "tablero";
-  const filtro: Filtro = sp.filtro === "mios" ? "mios" : "todos";
+  // ?origen=broker es a donde lleva la página vieja de Operaciones.
+  const filtro: Filtro = sp.filtro === "mios" ? "mios" : sp.filtro === "brokers" || sp.origen === "broker" ? "brokers" : "todos";
   const etapa = ETAPAS_NEGOCIO.some((e) => e.value === sp.etapa) ? (sp.etapa as EtapaNegocio) : null;
   const puedeOperar = puede(session, "originacion.operar");
   const hoy = fechaMexico();
@@ -72,7 +73,12 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar los negocios. <span className="text-sm opacity-70">(código {c})</span></div>;
   }
 
-  const visibles = filtro === "mios" ? negocios.filter((n) => n.responsableEmail === session.email) : negocios;
+  const visibles =
+    filtro === "mios"
+      ? negocios.filter((n) => n.responsableEmail === session.email)
+      : filtro === "brokers"
+        ? negocios.filter((n) => n.brokerId || n.origen === "broker")
+        : negocios;
   const totales = totalesPorEtapa(visibles);
   const abiertos = visibles.filter((n) => ETAPAS_ABIERTAS.includes(n.etapa));
   const montoAbierto = abiertos.reduce((s, n) => s + (n.montoEstimado ?? 0), 0);
@@ -97,6 +103,7 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
         <div className="flex flex-wrap gap-2">
           <Link href={href({ vista, filtro: "todos", etapa: etapa ?? undefined })} className={pestana(filtro === "todos")}>Todos</Link>
           <Link href={href({ vista, filtro: "mios", etapa: etapa ?? undefined })} className={pestana(filtro === "mios")}>Mis negocios</Link>
+          <Link href={href({ vista, filtro: "brokers", etapa: etapa ?? undefined })} className={pestana(filtro === "brokers")}>De brokers</Link>
         </div>
         <div className="flex gap-1 rounded-lg bg-black/5 p-1 text-sm">
           <Link href={href({ vista: "tablero", filtro })} aria-current={vista === "tablero" ? "page" : undefined} className={`rounded-md px-3 py-1 ${vista === "tablero" ? "bg-white font-semibold shadow-sm" : "text-finbra-gray"}`}>Tablero</Link>

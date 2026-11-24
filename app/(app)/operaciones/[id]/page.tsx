@@ -25,8 +25,9 @@ export default async function OperacionDetallePage({ params }: { params: Promise
   const session = token ? await verifySession(token) : null;
   if (!session) return null;
 
-  const id = /^\d{1,9}$/.test(idTexto) ? Number(idTexto) : null;
-  if (id === null) notFound();
+  // El id es el del negocio o, en ligas de antes de la migración, el número de la operación.
+  if (!/^(\d{1,9}|[0-9a-f-]{36})$/i.test(idTexto)) notFound();
+  const id = idTexto;
 
   let operacion: Awaited<ReturnType<typeof getOperationOfBroker>> = null;
   let historial: Awaited<ReturnType<typeof listOperationHistory>> = [];

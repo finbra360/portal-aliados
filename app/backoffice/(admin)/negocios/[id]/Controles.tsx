@@ -17,7 +17,7 @@ import {
   type ParaRequisitos,
 } from "@/lib/clientes/negocios";
 import { enviarSinBorrar } from "../../cobranza/enviarSinBorrar";
-import { cambiarEtapaAction, editarNegocioAction, guardarSolicitudAction, type NegocioResult } from "../actions";
+import { cambiarBrokerAction, cambiarEtapaAction, editarNegocioAction, guardarMensajeBrokerAction, guardarSolicitudAction, type NegocioResult } from "../actions";
 
 const campo = "w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm";
 const etiqueta = "block text-sm font-medium";
@@ -201,6 +201,18 @@ export function Solicitud({ id, s }: { id: string; s: DatosSolicitud }) {
           </>
         )}
       </div>
+      <div className="space-y-1 sm:w-1/3">
+        <label htmlFor="comisionAperturaPct" className={etiqueta}>Comisión por apertura (%) <span className="font-normal text-finbra-gray">(opcional)</span></label>
+        <input
+          id="comisionAperturaPct"
+          name="comisionAperturaPct"
+          inputMode="decimal"
+          defaultValue={s.comisionAperturaPct ?? ""}
+          placeholder="4.5"
+          className={`${campo} tabular-nums`}
+        />
+        <p className="text-xs text-finbra-gray">En negocios de broker define su comisión al dispersar.</p>
+      </div>
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={guardando} className={boton}>{guardando ? "Guardando…" : "Guardar solicitud"}</button>
         <Aviso r={r} />
@@ -232,5 +244,53 @@ export function EditarNegocio({ id, responsable, notas, ejecutivos }: { id: stri
         <Aviso r={r} />
       </div>
     </form>
+  );
+}
+
+/** De qué broker viene el negocio y lo que el broker ve en su portal. */
+export function BrokerDelNegocio({
+  id,
+  brokerId,
+  mensaje,
+  brokers,
+  conColocacion,
+}: {
+  id: string;
+  brokerId: string | null;
+  mensaje: string | null;
+  brokers: { id: string; nombre: string }[];
+  conColocacion: boolean;
+}) {
+  const [rb, accionBroker, guardandoBroker] = useActionState(cambiarBrokerAction.bind(null, id), null);
+  const [rm, accionMensaje, guardandoMensaje] = useActionState(guardarMensajeBrokerAction.bind(null, id), null);
+  return (
+    <div className="space-y-4">
+      <form onSubmit={enviarSinBorrar(accionBroker)} className="flex flex-wrap items-end gap-3">
+        <div className="min-w-48 flex-1 space-y-1">
+          <label htmlFor="brokerId" className={etiqueta}>Broker</label>
+          <select id="brokerId" name="brokerId" defaultValue={brokerId ?? ""} disabled={conColocacion} className={campo}>
+            <option value="">Sin broker</option>
+            {brokers.map((b) => (
+              <option key={b.id} value={b.id}>{b.nombre} · {b.id}</option>
+            ))}
+          </select>
+        </div>
+        {!conColocacion && (
+          <button type="submit" disabled={guardandoBroker} className={boton}>{guardandoBroker ? "Guardando…" : "Guardar"}</button>
+        )}
+        <div className="w-full"><Aviso r={rb} /></div>
+      </form>
+      {brokerId && (
+        <form onSubmit={enviarSinBorrar(accionMensaje)} className="space-y-2">
+          <label htmlFor="mensajeBroker" className={etiqueta}>Mensaje para el broker</label>
+          <textarea id="mensajeBroker" name="mensajeBroker" rows={2} maxLength={1000} defaultValue={mensaje ?? ""} className={campo} />
+          <p className="text-xs text-finbra-gray">Lo ve en su portal, en el seguimiento de esta solicitud. Las notas internas no se le muestran.</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <button type="submit" disabled={guardandoMensaje} className={boton}>{guardandoMensaje ? "Guardando…" : "Guardar mensaje"}</button>
+            <Aviso r={rm} />
+          </div>
+        </form>
+      )}
+    </div>
   );
 }

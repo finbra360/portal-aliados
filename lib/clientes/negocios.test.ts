@@ -35,7 +35,7 @@ test("negocio de una empresa existente", () => {
   const r = validarNegocio({ empresaId: EMPRESA, tipo: "renovacion", origen: "renovacion", montoEstimado: "3,000,000", responsableEmail: "Ana@Finbra.test" });
   assert.deepEqual(r, {
     ok: true,
-    datos: { empresa: { id: EMPRESA }, contacto: null, tipo: "renovacion", origen: "renovacion", montoEstimado: 3_000_000, responsableEmail: "ana@finbra.test", notas: null },
+    datos: { empresa: { id: EMPRESA }, contacto: null, tipo: "renovacion", origen: "renovacion", montoEstimado: 3_000_000, responsableEmail: "ana@finbra.test", notas: null, brokerId: null },
   });
 });
 
@@ -44,6 +44,7 @@ test("negocio con empresa nueva y su contacto", () => {
     empresaNombre: " Transportes Ficticios ",
     empresaRfc: "tfi-200101-ab1",
     origen: "broker",
+    brokerId: "B001",
     contactoNombre: "Persona Ficticia",
     contactoTelefono: "5500000000",
     contactoCorreo: "Contacto@Ejemplo.test",
@@ -114,7 +115,7 @@ test("solicitud: valida catálogos, plazo y montos; sin garantía borra su detal
   const r = validarSolicitud({ producto: "pyme", montoEstimado: "2,000,000", plazoMeses: "36", destino: "capital_trabajo", garantiaTipo: "vehicular", garantiaValor: "3,500,000" });
   assert.deepEqual(r, {
     ok: true,
-    datos: { producto: "pyme", montoEstimado: 2_000_000, plazoMeses: 36, destino: "capital_trabajo", destinoDetalle: null, garantiaTipo: "vehicular", garantiaDetalle: null, garantiaValor: 3_500_000 },
+    datos: { producto: "pyme", montoEstimado: 2_000_000, plazoMeses: 36, destino: "capital_trabajo", destinoDetalle: null, garantiaTipo: "vehicular", garantiaDetalle: null, garantiaValor: 3_500_000, comisionAperturaPct: null },
   });
   assert.equal(validarSolicitud({}).ok, true);
   assert.deepEqual(validarSolicitud({ plazoMeses: "0" }), { ok: false, error: "El plazo va de 1 a 120 meses." });
@@ -178,4 +179,18 @@ test("desde un lead: garantía probable y notas con los estimados", () => {
   );
   const soloInmueble = negocioDesdeLead({ empleadosEstimado: null, ventasEstimadoMxn: null, antiguedadAnios: null, tieneGarantiaVehicular: false, tieneGarantiaInmobiliaria: true, totalScore: null, categoria: null });
   assert.deepEqual(soloInmueble.solicitud, { garantiaTipo: "inmobiliaria" });
+});
+
+test("broker: obligatorio si el origen es broker; la comisión por apertura va de 0 a 20 %", () => {
+  assert.deepEqual(validarNegocio({ empresaId: EMPRESA, origen: "broker" }), { ok: false, error: "Elige de qué broker viene el negocio." });
+  const r = validarNegocio({ empresaId: EMPRESA, origen: "broker", brokerId: "FAPBR044" });
+  assert.equal(r.ok && r.datos.brokerId, "FAPBR044");
+  // Con otro origen el broker no se guarda.
+  const w = validarNegocio({ empresaId: EMPRESA, origen: "web", brokerId: "FAPBR044" });
+  assert.equal(w.ok && w.datos.brokerId, null);
+  assert.equal(validarNegocio({ empresaId: EMPRESA, origen: "broker", brokerId: "no válido!" }).ok, false);
+  const s = validarSolicitud({ comisionAperturaPct: "4.5%" });
+  assert.equal(s.ok && s.datos.comisionAperturaPct, 4.5);
+  assert.deepEqual(validarSolicitud({ comisionAperturaPct: "25" }), { ok: false, error: "La comisión por apertura va de 0 a 20 %, con hasta dos decimales." });
+  assert.equal(validarSolicitud({ comisionAperturaPct: "4.555" }).ok, false);
 });

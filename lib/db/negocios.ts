@@ -50,6 +50,11 @@ export interface Negocio {
   rechazoPor: "finbra" | "cliente" | null;
   /** De qué salió: 'lead:<id>', 'credit_health:<id>' u 'oportunidad:<id>'. */
   origenRef: string | null;
+  /** Broker que lo trajo (fase O4); null antes de correr crm-schema.sql o si no es de broker. */
+  brokerId: string | null;
+  comisionAperturaPct: number | null;
+  mensajeBroker: string | null;
+  colocacionId: string | null;
   createdAt: string;
   createdBy: string;
 }
@@ -90,6 +95,10 @@ function mapNegocio(r: Record<string, unknown>): Negocio {
     rechazoMotivo: (r.rechazo_motivo as string) ?? null,
     rechazoPor: (r.rechazo_por as "finbra" | "cliente") ?? null,
     origenRef: (r.origen_ref as string) ?? null,
+    brokerId: (r.broker_id as string) ?? null,
+    comisionAperturaPct: r.comision_apertura_pct === null || r.comision_apertura_pct === undefined ? null : Number(r.comision_apertura_pct),
+    mensajeBroker: (r.mensaje_broker as string) ?? null,
+    colocacionId: r.colocacion_id === null || r.colocacion_id === undefined ? null : String(r.colocacion_id),
     createdAt: (r.created_at as Date).toISOString(),
     createdBy: r.created_by as string,
   };
@@ -213,6 +222,7 @@ export async function crearNegocio(p: {
     }
   }
   const s = p.solicitud ?? {};
+  if (d.brokerId) await brokerValido(d.brokerId);
 
   const { negocioId, empresaId, empresaNueva } = await transaccion(async (tx) => {
     let empresaId: string;
@@ -253,6 +263,7 @@ export async function crearNegocio(p: {
       RETURNING id
     `;
     await tx`INSERT INTO crm_negocio_etapas (negocio_id, de, a, actor) VALUES (${n.id}, NULL, 'prospecto', ${p.actor})`;
+    if (d.brokerId) await tx`UPDATE crm_negocios_credito SET broker_id = ${d.brokerId} WHERE id = ${n.id}`;
     return { negocioId: n.id as string, empresaId, empresaNueva };
   });
 
@@ -281,7 +292,8 @@ export async function cambiarEtapa(p: {
   const hoy = fechaMexico();
   const r = await transaccion(async (tx) => {
     const [n] = await tx`
-      SELECT n.etapa, n.empresa_id, n.responsable_email, n.producto, n.monto_estimado, n.plazo_meses, n.destino, n.garantia_tipo, e.rfc
+      SELECT n.etapa, n.empresa_id, n.responsable_email, n.producto, n.monto_estimado, n.plazo_meses, n.destino, n.garantia_tipo, e.rfc, e.nombre AS empresa,
+             to_jsonb(n) AS j
       FROM crm_negocios_credito n JOIN crm_empresas e ON e.id = n.empresa_id
       WHERE n.id = ${p.id} AND n.ambiente = ${ambienteActual()} FOR UPDATE OF n
     `;
@@ -321,7 +333,20 @@ export async function cambiarEtapa(p: {
         WHERE NOT EXISTS (SELECT 1 FROM crm_tareas WHERE dedupe_key = ${dedupe} AND estado = 'abierta')
       `;
     }
-    return { de: n.etapa as EtapaNegocio, a: d.etapa, motivo: d.motivo, recontactarEl: d.recontactarEl, rechazoMotivo: d.rechazoMotivo, rechazoPor: d.rechazoPor };
+    // Dispersado de un broker: su colocación (comisiones y rankings), una sola vez.
+    let colocacionId: string | null = null;
+    const j = (n.j ?? {}) as Record<string, unknown>;
+    if (d.etapa === "dispersado" && j.broker_id && !j.colocacion_id && n.monto_estimado !== null) {
+      const [c] = await tx`
+        INSERT INTO broker_colocaciones (broker_id, fecha, monto, comision_apertura_pct, referencia, created_by)
+        VALUES (${j.broker_id as string}, ${hoy}, ${Number(n.monto_estimado)}, ${j.comision_apertura_pct === null || j.comision_apertura_pct === undefined ? null : Number(j.comision_apertura_pct)},
+                ${`${n.empresa} (negocio de Originación)`.slice(0, 200)}, ${p.actor})
+        RETURNING id
+      `;
+      colocacionId = String(c.id);
+      await tx`UPDATE crm_negocios_credito SET colocacion_id = ${c.id} WHERE id = ${p.id}`;
+    }
+    return { de: n.etapa as EtapaNegocio, a: d.etapa, motivo: d.motivo, recontactarEl: d.recontactarEl, rechazoMotivo: d.rechazoMotivo, rechazoPor: d.rechazoPor, colocacionId };
   });
   await logAudit({ actorEmail: p.actor, action: "etapa_negocio", entityType: "negocio", entityId: p.id, metadata: r });
   return r.a;
@@ -330,10 +355,11 @@ export async function cambiarEtapa(p: {
 /** Guarda los datos de la solicitud (producto, monto, plazo, destino y garantía). Regresa si cambió algo. */
 export async function guardarSolicitud(p: { id: string; datos: DatosSolicitud; actor: string }): Promise<boolean> {
   const [antes] = await sql`
-    SELECT producto, monto_estimado, plazo_meses, destino, destino_detalle, garantia_tipo, garantia_detalle, garantia_valor
-    FROM crm_negocios_credito WHERE id = ${p.id} AND ambiente = ${ambienteActual()}
+    SELECT producto, monto_estimado, plazo_meses, destino, destino_detalle, garantia_tipo, garantia_detalle, garantia_valor, to_jsonb(n) AS j
+    FROM crm_negocios_credito n WHERE id = ${p.id} AND ambiente = ${ambienteActual()}
   `;
   if (!antes) throw new NegocioError("Ese negocio no existe.");
+  const conComision = "comision_apertura_pct" in (antes.j ?? {});
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const d = p.datos;
   const pares: [string, unknown, unknown][] = [
@@ -345,6 +371,7 @@ export async function guardarSolicitud(p: { id: string; datos: DatosSolicitud; a
     ["garantia_tipo", antes.garantia_tipo ?? null, d.garantiaTipo],
     ["garantia_detalle", antes.garantia_detalle ?? null, d.garantiaDetalle],
     ["garantia_valor", num(antes.garantia_valor), d.garantiaValor],
+    ...(conComision ? ([["comision_apertura_pct", num(antes.j.comision_apertura_pct), d.comisionAperturaPct]] as [string, unknown, unknown][]) : []),
   ];
   const cambios = Object.fromEntries(pares.filter(([, a, b]) => a !== b).map(([k, a, b]) => [k, { antes: a, despues: b }]));
   if (Object.keys(cambios).length === 0) return false;
@@ -355,6 +382,7 @@ export async function guardarSolicitud(p: { id: string; datos: DatosSolicitud; a
       garantia_valor = ${d.garantiaValor}, updated_by = ${p.actor}, updated_at = now()
     WHERE id = ${p.id}
   `;
+  if (conComision) await sql`UPDATE crm_negocios_credito SET comision_apertura_pct = ${d.comisionAperturaPct} WHERE id = ${p.id}`;
   await logAudit({ actorEmail: p.actor, action: "solicitud_negocio", entityType: "negocio", entityId: p.id, metadata: { cambios } });
   return true;
 }
@@ -374,4 +402,47 @@ export async function editarNegocio(p: { id: string; responsableEmail: string | 
   `;
   await logAudit({ actorEmail: p.actor, action: "editar_negocio", entityType: "negocio", entityId: p.id, metadata: { cambios } });
   return true;
+}
+
+/** El broker existe en el backoffice. */
+async function brokerValido(brokerId: string) {
+  const [b] = await sql`SELECT 1 FROM brokers WHERE id = ${brokerId}`;
+  if (!b) throw new NegocioError("Ese broker no existe en el backoffice.");
+}
+
+/** Brokers para elegir en un negocio. */
+export async function brokersParaNegocio(): Promise<{ id: string; nombre: string }[]> {
+  const [t] = await sql`SELECT to_regclass('public.brokers') IS NOT NULL AS hay`;
+  if (!t?.hay) return [];
+  const rows = await sql`SELECT id, nombre FROM brokers ORDER BY nombre`;
+  return rows.map((r) => ({ id: r.id as string, nombre: r.nombre as string }));
+}
+
+/** Cambia (o quita) el broker de un negocio. Un negocio ya dispersado con colocación no cambia de broker. */
+export async function cambiarBroker(p: { id: string; brokerId: string | null; actor: string }): Promise<boolean> {
+  if (p.brokerId) await brokerValido(p.brokerId);
+  const [n] = await sql`SELECT to_jsonb(n) AS j FROM crm_negocios_credito n WHERE id = ${p.id} AND ambiente = ${ambienteActual()}`;
+  if (!n) throw new NegocioError("Ese negocio no existe.");
+  const j = n.j as Record<string, unknown>;
+  if (!("broker_id" in j)) throw new NegocioError("Falta correr crm-schema.sql para ligar negocios a brokers.");
+  if ((j.broker_id ?? null) === p.brokerId) return false;
+  if (j.colocacion_id) throw new NegocioError("Ya se creó su colocación al dispersarlo; el broker ya no se cambia aquí.");
+  await sql`
+    UPDATE crm_negocios_credito SET broker_id = ${p.brokerId}, origen = CASE WHEN ${p.brokerId}::text IS NOT NULL THEN 'broker' ELSE origen END,
+      updated_by = ${p.actor}, updated_at = now()
+    WHERE id = ${p.id}
+  `;
+  await logAudit({ actorEmail: p.actor, action: "broker_negocio", entityType: "negocio", entityId: p.id, metadata: { antes: j.broker_id ?? null, despues: p.brokerId } });
+  return true;
+}
+
+/** Lo que Finbra le dice al broker de esta solicitud; lo ve en su portal. */
+export async function guardarMensajeBroker(p: { id: string; mensaje: string | null; actor: string }): Promise<void> {
+  const r = await sql`
+    UPDATE crm_negocios_credito SET mensaje_broker = ${p.mensaje}, updated_by = ${p.actor}, updated_at = now()
+    WHERE id = ${p.id} AND ambiente = ${ambienteActual()} AND broker_id IS NOT NULL
+    RETURNING id
+  `;
+  if (!r.length) throw new NegocioError("Ese negocio no es de un broker.");
+  await logAudit({ actorEmail: p.actor, action: "mensaje_broker_negocio", entityType: "negocio", entityId: p.id });
 }

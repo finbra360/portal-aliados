@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { diasEntre, pasosDeSeguimiento } from "./operaciones-seguimiento.ts";
+import { diasEntre, etapaParaBroker, historialParaBroker, pasosDeSeguimiento } from "./operaciones-seguimiento.ts";
 
 type Etapa = Parameters<typeof pasosDeSeguimiento>[0];
 const h = (etapa: Etapa, fecha: string) => ({ etapa, fecha });
@@ -63,4 +63,48 @@ test("fondeada: todos hechos, el último es el actual", () => {
 test("diasEntre cuenta días completos y no baja de cero", () => {
   assert.equal(diasEntre("2026-10-01T10:00:00Z", "2026-10-04T09:00:00Z"), 2);
   assert.equal(diasEntre("2026-10-05T00:00:00Z", "2026-10-01T00:00:00Z"), 0);
+});
+
+test("etapa del negocio que ve el broker", () => {
+  assert.equal(etapaParaBroker("prospecto"), "recibida");
+  assert.equal(etapaParaBroker("calificado"), "recibida");
+  assert.equal(etapaParaBroker("solicitud"), "documentacion_pendiente");
+  for (const e of ["analisis", "oferta", "expediente", "comite"]) assert.equal(etapaParaBroker(e), "en_analisis");
+  assert.equal(etapaParaBroker("formalizacion"), "formalizacion");
+  assert.equal(etapaParaBroker("dispersado"), "fondeada");
+  assert.equal(etapaParaBroker("rechazado"), "rechazada");
+  // Pospuesto: se ve donde estaba antes de pausarse.
+  assert.equal(etapaParaBroker("pospuesto", "oferta"), "en_analisis");
+  assert.equal(etapaParaBroker("pospuesto", null), "recibida");
+});
+
+test("historial del negocio en pasos del broker: sin repetir y sin la pausa", () => {
+  const r = historialParaBroker([
+    { de: null, a: "prospecto", fecha: "2026-11-01T10:00:00Z" },
+    { de: "prospecto", a: "calificado", fecha: "2026-11-02T10:00:00Z" },
+    { de: "calificado", a: "solicitud", fecha: "2026-11-05T10:00:00Z" },
+    { de: "solicitud", a: "analisis", fecha: "2026-11-08T10:00:00Z" },
+    { de: "analisis", a: "pospuesto", fecha: "2026-11-09T10:00:00Z" },
+    { de: "pospuesto", a: "oferta", fecha: "2026-11-20T10:00:00Z" },
+    { de: "oferta", a: "formalizacion", fecha: "2026-11-22T10:00:00Z" },
+  ]);
+  assert.deepEqual(r, [
+    { etapa: "recibida", fecha: "2026-11-01T10:00:00Z" },
+    { etapa: "documentacion_pendiente", fecha: "2026-11-05T10:00:00Z" },
+    { etapa: "en_analisis", fecha: "2026-11-08T10:00:00Z" },
+    { etapa: "formalizacion", fecha: "2026-11-22T10:00:00Z" },
+  ]);
+  // Con ese historial el seguimiento marca hechos los pasos alcanzados; «Aprobada» queda hecho sin fecha.
+  const pasos = pasosDeSeguimiento("formalizacion", r);
+  assert.deepEqual(
+    pasos.map((p) => [p.etapa, p.estado, p.fecha !== null]),
+    [
+      ["recibida", "hecho", true],
+      ["documentacion_pendiente", "hecho", true],
+      ["en_analisis", "hecho", true],
+      ["aprobada", "hecho", false],
+      ["formalizacion", "actual", true],
+      ["fondeada", "pendiente", false],
+    ],
+  );
 });

@@ -5,7 +5,8 @@ import { puede } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { fechaMexico } from "@/lib/collections/rules";
 import { formatFecha, formatFechaHora, formatMoney } from "@/lib/format";
-import { getNegocio, hayNegocios } from "@/lib/db/negocios";
+import { brokersParaNegocio, getNegocio, hayNegocios } from "@/lib/db/negocios";
+import { operacionesSonNegocios } from "@/lib/db/operations";
 import { listEjecutivos } from "@/lib/db/empresas";
 import { getHistorial } from "@/lib/db/personas";
 import { getTareasEmpresa } from "@/lib/db/tareas";
@@ -15,7 +16,7 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import PlazoChip from "../../clientes/PlazoChip";
 import EtapaNegocioChip from "../EtapaNegocioChip";
-import { EditarNegocio, MoverEtapa, Solicitud } from "./Controles";
+import { BrokerDelNegocio, EditarNegocio, MoverEtapa, Solicitud } from "./Controles";
 
 const PASOS = ETAPAS_NEGOCIO.filter((e) => e.value !== "pospuesto" && e.value !== "rechazado");
 
@@ -40,11 +41,14 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
   }
   if (!datos) notFound();
   const { negocio: n, etapas } = datos;
-  const [ejecutivos, tareas, historial] = await Promise.all([
+  const [ejecutivos, tareas, historial, brokers, conBrokers] = await Promise.all([
     puedeOperar ? listEjecutivos() : Promise.resolve([]),
     getTareasEmpresa(n.empresaId),
     getHistorial(n.empresaId),
+    brokersParaNegocio(),
+    operacionesSonNegocios(),
   ]);
+  const broker = brokers.find((b) => b.id === n.brokerId) ?? null;
   const dias = diasEnEtapa(n.etapaDesde, hoy);
   const actual = PASOS.findIndex((p) => p.value === n.etapa);
   const ficha = `/backoffice/clientes/${n.empresaId}`;
@@ -81,6 +85,12 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
               <span className="text-finbra-gray">Responsable: </span>
               {n.responsableNombre ?? <span className="text-amber-800">Sin responsable</span>}
             </p>
+            {n.brokerId && (
+              <p>
+                <span className="text-finbra-gray">Broker: </span>
+                {broker?.nombre ?? n.brokerId}
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -154,6 +164,22 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
               <p className="whitespace-pre-line text-sm">{n.notas ?? <span className="text-finbra-gray">Sin notas.</span>}</p>
             )}
           </Card>
+          {conBrokers && (puedeOperar || n.brokerId) && (
+            <Card className="space-y-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-lg font-bold">Broker</h2>
+                {n.colocacionId && <span className="text-xs text-emerald-700">Colocación registrada al dispersar.</span>}
+              </div>
+              {puedeOperar ? (
+                <BrokerDelNegocio id={n.id} brokerId={n.brokerId} mensaje={n.mensajeBroker} brokers={brokers} conColocacion={!!n.colocacionId} />
+              ) : (
+                <p className="text-sm">
+                  {broker?.nombre ?? n.brokerId}
+                  {n.mensajeBroker && <span className="block text-finbra-gray">Mensaje: {n.mensajeBroker}</span>}
+                </p>
+              )}
+            </Card>
+          )}
           <Card className="space-y-3">
             <h2 className="text-lg font-bold">Historial de etapas</h2>
             <ol className="space-y-3 border-l border-black/10 pl-4">

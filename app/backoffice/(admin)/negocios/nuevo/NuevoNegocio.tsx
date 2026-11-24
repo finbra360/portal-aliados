@@ -18,15 +18,18 @@ export default function NuevoNegocio({
   ejecutivos,
   yo,
   empresaInicial,
+  brokers,
 }: {
   empresas: EmpresaOpcion[];
   ejecutivos: { email: string; nombre: string }[];
   yo: string;
   empresaInicial: string | null;
+  brokers: { id: string; nombre: string }[];
 }) {
   const [r, accion, guardando] = useActionState(crearNegocioAction, null);
   const [modo, setModo] = useState<"existente" | "nueva">(empresaInicial || empresas.length > 0 ? "existente" : "nueva");
   const [empresaId, setEmpresaId] = useState(empresaInicial ?? "");
+  const [origen, setOrigen] = useState("");
   const elegida = empresas.find((e) => e.id === empresaId);
 
   return (
@@ -113,13 +116,25 @@ export default function NuevoNegocio({
         )}
         <div className="space-y-1">
           <label htmlFor="origen" className={etiqueta}>De dónde llegó</label>
-          <select id="origen" name="origen" required defaultValue="" className={campo}>
+          <select id="origen" name="origen" required value={origen} onChange={(e) => setOrigen(e.target.value)} className={campo}>
             <option value="" disabled>Elige el origen</option>
             {Object.entries(ORIGENES_NEGOCIO).map(([v, t]) => (
               <option key={v} value={v}>{t}</option>
             ))}
           </select>
         </div>
+        {origen === "broker" && (
+          <div className="space-y-1">
+            <label htmlFor="brokerId" className={etiqueta}>Broker</label>
+            <select id="brokerId" name="brokerId" required defaultValue="" className={campo}>
+              <option value="" disabled>Elige el broker</option>
+              {brokers.map((b) => (
+                <option key={b.id} value={b.id}>{b.nombre} · {b.id}</option>
+              ))}
+            </select>
+            <p className="text-xs text-finbra-gray">El broker ve el avance en su portal.</p>
+          </div>
+        )}
         <div className="space-y-1">
           <label htmlFor="montoEstimado" className={etiqueta}>Monto estimado <span className="font-normal text-finbra-gray">(opcional)</span></label>
           <input id="montoEstimado" name="montoEstimado" inputMode="decimal" placeholder="1,500,000" className={`${campo} tabular-nums`} />
