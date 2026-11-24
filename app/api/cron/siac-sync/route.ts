@@ -7,6 +7,7 @@ import { obtenerMontosPreventivos, runPreventivos } from "@/lib/db/whatsapp-prev
 import { enviarReporteDiario } from "@/lib/db/reporte";
 import { runCorreosMora, runCorreosPreventivos, type CorreosRunResult } from "@/lib/db/correos-cobranza";
 import { correrRadar, type ResultadoRadar } from "@/lib/db/renovaciones";
+import { correrPlaybooks, type ResultadoPlaybooks } from "@/lib/db/playbooks";
 
 // Una sola llamada a SIAC para la foto y, a las 9:00, hasta MAX_CONSULTAS_MONTO consultas de saldo (montos de
 // preventivos) y max_envios_mora_por_dia mensajes de WhatsApp (~0.75 s cada uno).
@@ -22,7 +23,8 @@ export const dynamic = "force-dynamic";
  *                                                 después los recordatorios de WhatsApp (mora y preventivos)
  *                                                 y al final el reporte diario a Slack
  *
- * En las dos, con la foto de hoy, corre el radar de renovación (no duplica nada si corre dos veces).
+ * En las dos, con la foto de hoy, corren el radar de renovación y los playbooks de clientes
+ * (no duplican nada si corren dos veces).
  *
  * Con el mismo secreto se puede correr a mano para otra fecha: ?fecha=2026-10-01
  */
@@ -56,6 +58,16 @@ export async function GET(req: NextRequest) {
       } catch (e) {
         radar = { error: (e as Error).message };
         await notifySlack(`:warning: El radar de renovación no pudo correr: ${(e as Error).message}`);
+      }
+    }
+    // Playbooks: tareas automáticas (crédito nuevo, primer pago, revisión, salida del listado).
+    let playbooks: ResultadoPlaybooks | { error: string } | null = null;
+    if (result.status !== "error") {
+      try {
+        playbooks = await correrPlaybooks({ actor: "cron" });
+      } catch (e) {
+        playbooks = { error: (e as Error).message };
+        await notifySlack(`:warning: Los playbooks de clientes no pudieron correr: ${(e as Error).message}`);
       }
     }
     // Los recordatorios salen después de la foto, dentro del horario de envío.
@@ -124,7 +136,7 @@ export async function GET(req: NextRequest) {
         console.error("Cobranza: no se pudo armar el reporte diario:", (e as Error).message);
       }
     }
-    return NextResponse.json({ ...result, radar, whatsapp, correos, reporte },{ status: result.status === "error" ? 500 : 200 });
+    return NextResponse.json({ ...result, radar, playbooks, whatsapp, correos, reporte },{ status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     // Errores antes de poder registrar la corrida (base caída, fecha inválida).
     const mensaje = (e as Error).message;

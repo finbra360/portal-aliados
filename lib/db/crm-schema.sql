@@ -152,6 +152,14 @@ INSERT INTO crm_settings (key, value, descripcion) VALUES
    'Radar de renovación. activo: prende o apaga el radar automático. ventanas: días antes del fin del plazo en que se abre la oportunidad (la mayor) y se recuerda (las demás). atraso_maximo_historico y veces_mora_max: compuertas de comportamiento de pago para calificar.')
 ON CONFLICT (key) DO NOTHING;
 
+-- Playbooks de seguimiento (agregado el 2026-11-09). Los corre el cron después
+-- de la foto diaria (lib/db/playbooks.ts); las reglas están en lib/clientes/playbooks.ts.
+INSERT INTO crm_settings (key, value, descripcion) VALUES
+  ('playbooks',
+   '{"activo": true, "bienvenida": true, "primer_pago_dias": 5, "revision_dias": 90, "revision_max_por_dia": 5, "liquidacion": true}',
+   'Tareas automáticas. activo: prende o apaga todos. bienvenida: llamada, cuenta de pago y contacto de pagos cuando aparece un crédito nuevo. primer_pago_dias: días antes del primer vencimiento para confirmar la CLABE (0 = apagado). revision_dias: días sin contacto del equipo para pedir una llamada de revisión (0 = apagado). revision_max_por_dia: tope de revisiones nuevas por día. liquidacion: tarea cuando un crédito sale del listado.')
+ON CONFLICT (key) DO NOTHING;
+
 -- Oportunidad comercial. Solo autoriza a contactar al cliente: NO es una
 -- aprobación de crédito, y el monto de referencia no es una oferta.
 CREATE TABLE IF NOT EXISTS crm_oportunidades (

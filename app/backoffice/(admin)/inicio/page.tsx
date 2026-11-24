@@ -6,6 +6,7 @@ import Card from "@/components/ui/Card";
 import { puede } from "@/lib/permisos";
 import { getMiCartera } from "@/lib/db/tareas";
 import { TIPOS_TAREA, plazoDe, type TipoAviso } from "@/lib/clientes/tareas";
+import { playbookDeOrigen } from "@/lib/clientes/playbooks";
 import PlazoChip from "../clientes/PlazoChip";
 import CerrarTarea from "../clientes/[id]/CerrarTarea";
 
@@ -58,6 +59,9 @@ function SeccionMiCartera({ c, puedeEditar }: { c: MiCartera; puedeEditar: boole
                 <PlazoChip venceEl={t.venceEl} hoy={c.hoy} />
                 <Link href={`/backoffice/clientes/${t.empresaId}?tab=tareas`} className="text-sm font-semibold text-finbra-purple-700 hover:underline">{t.empresa}</Link>
                 <span className="text-xs text-finbra-gray">· {TIPOS_TAREA[t.tipo] ?? t.tipo}</span>
+                {playbookDeOrigen(t.origen) && (
+                  <span className="rounded-full bg-finbra-purple/10 px-2 py-0.5 text-xs font-semibold text-finbra-purple-700">Automática · {playbookDeOrigen(t.origen)}</span>
+                )}
               </div>
               <p className="text-sm">{t.titulo}</p>
               {puedeEditar && <CerrarTarea empresaId={t.empresaId} tareaId={t.id} />}
