@@ -301,3 +301,43 @@ export async function vincularEmpresasNuevas(tx: Tx, ambiente: "pruebas" | "prod
   `;
   return ligados.length;
 }
+
+/** Tope de empresas por asignación, para no mandar listas sin fin desde el navegador. */
+export const MAX_ASIGNAR = 500;
+
+/**
+ * Asigna (o quita, con `email` null) el ejecutivo de varias empresas a la vez.
+ * Mismas reglas que la edición de una empresa: el ejecutivo tiene que ser un
+ * usuario activo. Solo toca las que cambian, y cada cambio queda en audit_log
+ * como `editar_empresa`, igual que si se hubiera editado una por una.
+ * Regresa cuántas cambiaron.
+ */
+export async function asignarEjecutivo(p: { ids: string[]; email: string | null; actor: string }): Promise<number> {
+  const ids = [...new Set(p.ids)];
+  if (ids.length === 0) throw new EmpresaError("Elige al menos una empresa.");
+  if (ids.length > MAX_ASIGNAR) throw new EmpresaError(`Son demasiadas empresas a la vez (máximo ${MAX_ASIGNAR}).`);
+  if (ids.some((id) => !/^[0-9a-f-]{36}$/i.test(id))) throw new EmpresaError("Alguna empresa no es válida. Recarga la página e intenta de nuevo.");
+  const email = p.email?.trim().toLowerCase() || null;
+  if (email) {
+    const [u] = await sql`SELECT 1 FROM admin_users WHERE email = ${email} AND activo`;
+    if (!u) throw new EmpresaError("El ejecutivo tiene que ser un usuario activo del backoffice.");
+  }
+
+  // El FROM lee el ejecutivo de antes en la misma sentencia, para la auditoría.
+  const cambiadas = await sql`
+    UPDATE crm_empresas e SET ejecutivo_email = ${email}, updated_by = ${p.actor}, updated_at = now()
+    FROM (SELECT id, ejecutivo_email AS antes FROM crm_empresas WHERE id = ANY(${ids}::uuid[])) a
+    WHERE e.id = a.id AND e.ambiente = ${ambienteActual()} AND e.ejecutivo_email IS DISTINCT FROM ${email}::text
+    RETURNING e.id, a.antes
+  `;
+  for (const r of cambiadas) {
+    await logAudit({
+      actorEmail: p.actor,
+      action: "editar_empresa",
+      entityType: "empresa",
+      entityId: r.id as string,
+      metadata: { cambios: { ejecutivo_email: { antes: (r.antes as string) ?? null, despues: email } }, enBloque: true },
+    });
+  }
+  return cambiadas.length;
+}
