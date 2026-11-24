@@ -134,10 +134,14 @@ export interface SenalesSalud extends RelacionSalud {
   cobranzaEspecial: boolean;
 }
 
+/** De qué tipo es una razón: dice dónde se atiende (cobranza, contacto o datos). */
+export type SenalSalud = "pago" | "contacto" | "datos";
+
 export interface RazonSalud {
   texto: string;
   /** Puntos que resta (positivo). */
   puntos: number;
+  senal: SenalSalud;
 }
 
 export interface Salud {
@@ -159,8 +163,8 @@ export function nivelDe(puntos: number, a: AjustesSalud): NivelSalud {
 export function calcularSalud(s: SenalesSalud, a: AjustesSalud, hoy: string): Salud | null {
   if (s.creditosVigentes === 0) return null;
   const razones: RazonSalud[] = [];
-  const restar = (puntos: number, texto: string) => {
-    if (puntos > 0) razones.push({ texto, puntos });
+  const restar = (puntos: number, texto: string, senal: SenalSalud = "pago") => {
+    if (puntos > 0) razones.push({ texto, puntos, senal });
   };
 
   if (s.cobranzaEspecial) restar(a.cobranzaEspecial, "En cobranza especial (jurídico, extrajudicial o reestructura)");
@@ -186,20 +190,20 @@ export function calcularSalud(s: SenalesSalud, a: AjustesSalud, hoy: string): Sa
   const enGracia = s.clienteDesde !== null && Math.floor((hoyMs - Date.parse(`${s.clienteDesde}T00:00:00Z`)) / MS_DIA) < a.graciaContactoDias;
   if (!enGracia) {
     if (!s.ultimoContacto) {
-      restar(a.contactoMas90, "Sin contacto registrado del equipo");
+      restar(a.contactoMas90, "Sin contacto registrado del equipo", "contacto");
     } else {
       // Por día de calendario en México: una llamada de anoche fue «hace 1 día».
       const d = Math.round((hoyMs - Date.parse(`${FECHA_MX.format(new Date(s.ultimoContacto))}T00:00:00Z`)) / MS_DIA);
       const texto = `Sin contacto del equipo hace ${plural(d, "día", "días")}`;
-      if (d > 90) restar(a.contactoMas90, texto);
-      else if (d > 60) restar(a.contacto61a90, texto);
-      else if (d > 30) restar(a.contacto31a60, texto);
+      if (d > 90) restar(a.contactoMas90, texto, "contacto");
+      else if (d > 60) restar(a.contacto61a90, texto, "contacto");
+      else if (d > 30) restar(a.contacto31a60, texto, "contacto");
     }
   }
 
-  if (!s.tienePrincipal) restar(a.datoFaltante, "Sin contacto principal");
-  if (!s.cuentaPago) restar(a.datoFaltante, "Sin cuenta de pago asignada");
-  if (!s.whatsappValido) restar(a.datoFaltante, "Sin WhatsApp válido para cobranza");
+  if (!s.tienePrincipal) restar(a.datoFaltante, "Sin contacto principal", "datos");
+  if (!s.cuentaPago) restar(a.datoFaltante, "Sin cuenta de pago asignada", "datos");
+  if (!s.whatsappValido) restar(a.datoFaltante, "Sin WhatsApp válido para cobranza", "datos");
 
   razones.sort((x, y) => y.puntos - x.puntos);
   const puntos = Math.max(0, 100 - razones.reduce((t, r) => t + r.puntos, 0));

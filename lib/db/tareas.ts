@@ -100,7 +100,7 @@ export async function cerrarTarea(p: { empresaId: string; tareaId: string; estad
   });
 }
 
-/** «Mi cartera»: las empresas de las que soy ejecutivo, mis tareas abiertas y los avisos de mis clientes. */
+/** «Mi cartera»: las empresas de las que soy ejecutivo, mis tareas abiertas y los avisos de mis clientes (su salud). */
 export async function getMiCartera(email: string) {
   const hoy = fechaMexico();
   const status = await getPhotoStatus();
@@ -112,22 +112,10 @@ export async function getMiCartera(email: string) {
       ORDER BY t.vence_el, t.id LIMIT 200
     `,
   ]);
-  const porId = lista.relacion;
-  const clientes = lista.items.map((e) => {
-    const x = porId.get(e.empresaId);
-    return {
-      empresaId: e.empresaId,
-      nombre: e.nombre,
-      enMora: e.enMora,
-      maxAtraso: e.maxAtraso,
-      creditosVigentes: e.creditosVigentes,
-      tienePrincipal: x?.tienePrincipal ?? false,
-      ultimoContacto: x?.ultimoContacto ?? null,
-    };
-  });
   const salud = {
     riesgo: lista.items.filter((e) => e.salud?.nivel === "riesgo").length,
     atencion: lista.items.filter((e) => e.salud?.nivel === "atencion").length,
   };
-  return { hoy, clientes: clientes.length, salud, tareas: tareas.map(mapTarea), avisos: avisosDeCartera(clientes, hoy) };
+  const avisos = avisosDeCartera(lista.items.map((e) => ({ empresaId: e.empresaId, nombre: e.nombre, salud: e.salud })));
+  return { hoy, clientes: lista.items.length, salud, tareas: tareas.map(mapTarea), avisos };
 }

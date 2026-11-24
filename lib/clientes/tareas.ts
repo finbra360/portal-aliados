@@ -2,6 +2,8 @@
 // del Inicio. Funciones puras, sin base de datos, para poder probarlas con
 // `node --test`.
 
+import { compararSalud, type Salud, type SenalSalud } from "./salud.ts";
+
 export const TIPOS_TAREA = {
   llamada: "Llamada",
   seguimiento: "Seguimiento",
@@ -11,9 +13,6 @@ export const TIPOS_TAREA = {
   otro: "Otro",
 } as const;
 export type TipoTarea = keyof typeof TIPOS_TAREA;
-
-/** Días sin contacto de una persona del equipo antes de avisar. */
-export const DIAS_SIN_CONTACTO = 60;
 
 export interface DatosTarea {
   titulo: string;
@@ -52,45 +51,26 @@ export function plazoDe(venceEl: string, hoy: string): Plazo {
   return dias <= 7 ? "semana" : "despues";
 }
 
-export interface ClienteCartera {
+/** Pestaña de la ficha donde se atiende cada tipo de razón de la salud. */
+const PESTANA: Record<SenalSalud, "" | "actividad" | "contactos"> = { pago: "", contacto: "actividad", datos: "contactos" };
+
+export interface AvisoCartera {
   empresaId: string;
   nombre: string;
-  enMora: boolean;
-  maxAtraso: number;
-  creditosVigentes: number;
-  tienePrincipal: boolean;
-  /** Último contacto de una persona del equipo (actividad comercial o gestión de cobranza), ISO. */
-  ultimoContacto: string | null;
+  salud: Salud;
+  /** Pestaña de la ficha donde se atiende su razón principal ("" = Resumen). */
+  pestana: "" | "actividad" | "contactos";
 }
-
-// Sin aviso de RFC: SIAC no lo manda (ni el listado ni ninguna otra respuesta), así que
-// saldría en todos los clientes. Agregarlo cuando SIAC lo incluya en el listado personalizado.
-export type TipoAviso = "mora" | "sin_contacto" | "sin_principal";
-
-export interface Aviso {
-  empresaId: string;
-  nombre: string;
-  tipo: TipoAviso;
-  texto: string;
-}
-
-const ORDEN_AVISO: Record<TipoAviso, number> = { mora: 0, sin_contacto: 1, sin_principal: 2 };
 
 /**
- * Avisos de los clientes de un ejecutivo: en mora, sin contacto de una persona
- * del equipo en `dias` días (solo si tienen crédito vigente) o sin contacto
- * principal. Primero los más urgentes.
+ * Avisos de los clientes de un ejecutivo: los que su salud pone en Atención o
+ * En riesgo, del peor al mejor. Así un cliente sale una sola vez, con todo lo
+ * que le resta, y lo que la salud perdona (la gracia de los clientes nuevos)
+ * tampoco se avisa.
  */
-export function avisosDeCartera(clientes: ClienteCartera[], hoy: string, dias = DIAS_SIN_CONTACTO): Aviso[] {
-  const limite = Date.parse(`${hoy}T00:00:00Z`) - dias * 86_400_000;
-  const avisos: Aviso[] = [];
-  for (const c of clientes) {
-    if (c.enMora) avisos.push({ empresaId: c.empresaId, nombre: c.nombre, tipo: "mora", texto: `En mora: ${c.maxAtraso} ${c.maxAtraso === 1 ? "día" : "días"} de atraso` });
-    if (c.creditosVigentes > 0 && (!c.ultimoContacto || Date.parse(c.ultimoContacto) < limite)) {
-      const desde = c.ultimoContacto ? Math.floor((Date.parse(`${hoy}T00:00:00Z`) - Date.parse(c.ultimoContacto)) / 86_400_000) : null;
-      avisos.push({ empresaId: c.empresaId, nombre: c.nombre, tipo: "sin_contacto", texto: desde === null ? "Sin contacto registrado" : `Sin contacto hace ${desde} días` });
-    }
-    if (!c.tienePrincipal) avisos.push({ empresaId: c.empresaId, nombre: c.nombre, tipo: "sin_principal", texto: "Sin contacto principal" });
-  }
-  return avisos.sort((a, b) => ORDEN_AVISO[a.tipo] - ORDEN_AVISO[b.tipo] || a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }));
+export function avisosDeCartera(clientes: { empresaId: string; nombre: string; salud: Salud | null }[]): AvisoCartera[] {
+  return clientes
+    .filter((c): c is { empresaId: string; nombre: string; salud: Salud } => !!c.salud && c.salud.nivel !== "sana")
+    .sort((a, b) => compararSalud(a.salud, b.salud) || a.nombre.localeCompare(b.nombre, "es", { sensitivity: "base" }))
+    .map((c) => ({ empresaId: c.empresaId, nombre: c.nombre, salud: c.salud, pestana: PESTANA[c.salud.razones[0]?.senal ?? "pago"] }));
 }
