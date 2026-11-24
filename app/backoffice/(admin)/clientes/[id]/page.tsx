@@ -21,6 +21,7 @@ import { getContactos, getHistorial } from "@/lib/db/personas";
 import { CANALES, FILTROS_HISTORIAL, ROLES_DECISION, type EntradaHistorial, type OrigenHistorial } from "@/lib/clientes/personas";
 import { getTareasEmpresa, type Tarea } from "@/lib/db/tareas";
 import { TIPOS_TAREA } from "@/lib/clientes/tareas";
+import { playbookDeOrigen } from "@/lib/clientes/playbooks";
 import PlazoChip from "../PlazoChip";
 import NuevaTarea from "./NuevaTarea";
 import CerrarTarea from "./CerrarTarea";
@@ -200,6 +201,9 @@ function TareaAbierta({ t, hoy, empresaId, puedeEditar }: { t: Tarea; hoy: strin
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <PlazoChip venceEl={t.venceEl} hoy={hoy} />
         <span className="text-xs text-finbra-gray">{TIPOS_TAREA[t.tipo] ?? t.tipo}</span>
+        {playbookDeOrigen(t.origen) && (
+          <span className="rounded-full bg-finbra-purple/10 px-2 py-0.5 text-xs font-semibold text-finbra-purple-700">Automática · {playbookDeOrigen(t.origen)}</span>
+        )}
         <span className="text-xs text-finbra-gray">· {t.responsableNombre ?? t.responsableEmail ?? "Sin responsable"}</span>
       </div>
       <p className="text-sm font-semibold">{t.titulo}</p>

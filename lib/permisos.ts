@@ -26,7 +26,7 @@ export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly Ad
     roles: ["super_admin", "finanzas", "comercial"],
   },
   "clientes.configurar": {
-    descripcion: "Correr a mano el radar de renovación (normalmente lo corre el cron después de la foto diaria).",
+    descripcion: "Correr a mano el radar de renovación y los playbooks (normalmente los corre el cron después de la foto diaria).",
     roles: ["super_admin"],
   },
   "cobranza.operar": {
