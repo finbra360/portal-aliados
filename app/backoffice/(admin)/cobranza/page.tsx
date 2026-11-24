@@ -11,7 +11,6 @@ import { IconCoins, IconListChecks, IconWallet, IconTrendingUp } from "@/compone
 import PhotoBanner from "./PhotoBanner";
 import { codigoDeError } from "@/lib/collections/errors";
 import BotonReporte from "./BotonReporte";
-import PruebaServiciosCartera from "./PruebaServiciosCartera";
 
 const BUCKET_LABEL: Record<Bucket, string> = {
   al_corriente: "Al corriente",
@@ -87,7 +86,6 @@ export default async function CobranzaInicioPage() {
         </div>
       </div>
       <PhotoBanner status={status} />
-      {esSuperAdmin && <PruebaServiciosCartera />}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
