@@ -10,6 +10,7 @@ import { NegocioError, cambiarBroker, cambiarEtapa, crearNegocio, editarNegocio,
 import { validarAnalisis, validarDecision, validarDocumentos, validarLigaExpediente, validarOferta } from "@/lib/clientes/comite";
 import { getProcesoNegocio, guardarAnalisis, guardarExpediente, guardarOferta, registrarDecision } from "@/lib/db/comite";
 import { ligarCreditoSiac } from "@/lib/db/siac-liga";
+import { importarDeHubspot, MAX_BYTES, vistaPreviaHubspot, type ResultadoImportacion, type VistaPrevia } from "@/lib/db/hubspot-import";
 
 export type NegocioResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -214,5 +215,37 @@ export async function ligarCreditoSiacAction(id: string, _prev: NegocioResult | 
     };
   } catch (e) {
     return errorDe(e, "ligar con SIAC", "la liga con SIAC");
+  }
+}
+
+// ---------------------------------------------------------------- importar de HubSpot (fase O7)
+
+/** Vista previa del export de HubSpot (no escribe nada). */
+export async function vistaPreviaHubspotAction(texto: string): Promise<VistaPrevia> {
+  requierePermiso(await getAdminSession(), "originacion.importar");
+  if (typeof texto !== "string" || !texto.trim()) return { ok: false, error: "Elige el archivo CSV que exportaste de HubSpot." };
+  if (texto.length > MAX_BYTES) return { ok: false, error: "El archivo es demasiado grande. Exporta solo los negocios (sin actividades ni notas)." };
+  try {
+    return await vistaPreviaHubspot(texto);
+  } catch (e) {
+    const c = codigoDeError("originación: vista previa de HubSpot", e);
+    return { ok: false, error: `No pudimos leer el archivo. Intenta de nuevo. (código ${c})` };
+  }
+}
+
+/** Importa los negocios elegidos del export de HubSpot. */
+export async function importarHubspotAction(texto: string, ids: string[]): Promise<{ ok: true; r: ResultadoImportacion } | { ok: false; error: string }> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.importar");
+  if (typeof texto !== "string" || texto.length > MAX_BYTES) return { ok: false, error: "El archivo es demasiado grande." };
+  if (!Array.isArray(ids) || ids.length === 0) return { ok: false, error: "Marca al menos un negocio." };
+  if (ids.length > 1000 || ids.some((x) => typeof x !== "string" || !/^\d{1,20}$/.test(x))) return { ok: false, error: "La selección no es válida. Vuelve a subir el archivo." };
+  try {
+    const r = await importarDeHubspot({ texto, ids, actor: admin.email });
+    refrescar();
+    return { ok: true, r };
+  } catch (e) {
+    if (e instanceof NegocioError) return { ok: false, error: e.message };
+    const c = codigoDeError("originación: importar de HubSpot", e);
+    return { ok: false, error: `La importación se detuvo. Los negocios que alcanzaron a entrar ya están; vuelve a subir el archivo para seguir (no se duplican). (código ${c})` };
   }
 }
