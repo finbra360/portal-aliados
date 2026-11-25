@@ -62,6 +62,7 @@ export interface Negocio {
   origenRef: string | null;
   /** Broker que lo trajo (fase O4); null antes de correr crm-schema.sql o si no es de broker. */
   brokerId: string | null;
+  brokerNombre: string | null;
   comisionAperturaPct: number | null;
   mensajeBroker: string | null;
   colocacionId: string | null;
@@ -70,12 +71,13 @@ export interface Negocio {
 }
 
 const SELECT_NEGOCIO = () => sql`
-  SELECT n.*, e.nombre AS empresa, e.rfc AS rfc_empresa, a.nombre AS responsable_nombre,
+  SELECT n.*, e.nombre AS empresa, e.rfc AS rfc_empresa, a.nombre AS responsable_nombre, b.nombre AS broker_nombre,
          to_char(n.recontactar_el, 'YYYY-MM-DD') AS recontactar,
          EXISTS (SELECT 1 FROM col_clients c WHERE c.empresa_id = e.id) AS es_cliente
   FROM crm_negocios_credito n
   JOIN crm_empresas e ON e.id = n.empresa_id
   LEFT JOIN admin_users a ON a.email = n.responsable_email
+  LEFT JOIN brokers b ON b.id = to_jsonb(n)->>'broker_id'
 `;
 
 function mapNegocio(r: Record<string, unknown>): Negocio {
@@ -106,6 +108,7 @@ function mapNegocio(r: Record<string, unknown>): Negocio {
     rechazoPor: (r.rechazo_por as "finbra" | "cliente") ?? null,
     origenRef: (r.origen_ref as string) ?? null,
     brokerId: (r.broker_id as string) ?? null,
+    brokerNombre: (r.broker_nombre as string) ?? null,
     comisionAperturaPct: r.comision_apertura_pct === null || r.comision_apertura_pct === undefined ? null : Number(r.comision_apertura_pct),
     mensajeBroker: (r.mensaje_broker as string) ?? null,
     colocacionId: r.colocacion_id === null || r.colocacion_id === undefined ? null : String(r.colocacion_id),

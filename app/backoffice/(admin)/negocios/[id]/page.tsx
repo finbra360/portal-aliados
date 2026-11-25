@@ -21,6 +21,7 @@ import { Analisis, DecisionComite, Expediente, Oferta } from "./ControlesProceso
 import { getProcesoNegocio } from "@/lib/db/comite";
 import { getLigaSiac } from "@/lib/db/siac-liga";
 import { LigarSiac } from "./LigaSiac";
+import BrokerChip from "@/app/backoffice/(admin)/BrokerChip";
 import { DECISIONES, ESTADOS_DOCUMENTO, RESPUESTAS_OFERTA, RESULTADOS_BURO, documentosPendientes } from "@/lib/clientes/comite";
 
 const PASOS = ETAPAS_NEGOCIO.filter((e) => e.value !== "pospuesto" && e.value !== "rechazado");
@@ -97,10 +98,9 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
               <span className="text-finbra-gray">Responsable: </span>
               {n.responsableNombre ?? <span className="text-amber-800">Sin responsable</span>}
             </p>
-            {n.brokerId && (
-              <p>
-                <span className="text-finbra-gray">Broker: </span>
-                {broker?.nombre ?? n.brokerId}
+            {(n.brokerId || n.origen === "broker") && (
+              <p className="sm:flex sm:justify-end">
+                <BrokerChip broker={{ id: n.brokerId, nombre: broker?.nombre ?? n.brokerNombre ?? n.brokerId }} />
               </p>
             )}
           </div>

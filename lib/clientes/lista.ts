@@ -25,6 +25,11 @@ export interface EmpresaRow {
   ejecutivoNombre: string | null;
   /** Números de cliente de SIAC ligados a la empresa. */
   numerosCliente: string[];
+  /**
+   * Broker que la refirió: el de su negocio más reciente con broker. nombre null =
+   * el negocio viene de un broker (así lo trajo HubSpot) pero no tiene broker asignado.
+   */
+  broker?: { id: string | null; nombre: string | null } | null;
 }
 
 export interface CreditoEmpresaRow {
@@ -83,7 +88,7 @@ export interface EmpresaListItem extends EmpresaRow {
   salud: Salud | null;
 }
 
-export type EmpresaFilter = "todos" | "activos" | "por_liquidar" | "mora" | "riesgo" | "atencion" | "especial" | "ex_clientes" | "mios" | "sin_ejecutivo" | "sin_rfc";
+export type EmpresaFilter = "todos" | "activos" | "por_liquidar" | "mora" | "riesgo" | "atencion" | "especial" | "ex_clientes" | "mios" | "sin_ejecutivo" | "sin_rfc" | "brokers";
 export type EmpresaOrder = "nombre" | "salud" | "adeudo" | "vencido" | "proximo" | "termino";
 
 export const FILTROS_EMPRESA: { value: EmpresaFilter; label: string }[] = [
@@ -98,6 +103,7 @@ export const FILTROS_EMPRESA: { value: EmpresaFilter; label: string }[] = [
   { value: "ex_clientes", label: "Ex clientes" },
   { value: "sin_ejecutivo", label: "Sin ejecutivo" },
   { value: "sin_rfc", label: "Sin RFC" },
+  { value: "brokers", label: "De brokers" },
 ];
 
 export const ORDENES_EMPRESA: { value: EmpresaOrder; label: string }[] = [
@@ -237,6 +243,7 @@ export function buildEmpresasLista(
     ex_clientes: (e) => e.etapa === "ex_cliente",
     sin_ejecutivo: (e) => !e.ejecutivoEmail,
     sin_rfc: (e) => !e.rfc,
+    brokers: (e) => !!e.broker,
   };
   const conteos = Object.fromEntries(FILTROS_EMPRESA.map((f) => [f.value, buscados.filter(pasa[f.value]).length])) as Record<EmpresaFilter, number>;
   const items = buscados.filter(pasa[opts.filtro]).sort(COMPARAR[opts.orden ?? "nombre"]);
