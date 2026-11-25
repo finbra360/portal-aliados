@@ -16,10 +16,14 @@ const secundario = "rounded-lg border border-black/10 px-3 py-1.5 text-sm hover:
 type Renglon = { empresa: EmpresaJuntar; sugerencias: Sugerencia[] };
 
 function Fila({ r, onListo }: { r: Renglon; onListo: (texto: string) => void }) {
-  const [elegida, setElegida] = useState(r.sugerencias[0].id);
+  const [elegida, setElegida] = useState(r.sugerencias[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
   const [pendiente, start] = useTransition();
-  const destino = r.sugerencias.find((s) => s.id === elegida)!;
+  // Al juntar otro renglón la lista se recarga: la empresa elegida aquí pudo
+  // haberse borrado (por ejemplo, dos prospectos duplicados entre sí). Entonces
+  // se toma la primera sugerencia que siga existiendo.
+  const destino = r.sugerencias.find((s) => s.id === elegida) ?? r.sugerencias[0];
+  if (!destino) return null;
 
   const juntar = () => {
     if (!window.confirm(`¿Juntar «${r.empresa.nombre}» con «${destino.nombre}»? Sus negocios, contactos y tareas pasan a «${destino.nombre}» y «${r.empresa.nombre}» se borra. No se puede deshacer.`)) return;
@@ -50,7 +54,7 @@ function Fila({ r, onListo }: { r: Renglon; onListo: (texto: string) => void }) 
         <legend className="text-xs text-finbra-gray">¿Es la misma que…?</legend>
         {r.sugerencias.map((s) => (
           <label key={s.id} className="flex flex-wrap items-center gap-2 text-sm">
-            <input type="radio" name={`destino-${r.empresa.id}`} checked={elegida === s.id} onChange={() => setElegida(s.id)} />
+            <input type="radio" name={`destino-${r.empresa.id}`} checked={destino.id === s.id} onChange={() => setElegida(s.id)} />
             <span className="font-medium">{s.nombre}</span>
             <span className="text-xs text-finbra-gray">
               {s.esCliente ? "cliente de SIAC" : "prospecto"} · {s.negocios} {s.negocios === 1 ? "negocio" : "negocios"} · {Math.round(s.parecido * 100)} % parecido
@@ -75,7 +79,7 @@ function Fila({ r, onListo }: { r: Renglon; onListo: (texto: string) => void }) 
 export default function RevisarEmpresas({ renglones }: { renglones: Renglon[] }) {
   const [hechos, setHechos] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState<string | null>(null);
-  const pendientes = renglones.filter((r) => !hechos.has(r.empresa.id));
+  const pendientes = renglones.filter((r) => !hechos.has(r.empresa.id) && r.sugerencias.length > 0);
   return (
     <div className="space-y-3">
       {aviso && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">{aviso}</p>}
