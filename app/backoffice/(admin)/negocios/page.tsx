@@ -62,6 +62,7 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
   const totales = totalesPorEtapa(visibles);
   const abiertos = visibles.filter((n) => ETAPAS_ABIERTAS.includes(n.etapa));
   const montoAbierto = abiertos.reduce((s, n) => s + (n.montoEstimado ?? 0), 0);
+  const sinBroker = negocios.filter((n) => n.origen === "broker" && !n.brokerId).length;
 
   return (
     <div className="space-y-6">
@@ -76,6 +77,14 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
           {puede(session, "originacion.importar") && (
             <Link href={`${BASE}/importar`} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold text-finbra-gray hover:bg-black/5">
               Importar de HubSpot
+            </Link>
+          )}
+          {puedeOperar && sinBroker > 0 && (
+            <Link
+              href={`${BASE}/brokers-sin-asignar`}
+              className="rounded-lg border border-finbra-lilac bg-finbra-lilac/25 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-lilac/40"
+            >
+              Brokers sin asignar · {sinBroker}
             </Link>
           )}
           <Link href={`${BASE}/metricas`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
