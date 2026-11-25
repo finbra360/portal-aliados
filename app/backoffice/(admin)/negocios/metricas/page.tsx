@@ -281,7 +281,10 @@ export default async function MetricasNegociosPage({ searchParams }: { searchPar
   return (
     <div className="space-y-8">
       <div>
-        <Link href={BASE} className="text-sm text-finbra-purple hover:underline">← Negocios</Link>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link href={BASE} className="text-sm text-finbra-purple hover:underline">← Negocios</Link>
+          <Link href={`${BASE}/metricas/resumen`} className="text-sm text-finbra-purple hover:underline">Resumen semanal en Slack →</Link>
+        </div>
         <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold">Métricas de originación</h1>
