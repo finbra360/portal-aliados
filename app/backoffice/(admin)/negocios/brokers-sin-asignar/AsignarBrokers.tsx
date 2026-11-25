@@ -11,13 +11,17 @@ import { formatFecha, formatMoney } from "@/lib/format";
 import { sugerenciaUnica, type Pista } from "@/lib/clientes/brokers-sin-asignar";
 import type { RenglonSinBroker } from "@/lib/db/brokers-sin-asignar";
 import EtapaNegocioChip from "../EtapaNegocioChip";
-import { asignarBrokersAction } from "../actions";
+import { asignarBrokersAction, renovacionSinBrokerAction } from "../actions";
 
 const BASE = "/backoffice/negocios";
 const boton = "rounded-lg bg-finbra-purple px-3 py-1.5 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50";
+const secundario = "rounded-lg border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5 disabled:opacity-50";
 const campo = "w-full rounded-lg border border-black/10 bg-white px-3 py-1.5 text-sm focus:border-finbra-purple focus:outline-none sm:w-72";
 
 type Broker = { id: string; nombre: string };
+
+/** «3 renovaciones con pista»; vacío si son cero. */
+const cuenta = (n: number, uno: string, varios: string) => (n === 0 ? "" : `${n} ${n === 1 ? uno : varios}`);
 
 function TextoPista({ p, nombre }: { p: Pista; nombre: string }) {
   if (p.fuente === "empresa") return <>Otro negocio de esta empresa es de <span className="font-medium text-black">{nombre}</span>.</>;
@@ -39,11 +43,19 @@ function Fila({ r, brokers, nombreDe, onListo }: { r: RenglonSinBroker; brokers:
       if (x.ok) onListo(`${r.empresa}: ahora es de ${nombreDe(elegido)}.`);
       else setError(x.error);
     });
+  const noEsDeBroker = () =>
+    start(async () => {
+      setError(null);
+      const x = await renovacionSinBrokerAction(r.id);
+      if (x.ok) onListo(`${r.empresa}: la renovación se queda sin broker.`);
+      else setError(x.error);
+    });
   return (
     <li className="space-y-2 py-4 first:pt-0 last:pb-0">
       <div className="flex flex-wrap items-center gap-2">
         <Link href={`${BASE}/${r.id}`} className="font-semibold hover:text-finbra-purple hover:underline">{r.empresa}</Link>
         <EtapaNegocioChip etapa={r.etapa} />
+        {r.renovacion && <span className="rounded-full bg-black/5 px-2.5 py-0.5 text-xs font-semibold text-finbra-gray">Renovación</span>}
         <span className="text-sm text-finbra-gray">
           {r.monto !== null ? `${formatMoney(r.monto)} · ` : ""}creado {formatFecha(r.creado)}
         </span>
@@ -72,6 +84,11 @@ function Fila({ r, brokers, nombreDe, onListo }: { r: RenglonSinBroker; brokers:
         <button type="button" onClick={asignar} disabled={!elegido || pendiente} className={boton}>
           {pendiente ? "Guardando…" : "Asignar"}
         </button>
+        {r.renovacion && (
+          <button type="button" onClick={noEsDeBroker} disabled={pendiente} className={secundario}>
+            No es de broker
+          </button>
+        )}
         {error && <p className="w-full text-sm text-red-700" role="alert">{error}</p>}
       </div>
     </li>
@@ -110,7 +127,7 @@ export default function AsignarBrokers({ renglones, brokers }: { renglones: Reng
     return (
       <div className="space-y-3">
         {aviso && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">{aviso}</p>}
-        <p className="text-sm text-finbra-gray">Todos los negocios de broker ya tienen su broker.</p>
+        <p className="text-sm text-finbra-gray">Todos los negocios de broker ya tienen su broker y no quedan renovaciones con pista por revisar.</p>
       </div>
     );
   }
@@ -119,11 +136,17 @@ export default function AsignarBrokers({ renglones, brokers }: { renglones: Reng
       {aviso && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800" role="status">{aviso}</p>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-finbra-gray">
-          {visibles.length} sin broker · {visibles.filter((r) => r.pistas.length > 0).length} con sugerencia
+          {[
+            cuenta(visibles.filter((r) => !r.renovacion).length, "de broker sin asignar", "de broker sin asignar"),
+            cuenta(visibles.filter((r) => r.renovacion).length, "renovación con pista", "renovaciones con pista"),
+            cuenta(visibles.filter((r) => r.pistas.length > 0).length, "con sugerencia", "con sugerencia"),
+          ]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
         {seguras.length > 0 && (
           <button type="button" onClick={asignarSugeridas} disabled={pendiente} className={boton}>
-            {pendiente ? "Guardando…" : `Asignar las ${seguras.length} sugeridas`}
+            {pendiente ? "Guardando…" : seguras.length === 1 ? "Asignar la sugerida" : `Asignar las ${seguras.length} sugeridas`}
           </button>
         )}
       </div>

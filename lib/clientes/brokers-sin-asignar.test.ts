@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pistasDeBroker, sugerenciaUnica, type ColocacionConReferencia } from "./brokers-sin-asignar.ts";
+import { enLaLista, pistasDeBroker, sugerenciaUnica, type ColocacionConReferencia } from "./brokers-sin-asignar.ts";
 
 const negocio = (empresa: string, razonSocial: string | null = null, empresaId = "e1") => ({ id: "n1", empresaId, empresa, razonSocial });
 
@@ -41,6 +41,14 @@ test("la misma empresa y la colocación del mismo broker cuentan una vez", () =>
   assert.equal(p.length, 1);
   assert.equal(p[0].fuente, "empresa");
   assert.equal(sugerenciaUnica(p), "B002");
+});
+
+test("las de origen broker siempre salen; las renovaciones solo con pista y sin descartar", () => {
+  const pista = pistasDeBroker(negocio("Químicos Ficticios del Norte"), colocaciones, []);
+  assert.equal(enLaLista({ renovacion: false, pistas: [], descartada: false }), true);
+  assert.equal(enLaLista({ renovacion: true, pistas: [], descartada: false }), false);
+  assert.equal(enLaLista({ renovacion: true, pistas: pista, descartada: false }), true);
+  assert.equal(enLaLista({ renovacion: true, pistas: pista, descartada: true }), false);
 });
 
 test("sin pistas no hay sugerencia", () => {

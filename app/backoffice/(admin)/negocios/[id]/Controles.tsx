@@ -9,6 +9,7 @@ import {
   GARANTIAS,
   MOTIVOS_RECHAZO,
   ORIGENES_NEGOCIO,
+  admiteBroker,
   PRODUCTOS,
   estaAbierto,
   faltantesPara,
@@ -288,13 +289,13 @@ export function EditarNegocio({
         </select>
         {conColocacion ? (
           <input type="hidden" name="origen" value={origen} />
-        ) : origen === "broker" && elegido !== "broker" && brokerId ? (
+        ) : admiteBroker(origen) && !admiteBroker(elegido) && brokerId ? (
           <p className="text-xs text-amber-800">Al guardar se le quita el broker a este negocio.</p>
         ) : null}
       </div>
-      {elegido === "broker" && (
+      {admiteBroker(elegido) && (
         <div className="space-y-1">
-          <label htmlFor="brokerNegocio" className={etiqueta}>Broker</label>
+          <label htmlFor="brokerNegocio" className={etiqueta}>{elegido === "renovacion" ? "Broker del cliente" : "Broker"}</label>
           <select
             id="brokerNegocio"
             name="brokerId"
@@ -303,7 +304,7 @@ export function EditarNegocio({
             disabled={conColocacion}
             className={`${campo} sm:w-72`}
           >
-            <option value="">Sin asignar todavía</option>
+            <option value="">{elegido === "renovacion" ? "Sin broker" : "Sin asignar todavía"}</option>
             {brokers.map((b) => (
               <option key={b.id} value={b.id}>{b.nombre} · {b.id}</option>
             ))}
@@ -315,6 +316,8 @@ export function EditarNegocio({
             </>
           ) : brokers.length === 0 ? (
             <p className="text-xs text-amber-800">No hay brokers dados de alta. Dalos de alta en Brokers.</p>
+          ) : elegido === "renovacion" ? (
+            <p className="text-xs text-finbra-gray">Solo si el cliente llegó por un broker: al dispersar la renovación se le registra su colocación.</p>
           ) : !broker ? (
             <p className="text-xs text-finbra-gray">Elige el broker que lo trajo; mientras no, se marca «Broker sin asignar».</p>
           ) : null}

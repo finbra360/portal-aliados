@@ -45,6 +45,12 @@ export const estaAbierto = (e: EtapaNegocio) => ETAPAS_ABIERTAS.includes(e);
 
 export type OrigenNegocio = "leads" | "credit_health" | "broker" | "renovacion" | "web" | "marketing" | "outbound" | "referido" | "pymio" | "manual";
 
+/**
+ * Orígenes que pueden tener broker: los que trajo un broker y las renovaciones
+ * de clientes que llegaron por uno (a ese broker le toca la colocación).
+ */
+export const admiteBroker = (origen: string) => origen === "broker" || origen === "renovacion";
+
 export const ORIGENES_NEGOCIO: Record<OrigenNegocio, string> = {
   broker: "Broker",
   leads: "Leads (prospección)",
