@@ -4,6 +4,7 @@ import { puede } from "@/lib/permisos";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import ImportarHubspot from "./ImportarHubspot";
+import PestanasImportar from "./PestanasImportar";
 
 export default async function ImportarHubspotPage() {
   const session = await getAdminSession();
@@ -21,6 +22,7 @@ export default async function ImportarHubspotPage() {
           con actividad en los últimos 6 meses; tú decides cuáles entran.
         </p>
       </div>
+      <PestanasImportar actual="negocios" />
       <Card>
         <ImportarHubspot />
       </Card>

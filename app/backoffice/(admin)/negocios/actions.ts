@@ -11,6 +11,8 @@ import { validarAnalisis, validarDecision, validarDocumentos, validarLigaExpedie
 import { getProcesoNegocio, guardarAnalisis, guardarExpediente, guardarOferta, registrarDecision } from "@/lib/db/comite";
 import { ligarCreditoSiac } from "@/lib/db/siac-liga";
 import { importarDeHubspot, MAX_BYTES, vistaPreviaHubspot, type ResultadoImportacion, type VistaPrevia } from "@/lib/db/hubspot-import";
+import { importarContactos, MAX_BYTES_CONTACTOS, vistaPreviaContactos, type ResultadoContactos, type VistaContactos } from "@/lib/db/hubspot-contactos";
+import { PersonaError } from "@/lib/db/personas";
 
 export type NegocioResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -263,4 +265,36 @@ export async function moverNegocioAction(id: string, etapa: string, motivo: stri
   }
   refrescar();
   return { ok: true, mensaje: "Etapa actualizada." };
+}
+
+// ---------------------------------------------------------------- contactos de HubSpot
+
+/** Vista previa del export de contactos de HubSpot (no escribe nada). */
+export async function vistaPreviaContactosAction(texto: string): Promise<VistaContactos> {
+  requierePermiso(await getAdminSession(), "originacion.importar");
+  if (typeof texto !== "string" || !texto.trim()) return { ok: false, error: "Elige el archivo CSV de contactos que exportaste de HubSpot." };
+  if (texto.length > MAX_BYTES_CONTACTOS) return { ok: false, error: "El archivo es demasiado grande. Exporta solo los contactos, sin actividades." };
+  try {
+    return await vistaPreviaContactos(texto);
+  } catch (e) {
+    const c = codigoDeError("originación: vista previa de contactos", e);
+    return { ok: false, error: `No pudimos leer el archivo. Intenta de nuevo. (código ${c})` };
+  }
+}
+
+/** Importa los contactos elegidos del export de HubSpot. */
+export async function importarContactosAction(texto: string, ids: string[]): Promise<{ ok: true; r: ResultadoContactos } | { ok: false; error: string }> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.importar");
+  if (typeof texto !== "string" || texto.length > MAX_BYTES_CONTACTOS) return { ok: false, error: "El archivo es demasiado grande." };
+  if (!Array.isArray(ids) || ids.length === 0) return { ok: false, error: "Marca al menos un contacto." };
+  if (ids.length > 1000 || ids.some((x) => typeof x !== "string" || !/^\d{1,20}$/.test(x))) return { ok: false, error: "La selección no es válida. Vuelve a subir el archivo." };
+  try {
+    const r = await importarContactos({ texto, ids, actor: admin.email });
+    revalidatePath("/backoffice/clientes", "layout");
+    return { ok: true, r };
+  } catch (e) {
+    if (e instanceof PersonaError) return { ok: false, error: e.message };
+    const c = codigoDeError("originación: importar contactos", e);
+    return { ok: false, error: `La importación se detuvo. Los contactos que alcanzaron a entrar ya están; vuelve a subir el archivo para seguir (no se duplican). (código ${c})` };
+  }
 }
