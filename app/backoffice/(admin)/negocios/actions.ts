@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
-import { validarNegocio, validarSolicitud } from "@/lib/clientes/negocios";
+import { ORIGENES_NEGOCIO, validarNegocio, validarSolicitud, type OrigenNegocio } from "@/lib/clientes/negocios";
 import { NegocioError, cambiarBroker, cambiarEtapa, crearNegocio, editarNegocio, guardarMensajeBroker, guardarSolicitud } from "@/lib/db/negocios";
 import { validarAnalisis, validarDecision, validarDocumentos, validarLigaExpediente, validarOferta } from "@/lib/clientes/comite";
 import { getProcesoNegocio, guardarAnalisis, guardarExpediente, guardarOferta, registrarDecision } from "@/lib/db/comite";
@@ -76,13 +76,21 @@ export async function guardarSolicitudAction(id: string, _prev: NegocioResult | 
   }
 }
 
-/** Responsable y notas. */
+/** Origen, responsable y notas. */
 export async function editarNegocioAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
   const admin = requierePermiso(await getAdminSession(), "originacion.operar");
   const notas = texto(fd, "notas").trim() || null;
   if (notas && notas.length > 4000) return { ok: false, error: "Las notas son demasiado largas (máximo 4,000 caracteres)." };
+  const origenTexto = texto(fd, "origen").trim();
+  if (origenTexto && !(origenTexto in ORIGENES_NEGOCIO)) return { ok: false, error: "El origen no es válido." };
   try {
-    const cambio = await editarNegocio({ id, responsableEmail: texto(fd, "responsableEmail").trim().toLowerCase() || null, notas, actor: admin.email });
+    const cambio = await editarNegocio({
+      id,
+      responsableEmail: texto(fd, "responsableEmail").trim().toLowerCase() || null,
+      notas,
+      origen: (origenTexto || undefined) as OrigenNegocio | undefined,
+      actor: admin.email,
+    });
     refrescar();
     return { ok: true, mensaje: cambio ? "Cambios guardados." : "No había cambios." };
   } catch (e) {

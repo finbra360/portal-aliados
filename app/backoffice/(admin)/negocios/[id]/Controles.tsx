@@ -8,12 +8,14 @@ import {
   ETIQUETA_ETAPA,
   GARANTIAS,
   MOTIVOS_RECHAZO,
+  ORIGENES_NEGOCIO,
   PRODUCTOS,
   estaAbierto,
   faltantesPara,
   listaLegible,
   type DatosSolicitud,
   type EtapaNegocio,
+  type OrigenNegocio,
   type ParaRequisitos,
 } from "@/lib/clientes/negocios";
 import { enviarSinBorrar } from "../../cobranza/enviarSinBorrar";
@@ -237,11 +239,54 @@ export function Solicitud({ id, s, conComision }: { id: string; s: DatosSolicitu
   );
 }
 
-/** Responsable y notas. */
-export function EditarNegocio({ id, responsable, notas, ejecutivos }: { id: string; responsable: string | null; notas: string | null; ejecutivos: { email: string; nombre: string }[] }) {
+/** Origen, responsable y notas. */
+export function EditarNegocio({
+  id,
+  origen,
+  responsable,
+  notas,
+  ejecutivos,
+  conColocacion = false,
+}: {
+  id: string;
+  origen: OrigenNegocio;
+  responsable: string | null;
+  notas: string | null;
+  ejecutivos: { email: string; nombre: string }[];
+  conColocacion?: boolean;
+}) {
   const [r, accion, guardando] = useActionState(editarNegocioAction.bind(null, id), null);
+  const [elegido, setElegido] = useState<string>(origen);
+  // Al guardar, el servidor manda el origen nuevo: se toma ese.
+  const [deServidor, setDeServidor] = useState(origen);
+  if (deServidor !== origen) {
+    setDeServidor(origen);
+    setElegido(origen);
+  }
   return (
     <form onSubmit={enviarSinBorrar(accion)} className="space-y-3">
+      <div className="space-y-1">
+        <label htmlFor="origenNegocio" className={etiqueta}>De dónde llegó</label>
+        <select
+          id="origenNegocio"
+          name="origen"
+          value={elegido}
+          onChange={(e) => setElegido(e.target.value)}
+          disabled={conColocacion}
+          className={`${campo} sm:w-72`}
+        >
+          {Object.entries(ORIGENES_NEGOCIO).map(([v, t]) => (
+            <option key={v} value={v}>{t}</option>
+          ))}
+        </select>
+        {conColocacion ? (
+          <input type="hidden" name="origen" value={origen} />
+        ) : origen === "broker" && elegido !== "broker" ? (
+          <p className="text-xs text-amber-800">Al guardar se le quita el broker a este negocio.</p>
+        ) : elegido === "broker" && origen !== "broker" ? (
+          <p className="text-xs text-finbra-gray">Después elige el broker en la tarjeta «Broker».</p>
+        ) : null}
+      </div>
       <div className="space-y-1">
         <label htmlFor="responsableEmail" className={etiqueta}>Responsable</label>
         <select id="responsableEmail" name="responsableEmail" defaultValue={responsable ?? ""} className={`${campo} sm:w-72`}>

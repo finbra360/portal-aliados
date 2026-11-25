@@ -284,9 +284,9 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
             </>
           )}
           <Card className="space-y-3">
-            <h2 className="text-lg font-bold">Responsable y notas</h2>
+            <h2 className="text-lg font-bold">Origen, responsable y notas</h2>
             {puedeOperar ? (
-              <EditarNegocio id={n.id} responsable={n.responsableEmail} notas={n.notas} ejecutivos={ejecutivos} />
+              <EditarNegocio id={n.id} origen={n.origen} responsable={n.responsableEmail} notas={n.notas} ejecutivos={ejecutivos} conColocacion={!!n.colocacionId} />
             ) : (
               <p className="whitespace-pre-line text-sm">{n.notas ?? <span className="text-finbra-gray">Sin notas.</span>}</p>
             )}
