@@ -417,6 +417,14 @@ CREATE TABLE IF NOT EXISTS crm_negocio_decisiones (
 );
 CREATE INDEX IF NOT EXISTS idx_crm_negocio_decisiones_negocio ON crm_negocio_decisiones(negocio_id, decidido_at);
 
+-- Fase O6: el crédito de SIAC en que terminó el negocio dispersado (lo liga el
+-- equipo desde la ficha, con sugerencias; lib/clientes/siac-liga.ts). Un
+-- crédito es de un solo negocio.
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS credit_id UUID REFERENCES col_credits(id) ON DELETE SET NULL;
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS ligado_siac_por TEXT;
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS ligado_siac_at TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_negocios_credito_credit ON crm_negocios_credito(credit_id) WHERE credit_id IS NOT NULL;
+
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
 INSERT INTO crm_empresas (ambiente, nombre, razon_social, origen, creada_desde_cliente, ejecutivo_email, created_by)

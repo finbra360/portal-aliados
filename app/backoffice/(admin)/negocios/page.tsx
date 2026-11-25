@@ -92,11 +92,16 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
             {abiertos.length} {abiertos.length === 1 ? "negocio abierto" : "negocios abiertos"} · {formatMoney(montoAbierto)} en monto estimado. Del primer contacto al crédito dispersado en SIAC.
           </p>
         </div>
-        {puedeOperar && (
-          <Link href={`${BASE}/nuevo`} className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90">
-            Nuevo negocio
+        <div className="flex flex-wrap items-center gap-3">
+          <Link href={`${BASE}/metricas`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
+            Métricas
           </Link>
-        )}
+          {puedeOperar && (
+            <Link href={`${BASE}/nuevo`} className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90">
+              Nuevo negocio
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

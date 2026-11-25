@@ -8,7 +8,7 @@
 
 import { NIVELES_SALUD, type NivelSalud } from "./salud.ts";
 
-export type ClavePlaybook = "bienvenida" | "primer_pago" | "revision" | "liquidacion" | "rescate";
+export type ClavePlaybook = "bienvenida" | "primer_pago" | "revision" | "liquidacion" | "rescate" | "estancado";
 
 export const PLAYBOOKS: Record<ClavePlaybook, string> = {
   bienvenida: "Crédito nuevo",
@@ -16,6 +16,7 @@ export const PLAYBOOKS: Record<ClavePlaybook, string> = {
   revision: "Revisión periódica",
   liquidacion: "Salida del listado",
   rescate: "Pasó a En riesgo",
+  estancado: "Negocio sin movimiento",
 };
 
 export interface AjustesPlaybooks {
@@ -30,6 +31,8 @@ export interface AjustesPlaybooks {
   liquidacion: boolean;
   /** Llamada de rescate cuando la salud del cliente pasa a En riesgo. */
   rescate: boolean;
+  /** Días en la misma etapa para avisarle al responsable de un negocio abierto. 0 = apagado. */
+  estancadoDias: number;
 }
 
 export const AJUSTES_PLAYBOOKS_DEFAULT: AjustesPlaybooks = {
@@ -40,6 +43,7 @@ export const AJUSTES_PLAYBOOKS_DEFAULT: AjustesPlaybooks = {
   revisionMaxPorDia: 5,
   liquidacion: true,
   rescate: true,
+  estancadoDias: 14,
 };
 
 const entero = (v: unknown, def: number, max: number) => {
@@ -60,6 +64,7 @@ export function leerAjustesPlaybooks(raw: unknown): AjustesPlaybooks {
     revisionMaxPorDia: entero(r.revision_max_por_dia, d.revisionMaxPorDia, 100),
     liquidacion: bool(r.liquidacion, d.liquidacion),
     rescate: bool(r.rescate, d.rescate),
+    estancadoDias: entero(r.estancado_dias, d.estancadoDias, 180),
   };
 }
 
@@ -105,6 +110,8 @@ export interface TareaPlaybook {
   descripcion: string;
   tipo: "llamada" | "seguimiento" | "revision" | "dato_faltante";
   venceEl: string;
+  /** Para quién es (si no, el ejecutivo de la empresa). */
+  responsableEmail?: string | null;
 }
 
 const MS_DIA = 86_400_000;
@@ -270,6 +277,43 @@ export function planPlaybooks(p: {
         venceEl: hoy,
       });
     }
+  }
+  return tareas;
+}
+
+export interface NegocioPlaybook {
+  id: string;
+  empresaId: string;
+  etapa: string;
+  etapaLabel: string;
+  /** ISO */
+  etapaDesde: string;
+  responsableEmail: string | null;
+}
+
+/**
+ * Negocio sin movimiento (fase O6): un negocio abierto que lleva más de
+ * `dias` días en la misma etapa. Una tarea por cada vez que se queda en una
+ * etapa (la llave lleva la etapa y desde cuándo está ahí), para su responsable.
+ */
+export function planEstancados(negocios: NegocioPlaybook[], dias: number, hoy: string): TareaPlaybook[] {
+  if (dias <= 0) return [];
+  const tareas: TareaPlaybook[] = [];
+  for (const n of negocios) {
+    const desde = n.etapaDesde.slice(0, 10);
+    const lleva = Math.round((Date.parse(hoy) - Date.parse(desde)) / MS_DIA);
+    if (lleva <= dias) continue;
+    tareas.push({
+      clave: "estancado",
+      empresaId: n.empresaId,
+      creditId: null,
+      dedupeKey: `playbook:estancado:${n.id}:${n.etapa}:${desde}`,
+      titulo: `Negocio sin movimiento: ${lleva} días en ${n.etapaLabel}`,
+      descripcion: `El negocio lleva ${lleva} días en ${n.etapaLabel}. Muévelo, posponlo con fecha o ciérralo (Originación → Negocios).`,
+      tipo: "seguimiento",
+      venceEl: hoy,
+      responsableEmail: n.responsableEmail,
+    });
   }
   return tareas;
 }

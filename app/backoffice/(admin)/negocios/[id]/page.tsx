@@ -19,6 +19,8 @@ import EtapaNegocioChip from "../EtapaNegocioChip";
 import { BrokerDelNegocio, EditarNegocio, MoverEtapa, Solicitud } from "./Controles";
 import { Analisis, DecisionComite, Expediente, Oferta } from "./ControlesProceso";
 import { getProcesoNegocio } from "@/lib/db/comite";
+import { getLigaSiac } from "@/lib/db/siac-liga";
+import { LigarSiac } from "./LigaSiac";
 import { DECISIONES, ESTADOS_DOCUMENTO, RESPUESTAS_OFERTA, RESULTADOS_BURO, documentosPendientes } from "@/lib/clientes/comite";
 
 const PASOS = ETAPAS_NEGOCIO.filter((e) => e.value !== "pospuesto" && e.value !== "rechazado");
@@ -44,13 +46,14 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
   }
   if (!datos) notFound();
   const { negocio: n, etapas } = datos;
-  const [ejecutivos, tareas, historial, brokers, conBrokers, proceso] = await Promise.all([
+  const [ejecutivos, tareas, historial, brokers, conBrokers, proceso, liga] = await Promise.all([
     puedeOperar ? listEjecutivos() : Promise.resolve([]),
     getTareasEmpresa(n.empresaId),
     getHistorial(n.empresaId),
     brokersParaNegocio(),
     operacionesSonNegocios(),
     getProcesoNegocio(n.id),
+    getLigaSiac(n.id),
   ]);
   const puedeAnalizar = puede(session, "originacion.analizar");
   const puedeDecidir = puede(session, "originacion.decidir");
@@ -138,6 +141,28 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
             <Card className="space-y-3">
               <h2 className="text-lg font-bold">Etapa</h2>
               <MoverEtapa id={n.id} etapa={n.etapa} hoy={hoy} requisitos={requisitos} />
+            </Card>
+          )}
+          {liga && (n.etapa === "dispersado" || liga.ligado) && (
+            <Card className="space-y-3">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="text-lg font-bold">Crédito en SIAC</h2>
+                {liga.ligado?.ligadoAt && (
+                  <span className="text-xs text-finbra-gray">Ligado por {liga.ligado.ligadoNombre ?? liga.ligado.ligadoPor} · {formatFechaHora(liga.ligado.ligadoAt)}</span>
+                )}
+              </div>
+              {liga.ligado ? (
+                <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                  <div><dt className="text-finbra-gray">Cliente de SIAC</dt><dd>{liga.ligado.cliente} <span className="font-mono text-xs text-finbra-gray">({liga.ligado.numeroCliente})</span></dd></div>
+                  <div><dt className="text-finbra-gray">Crédito</dt><dd><Link href={`${ficha}?tab=creditos`} className="font-mono text-finbra-purple hover:underline">{liga.ligado.noCredito}</Link></dd></div>
+                  <div><dt className="text-finbra-gray">Monto</dt><dd>{liga.ligado.monto !== null ? formatMoney(liga.ligado.monto) : "—"}</dd></div>
+                  <div><dt className="text-finbra-gray">Ministración</dt><dd>{liga.ligado.fechaMinistracion ? formatFecha(liga.ligado.fechaMinistracion) : "—"}</dd></div>
+                </dl>
+              ) : puedeOperar ? (
+                <LigarSiac id={n.id} sugerencias={liga.sugerencias} />
+              ) : (
+                <p className="text-sm text-finbra-gray">Falta ligarlo con su crédito de SIAC.</p>
+              )}
             </Card>
           )}
           <Card className="space-y-3">

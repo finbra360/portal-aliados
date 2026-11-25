@@ -9,6 +9,7 @@ import { validarNegocio, validarSolicitud } from "@/lib/clientes/negocios";
 import { NegocioError, cambiarBroker, cambiarEtapa, crearNegocio, editarNegocio, guardarMensajeBroker, guardarSolicitud } from "@/lib/db/negocios";
 import { validarAnalisis, validarDecision, validarDocumentos, validarLigaExpediente, validarOferta } from "@/lib/clientes/comite";
 import { getProcesoNegocio, guardarAnalisis, guardarExpediente, guardarOferta, registrarDecision } from "@/lib/db/comite";
+import { ligarCreditoSiac } from "@/lib/db/siac-liga";
 
 export type NegocioResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -188,5 +189,30 @@ export async function registrarDecisionAction(id: string, _prev: NegocioResult |
     return { ok: true, mensaje: a === "formalizacion" ? "Aprobado: el negocio pasó a Formalización." : "Rechazado en comité: el negocio quedó cerrado." };
   } catch (e) {
     return errorDe(e, "decisión de comité", "la decisión");
+  }
+}
+
+// ---------------------------------------------------------------- crédito de SIAC (fase O6)
+
+/** Liga el negocio dispersado con su crédito de SIAC (una sugerencia o un número de crédito). */
+export async function ligarCreditoSiacAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  const creditId = texto(fd, "creditId").trim();
+  const noCredito = texto(fd, "noCredito").trim();
+  if (creditId && !/^[0-9a-f-]{36}$/i.test(creditId)) return { ok: false, error: "Ese crédito no es válido. Recarga la página." };
+  if (!creditId && !noCredito) return { ok: false, error: "Escribe el número de crédito de SIAC." };
+  if (noCredito.length > 40) return { ok: false, error: "El número de crédito es demasiado largo." };
+  try {
+    const r = await ligarCreditoSiac({ negocioId: id, creditId: creditId || undefined, noCredito: creditId ? undefined : noCredito, actor: admin.email });
+    refrescar();
+    return {
+      ok: true,
+      mensaje:
+        r.accion === "juntar"
+          ? `Ligado al crédito ${r.noCredito}. La empresa que había creado SIAC se juntó con esta.`
+          : `Ligado al crédito ${r.noCredito}.`,
+    };
+  } catch (e) {
+    return errorDe(e, "ligar con SIAC", "la liga con SIAC");
   }
 }
