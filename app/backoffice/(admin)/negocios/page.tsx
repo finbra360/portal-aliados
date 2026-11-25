@@ -9,6 +9,7 @@ import { CIERRES, ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, ORIGENES_NEGO
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import EtapaNegocioChip from "./EtapaNegocioChip";
+import TableroNegocios from "./TableroNegocios";
 
 const BASE = "/backoffice/negocios";
 type Vista = "tablero" | "lista";
@@ -25,29 +26,6 @@ function href(p: { vista?: Vista; filtro?: Filtro; etapa?: string }) {
 
 const pestana = (activa: boolean) =>
   `rounded-full px-4 py-1.5 text-sm font-medium ${activa ? "bg-finbra-purple text-white" : "bg-black/5 text-finbra-gray hover:bg-black/10"}`;
-
-/** Tarjeta de un negocio en el tablero. */
-function Tarjeta({ n, hoy }: { n: Negocio; hoy: string }) {
-  const dias = diasEnEtapa(n.etapaDesde, hoy);
-  return (
-    <li>
-      <Link href={`${BASE}/${n.id}`} className="block space-y-1 rounded-lg border border-black/5 bg-white p-3 text-sm shadow-sm hover:border-finbra-purple/40">
-        <p className="break-words font-semibold leading-snug [overflow-wrap:anywhere]">{n.empresa}</p>
-        <p className="tabular-nums">{n.montoEstimado !== null ? formatMoney(n.montoEstimado) : <span className="text-finbra-gray">Sin monto</span>}</p>
-        {n.producto && (
-          <p className="text-xs text-finbra-gray">
-            {PRODUCTOS[n.producto]}
-            {n.plazoMeses ? ` · ${n.plazoMeses} m` : ""}
-          </p>
-        )}
-        <p className="flex flex-wrap items-center justify-between gap-x-2 text-xs text-finbra-gray">
-          <span>{n.responsableNombre ?? "Sin responsable"}</span>
-          <span className={dias > 14 ? "font-semibold text-amber-800" : ""}>{dias === 0 ? "hoy" : `${dias} ${dias === 1 ? "día" : "días"}`}</span>
-        </p>
-      </Link>
-    </li>
-  );
-}
 
 export default async function NegociosPage({ searchParams }: { searchParams: Promise<{ vista?: string; filtro?: string; etapa?: string; origen?: string }> }) {
   const session = await getAdminSession();
@@ -126,32 +104,7 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
         <EmptyState title="Todavía no hay negocios" description="Da de alta el primero con «Nuevo negocio»: puede ser de una empresa de Clientes o de una empresa nueva." />
       ) : vista === "tablero" ? (
         <>
-          <div className="overflow-x-auto pb-2">
-            <div className="grid min-w-[1440px] grid-cols-8 gap-3">
-              {ETAPAS_ABIERTAS.map((e) => {
-                const suyos = visibles.filter((n) => n.etapa === e);
-                return (
-                  <section key={e} className="flex min-w-0 flex-col gap-2 rounded-xl bg-black/[0.03] p-2">
-                    <header className="px-1">
-                      <h2 className="text-xs font-bold uppercase tracking-wide text-finbra-gray">{ETIQUETA_ETAPA[e]}</h2>
-                      <p className="text-xs tabular-nums text-finbra-gray">
-                        {totales[e].n} · {formatMoney(totales[e].monto)}
-                      </p>
-                    </header>
-                    {suyos.length === 0 ? (
-                      <p className="px-1 py-3 text-xs text-finbra-gray/70">Sin negocios</p>
-                    ) : (
-                      <ul className="flex flex-col gap-2">
-                        {suyos.map((n) => (
-                          <Tarjeta key={n.id} n={n} hoy={hoy} />
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                );
-              })}
-            </div>
-          </div>
+          <TableroNegocios negocios={visibles.filter((n) => ETAPAS_ABIERTAS.includes(n.etapa))} hoy={hoy} puedeOperar={puedeOperar} />
           <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-finbra-gray">
             {(["dispersado", ...CIERRES] as EtapaNegocio[]).map((e) => (
               <Link key={e} href={href({ vista: "lista", filtro, etapa: e })} className="hover:text-finbra-purple hover:underline">
