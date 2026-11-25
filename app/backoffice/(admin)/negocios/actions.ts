@@ -249,3 +249,18 @@ export async function importarHubspotAction(texto: string, ids: string[]): Promi
     return { ok: false, error: `La importación se detuvo. Los negocios que alcanzaron a entrar ya están; vuelve a subir el archivo para seguir (no se duplican). (código ${c})` };
   }
 }
+
+/** Mover un negocio desde el tablero (arrastrando su tarjeta). Mismas reglas que en la ficha. */
+export async function moverNegocioAction(id: string, etapa: string, motivo: string): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Ese negocio no es válido. Recarga la página." };
+  try {
+    await cambiarEtapa({ id, etapa, entrada: { motivo: (motivo ?? "").slice(0, 1000) }, actor: admin.email });
+  } catch (e) {
+    if (e instanceof NegocioError) return { ok: false, error: e.message };
+    const c = codigoDeError("originación: mover desde el tablero", e);
+    return { ok: false, error: `No pudimos mover el negocio. Intenta de nuevo. (código ${c})` };
+  }
+  refrescar();
+  return { ok: true, mensaje: "Etapa actualizada." };
+}
