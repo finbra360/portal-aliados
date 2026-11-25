@@ -7,7 +7,8 @@ import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getEmpresasLista } from "@/lib/db/empresas";
 import { nivelAnteriorDeSalud } from "@/lib/db/salud-diaria";
 import { fechaMexico } from "@/lib/collections/rules";
-import { leerAjustesPlaybooks, planPlaybooks, type AjustesPlaybooks, type ClavePlaybook } from "@/lib/clientes/playbooks";
+import { leerAjustesPlaybooks, planEstancados, planPlaybooks, type AjustesPlaybooks, type ClavePlaybook } from "@/lib/clientes/playbooks";
+import { ETIQUETA_ETAPA, ETAPAS_ABIERTAS, type EtapaNegocio } from "@/lib/clientes/negocios";
 
 export async function getAjustesPlaybooks(): Promise<AjustesPlaybooks> {
   const [r] = await sql`SELECT value FROM crm_settings WHERE key = 'playbooks'`;
@@ -90,11 +91,34 @@ export async function correrPlaybooks(p: { actor: string }): Promise<ResultadoPl
     hoy,
   });
 
+  // Negocios sin movimiento (fase O6): los abiertos del ambiente, si ya existe la tabla.
+  const [{ hayNegocios }] = await sql`SELECT to_regclass('public.crm_negocios_credito') IS NOT NULL AS "hayNegocios"`;
+  if (hayNegocios && ajustes.estancadoDias > 0) {
+    const negocios = await sql`
+      SELECT id, empresa_id, etapa, etapa_desde, responsable_email FROM crm_negocios_credito
+      WHERE ambiente = ${ambiente} AND etapa IN ${sql(ETAPAS_ABIERTAS)}
+    `;
+    tareas.push(
+      ...planEstancados(
+        negocios.map((n) => ({
+          id: n.id as string,
+          empresaId: n.empresa_id as string,
+          etapa: n.etapa as string,
+          etapaLabel: ETIQUETA_ETAPA[n.etapa as EtapaNegocio],
+          etapaDesde: (n.etapa_desde as Date).toISOString(),
+          responsableEmail: (n.responsable_email as string) ?? null,
+        })),
+        ajustes.estancadoDias,
+        hoy,
+      ),
+    );
+  }
+
   const ejecutivo = new Map(lista.items.map((e) => [e.empresaId, e.ejecutivoEmail]));
   const porPlaybook: Partial<Record<ClavePlaybook, number>> = {};
   let creadas = 0;
   for (const t of tareas) {
-    const responsable = ejecutivo.get(t.empresaId) ?? (porOmision?.email as string | undefined) ?? null;
+    const responsable = t.responsableEmail ?? ejecutivo.get(t.empresaId) ?? (porOmision?.email as string | undefined) ?? null;
     const r = await sql`
       INSERT INTO crm_tareas (empresa_id, credit_id, titulo, descripcion, tipo, vence_el, responsable_email, origen, dedupe_key, created_by)
       SELECT ${t.empresaId}, ${t.creditId}, ${t.titulo}, ${t.descripcion}, ${t.tipo}, ${t.venceEl}, ${responsable},

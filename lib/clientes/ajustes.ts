@@ -65,6 +65,7 @@ export const CAMPOS_PLAYBOOKS: CampoAjuste[] = [
   { clave: "revision_max_por_dia", prop: "revisionMaxPorDia", etiqueta: "Revisión periódica: tope por día", tipo: "entero", min: 0, max: 100, unidad: "tareas", grupo: "Playbooks" },
   { clave: "liquidacion", prop: "liquidacion", etiqueta: "Salida del listado", ayuda: "Tarea para confirmar si el crédito se liquidó.", tipo: "si_no", grupo: "Playbooks" },
   { clave: "rescate", prop: "rescate", etiqueta: "Pasó a En riesgo", ayuda: "Llamada de rescate cuando la salud del cliente cae a En riesgo.", tipo: "si_no", grupo: "Playbooks" },
+  { clave: "estancado_dias", prop: "estancadoDias", etiqueta: "Negocio sin movimiento: días en la misma etapa", ayuda: "Tarea para el responsable del negocio. También marca los atorados en Métricas. 0 = apagado.", tipo: "entero", min: 0, max: 180, unidad: "días", grupo: "Playbooks" },
 ];
 
 export const CAMPOS: Record<ClaveAjustes, CampoAjuste[]> = { salud: CAMPOS_SALUD, playbooks: CAMPOS_PLAYBOOKS };

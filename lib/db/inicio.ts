@@ -3,6 +3,7 @@
 
 import { sql } from "@/lib/db";
 import { countOperationsByStage } from "@/lib/db/operations";
+import { dispersadosSinLigar } from "@/lib/db/siac-liga";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { fechaMexico } from "@/lib/collections/rules";
 import { rolPuede } from "@/lib/permisos";
@@ -87,12 +88,19 @@ async function pendientesComercial(): Promise<AreaPendientes[]> {
   ];
 }
 
-/** Negocios que esperan el análisis o la decisión del comité (fase O5), según lo que el rol puede hacer. */
+/**
+ * Negocios que esperan el análisis o la decisión del comité (fase O5) y los
+ * dispersados sin ligar a su crédito de SIAC (fase O6), según lo que el rol puede hacer.
+ */
 async function pendientesOriginacion(role: AdminRole): Promise<AreaPendientes | null> {
   const analiza = rolPuede(role, "originacion.analizar");
   const decide = rolPuede(role, "originacion.decidir");
-  if (!analiza && !decide) return null;
-  const [{ hay }] = await sql`SELECT to_regclass('public.crm_negocio_decisiones') IS NOT NULL AS hay`;
+  const opera = rolPuede(role, "originacion.operar");
+  if (!analiza && !decide && !opera) return null;
+  const [[{ hay }], sinLigar] = await Promise.all([
+    sql`SELECT to_regclass('public.crm_negocio_decisiones') IS NOT NULL AS hay`,
+    opera ? dispersadosSinLigar() : Promise.resolve(null),
+  ]);
   if (!hay) return null;
   const [c] = await sql`
     SELECT count(*) FILTER (WHERE etapa = 'analisis' AND to_jsonb(n)->>'buro_resultado' IS NULL)::int AS analisis,
@@ -102,6 +110,14 @@ async function pendientesOriginacion(role: AdminRole): Promise<AreaPendientes | 
   const p: Pendiente[] = [];
   if (analiza && c.analisis) p.push({ cantidad: c.analisis, texto: c.analisis === 1 ? "negocio esperando análisis" : "negocios esperando análisis", href: "/backoffice/negocios", tono: "atencion" });
   if (decide && c.comite) p.push({ cantidad: c.comite, texto: c.comite === 1 ? "negocio esperando decisión del comité" : "negocios esperando decisión del comité", href: "/backoffice/negocios", tono: "atencion" });
+  if (sinLigar) {
+    p.push({
+      cantidad: sinLigar,
+      texto: sinLigar === 1 ? "negocio dispersado sin ligar a su crédito de SIAC" : "negocios dispersados sin ligar a su crédito de SIAC",
+      href: "/backoffice/negocios?vista=lista&etapa=dispersado",
+      tono: "normal",
+    });
+  }
   return { area: "Originación", href: "/backoffice/negocios", pendientes: p };
 }
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   AJUSTES_PLAYBOOKS_DEFAULT,
   leerAjustesPlaybooks,
+  planEstancados,
   planPlaybooks,
   playbookDeOrigen,
   type CreditoPlaybook,
@@ -137,4 +138,19 @@ test("rescate: solo cuando la salud pasa a En riesgo desde otro nivel guardado",
   // Apagado en los ajustes: no crea nada.
   assert.equal(plan([], [empresa({ empresaId: "cayo", salud: riesgo, nivelAnterior: "sana" })], { ...A, rescate: false }).filter((x) => x.clave === "rescate").length, 0);
   assert.equal(playbookDeOrigen("playbook:rescate"), "Pasó a En riesgo");
+});
+
+test("negocio sin movimiento: más de N días en la misma etapa; una tarea por etapa y fecha", () => {
+  const negocios = [
+    { id: "n1", empresaId: "e1", etapa: "comite", etapaLabel: "Comité", etapaDesde: "2026-11-01T18:00:00.000Z", responsableEmail: "ana@finbra.test" },
+    { id: "n2", empresaId: "e2", etapa: "oferta", etapaLabel: "Oferta", etapaDesde: "2026-11-15T18:00:00.000Z", responsableEmail: null },
+  ];
+  const t = planEstancados(negocios, 14, "2026-11-24");
+  assert.equal(t.length, 1);
+  assert.equal(t[0].dedupeKey, "playbook:estancado:n1:comite:2026-11-01");
+  assert.equal(t[0].titulo, "Negocio sin movimiento: 23 días en Comité");
+  assert.equal(t[0].responsableEmail, "ana@finbra.test");
+  assert.equal(t[0].clave, "estancado");
+  assert.equal(planEstancados(negocios, 0, "2026-11-24").length, 0);
+  assert.equal(planEstancados(negocios, 5, "2026-11-24").length, 2);
 });

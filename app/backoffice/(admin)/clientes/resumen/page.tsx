@@ -262,7 +262,10 @@ export default async function ResumenCarteraPage() {
       </section>
 
       <section className="space-y-3">
-        <h2 className="text-xs font-bold uppercase tracking-wider text-finbra-gray">Originación por mes</h2>
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-finbra-gray">Originación por mes</h2>
+          <Link href="/backoffice/negocios/metricas" className="text-sm font-medium text-finbra-purple hover:underline">Embudo y tiempos de los negocios →</Link>
+        </div>
         <Card className="overflow-x-auto p-0">
           {d.originacion.length === 0 ? (
             <p className="p-6 text-sm text-finbra-gray">Todavía no hay foto de SIAC.</p>
