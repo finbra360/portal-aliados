@@ -19,7 +19,7 @@ import {
   type ParaRequisitos,
 } from "@/lib/clientes/negocios";
 import { enviarSinBorrar } from "../../cobranza/enviarSinBorrar";
-import { cambiarBrokerAction, cambiarEtapaAction, editarNegocioAction, guardarMensajeBrokerAction, guardarSolicitudAction, type NegocioResult } from "../actions";
+import { cambiarEtapaAction, editarNegocioAction, guardarMensajeBrokerAction, guardarSolicitudAction, type NegocioResult } from "../actions";
 
 const campo = "w-full rounded-lg border border-black/10 bg-white px-3 py-2 text-sm";
 const etiqueta = "block text-sm font-medium";
@@ -246,6 +246,8 @@ export function EditarNegocio({
   responsable,
   notas,
   ejecutivos,
+  brokerId = null,
+  brokers = [],
   conColocacion = false,
 }: {
   id: string;
@@ -253,15 +255,20 @@ export function EditarNegocio({
   responsable: string | null;
   notas: string | null;
   ejecutivos: { email: string; nombre: string }[];
+  brokerId?: string | null;
+  /** Brokers dados de alta, para elegir cuando el origen es «Broker». */
+  brokers?: { id: string; nombre: string }[];
   conColocacion?: boolean;
 }) {
   const [r, accion, guardando] = useActionState(editarNegocioAction.bind(null, id), null);
   const [elegido, setElegido] = useState<string>(origen);
-  // Al guardar, el servidor manda el origen nuevo: se toma ese.
-  const [deServidor, setDeServidor] = useState(origen);
-  if (deServidor !== origen) {
-    setDeServidor(origen);
+  const [broker, setBroker] = useState<string>(brokerId ?? "");
+  // Al guardar, el servidor manda el origen y el broker nuevos: se toman esos.
+  const [deServidor, setDeServidor] = useState(`${origen}|${brokerId ?? ""}`);
+  if (deServidor !== `${origen}|${brokerId ?? ""}`) {
+    setDeServidor(`${origen}|${brokerId ?? ""}`);
     setElegido(origen);
+    setBroker(brokerId ?? "");
   }
   return (
     <form onSubmit={enviarSinBorrar(accion)} className="space-y-3">
@@ -281,12 +288,38 @@ export function EditarNegocio({
         </select>
         {conColocacion ? (
           <input type="hidden" name="origen" value={origen} />
-        ) : origen === "broker" && elegido !== "broker" ? (
+        ) : origen === "broker" && elegido !== "broker" && brokerId ? (
           <p className="text-xs text-amber-800">Al guardar se le quita el broker a este negocio.</p>
-        ) : elegido === "broker" && origen !== "broker" ? (
-          <p className="text-xs text-finbra-gray">Después elige el broker en la tarjeta «Broker».</p>
         ) : null}
       </div>
+      {elegido === "broker" && (
+        <div className="space-y-1">
+          <label htmlFor="brokerNegocio" className={etiqueta}>Broker</label>
+          <select
+            id="brokerNegocio"
+            name="brokerId"
+            value={broker}
+            onChange={(e) => setBroker(e.target.value)}
+            disabled={conColocacion}
+            className={`${campo} sm:w-72`}
+          >
+            <option value="">Sin asignar todavía</option>
+            {brokers.map((b) => (
+              <option key={b.id} value={b.id}>{b.nombre} · {b.id}</option>
+            ))}
+          </select>
+          {conColocacion ? (
+            <>
+              <input type="hidden" name="brokerId" value={brokerId ?? ""} />
+              <p className="text-xs text-finbra-gray">Ya se registró su colocación al dispersarlo; el broker ya no cambia.</p>
+            </>
+          ) : brokers.length === 0 ? (
+            <p className="text-xs text-amber-800">No hay brokers dados de alta. Dalos de alta en Brokers.</p>
+          ) : !broker ? (
+            <p className="text-xs text-finbra-gray">Elige el broker que lo trajo; mientras no, se marca «Broker sin asignar».</p>
+          ) : null}
+        </div>
+      )}
       <div className="space-y-1">
         <label htmlFor="responsableEmail" className={etiqueta}>Responsable</label>
         <select id="responsableEmail" name="responsableEmail" defaultValue={responsable ?? ""} className={`${campo} sm:w-72`}>
@@ -322,25 +355,14 @@ export function BrokerDelNegocio({
   brokers: { id: string; nombre: string }[];
   conColocacion: boolean;
 }) {
-  const [rb, accionBroker, guardandoBroker] = useActionState(cambiarBrokerAction.bind(null, id), null);
   const [rm, accionMensaje, guardandoMensaje] = useActionState(guardarMensajeBrokerAction.bind(null, id), null);
+  const nombre = brokers.find((b) => b.id === brokerId)?.nombre ?? brokerId;
   return (
     <div className="space-y-4">
-      <form onSubmit={enviarSinBorrar(accionBroker)} className="flex flex-wrap items-end gap-3">
-        <div className="min-w-48 flex-1 space-y-1">
-          <label htmlFor="brokerId" className={etiqueta}>Broker</label>
-          <select id="brokerId" name="brokerId" defaultValue={brokerId ?? ""} disabled={conColocacion} className={campo}>
-            <option value="">Sin broker</option>
-            {brokers.map((b) => (
-              <option key={b.id} value={b.id}>{b.nombre} · {b.id}</option>
-            ))}
-          </select>
-        </div>
-        {!conColocacion && (
-          <button type="submit" disabled={guardandoBroker} className={boton}>{guardandoBroker ? "Guardando…" : "Guardar"}</button>
-        )}
-        <div className="w-full"><Aviso r={rb} /></div>
-      </form>
+      <p className="text-sm">
+        <span className="font-medium">{nombre}</span>
+        <span className="text-finbra-gray"> · se cambia en «Origen, responsable y notas»</span>
+      </p>
       {brokerId && (
         <form onSubmit={enviarSinBorrar(accionMensaje)} className="space-y-2">
           <label htmlFor="mensajeBroker" className={etiqueta}>Mensaje para el broker</label>

@@ -286,12 +286,21 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
           <Card className="space-y-3">
             <h2 className="text-lg font-bold">Origen, responsable y notas</h2>
             {puedeOperar ? (
-              <EditarNegocio id={n.id} origen={n.origen} responsable={n.responsableEmail} notas={n.notas} ejecutivos={ejecutivos} conColocacion={!!n.colocacionId} />
+              <EditarNegocio
+                id={n.id}
+                origen={n.origen}
+                responsable={n.responsableEmail}
+                notas={n.notas}
+                ejecutivos={ejecutivos}
+                brokerId={n.brokerId}
+                brokers={conBrokers ? brokers : []}
+                conColocacion={!!n.colocacionId}
+              />
             ) : (
               <p className="whitespace-pre-line text-sm">{n.notas ?? <span className="text-finbra-gray">Sin notas.</span>}</p>
             )}
           </Card>
-          {conBrokers && (puedeOperar || n.brokerId) && (
+          {conBrokers && n.brokerId && (
             <Card className="space-y-3">
               <div className="flex flex-wrap items-baseline justify-between gap-2">
                 <h2 className="text-lg font-bold">Broker</h2>

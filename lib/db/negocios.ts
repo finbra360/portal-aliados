@@ -455,7 +455,13 @@ export async function guardarSolicitud(p: { id: string; datos: DatosSolicitud; a
 }
 
 /** Cambia responsable y notas. */
-export async function editarNegocio(p: { id: string; responsableEmail: string | null; notas: string | null; origen?: OrigenNegocio; actor: string }) {
+/**
+ * Origen, broker, responsable y notas. `brokerId` solo cuenta con origen
+ * «broker» (undefined = no se tocó; null = sin asignar). Si el origen deja de
+ * ser «broker», se le quita el broker. Con la colocación del broker ya
+ * registrada, ni el origen ni el broker cambian.
+ */
+export async function editarNegocio(p: { id: string; responsableEmail: string | null; notas: string | null; origen?: OrigenNegocio; brokerId?: string | null; actor: string }) {
   await usuarioActivo(p.responsableEmail);
   const [antes] = await sql`
     SELECT responsable_email, notas, origen, to_jsonb(n) AS j FROM crm_negocios_credito n WHERE id = ${p.id} AND ambiente = ${ambienteActual()}
@@ -465,25 +471,28 @@ export async function editarNegocio(p: { id: string; responsableEmail: string | 
   const cambios: Record<string, { antes: unknown; despues: unknown } | true> = {};
   if ((antes.responsable_email ?? null) !== p.responsableEmail) cambios.responsable_email = { antes: antes.responsable_email ?? null, despues: p.responsableEmail };
   if ((antes.notas ?? null) !== p.notas) cambios.notas = true;
-  // Origen: si deja de ser de broker, se le quita el broker (salvo que ya tenga su colocación).
   const origen = p.origen ?? (antes.origen as OrigenNegocio);
-  let quitarBroker = false;
   if (origen !== antes.origen) {
     if (antes.origen === "broker" && j.colocacion_id) {
       throw new NegocioError("Ya se registró la colocación del broker al dispersarlo; el origen ya no cambia.");
     }
     cambios.origen = { antes: antes.origen, despues: origen };
-    if (antes.origen === "broker" && j.broker_id) {
-      quitarBroker = true;
-      cambios.broker_id = { antes: j.broker_id, despues: null };
-    }
+  }
+  // Broker: el elegido si el origen es «broker»; ninguno si no lo es.
+  const conBroker = "broker_id" in j;
+  const brokerAntes = (j.broker_id as string) ?? null;
+  const brokerNuevo = origen !== "broker" ? null : p.brokerId === undefined ? brokerAntes : p.brokerId;
+  if (conBroker && brokerNuevo !== brokerAntes) {
+    if (j.colocacion_id) throw new NegocioError("Ya se registró la colocación del broker al dispersarlo; el broker ya no cambia.");
+    if (brokerNuevo) await brokerValido(brokerNuevo);
+    cambios.broker_id = { antes: brokerAntes, despues: brokerNuevo };
   }
   if (Object.keys(cambios).length === 0) return false;
   await sql`
     UPDATE crm_negocios_credito SET responsable_email = ${p.responsableEmail}, notas = ${p.notas}, origen = ${origen}, updated_by = ${p.actor}, updated_at = now()
     WHERE id = ${p.id}
   `;
-  if (quitarBroker) await sql`UPDATE crm_negocios_credito SET broker_id = NULL WHERE id = ${p.id}`;
+  if (cambios.broker_id) await sql`UPDATE crm_negocios_credito SET broker_id = ${brokerNuevo} WHERE id = ${p.id}`;
   await logAudit({ actorEmail: p.actor, action: "editar_negocio", entityType: "negocio", entityId: p.id, metadata: { cambios } });
   return true;
 }
