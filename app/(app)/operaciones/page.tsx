@@ -12,6 +12,45 @@ import { IconListChecks } from "@/components/ui/icons";
 
 export const metadata: Metadata = { title: "Mis Operaciones" };
 
+type Solicitud = Awaited<ReturnType<typeof listOperations>>[number];
+
+/** Tabla de solicitudes con su etapa y el link a su seguimiento. */
+function TablaSolicitudes({ solicitudes }: { solicitudes: Solicitud[] }) {
+  return (
+    <Card className="overflow-x-auto p-0">
+      <table className="w-full min-w-[560px] text-left text-sm">
+        <thead>
+          <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
+            <th scope="col" className="px-6 py-3">Cliente</th>
+            <th scope="col" className="px-6 py-3">Monto solicitado</th>
+            <th scope="col" className="px-6 py-3">Etapa</th>
+            <th scope="col" className="px-6 py-3"><span className="sr-only">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {solicitudes.map((op) => (
+            <tr key={op.id} className="border-b border-black/5 last:border-0">
+              <td className="px-6 py-4">{op.clienteReferencia}</td>
+              <td className="px-6 py-4 font-semibold">{formatCurrency(op.montoSolicitado)}</td>
+              <td className="px-6 py-4">
+                <StatusPill status={op.etapa} />
+                {op.mensajeBroker && (
+                  <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Mensaje</span>
+                )}
+              </td>
+              <td className="px-6 py-4 text-right">
+                <Link href={`/operaciones/${op.id}`} className="text-sm font-semibold text-finbra-purple hover:underline">
+                  Ver seguimiento
+                </Link>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </Card>
+  );
+}
+
 export default async function OperacionesPage() {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE_NAME)?.value;
@@ -38,50 +77,25 @@ export default async function OperacionesPage() {
     );
   }
 
+  // «En proceso» solo lleva las abiertas: las fondeadas ya salen abajo (de la
+  // colocación) y las rechazadas van en su propia sección.
+  const enProceso = pipeline.filter((op) => op.etapa !== "fondeada" && op.etapa !== "rechazada");
+  const rechazadas = pipeline.filter((op) => op.etapa === "rechazada");
+
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Mis Operaciones</h1>
 
       <div>
         <p className="mb-3 text-sm font-medium text-finbra-gray">En proceso</p>
-        {pipeline.length === 0 ? (
+        {enProceso.length === 0 ? (
           <EmptyState
             icon={<IconListChecks />}
             title="No tienes solicitudes en proceso"
             description="En cuanto Finbra registre una solicitud tuya, vas a poder seguir su etapa aquí."
           />
         ) : (
-          <Card className="overflow-x-auto p-0">
-            <table className="w-full min-w-[560px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-black/5 text-xs uppercase tracking-wide text-finbra-gray">
-                  <th scope="col" className="px-6 py-3">Cliente</th>
-                  <th scope="col" className="px-6 py-3">Monto solicitado</th>
-                  <th scope="col" className="px-6 py-3">Etapa</th>
-                  <th scope="col" className="px-6 py-3"><span className="sr-only">Acciones</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {pipeline.map((op) => (
-                  <tr key={op.id} className="border-b border-black/5 last:border-0">
-                    <td className="px-6 py-4">{op.clienteReferencia}</td>
-                    <td className="px-6 py-4 font-semibold">{formatCurrency(op.montoSolicitado)}</td>
-                    <td className="px-6 py-4">
-                      <StatusPill status={op.etapa} />
-                      {op.mensajeBroker && (
-                        <span className="ml-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">Mensaje</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <Link href={`/operaciones/${op.id}`} className="text-sm font-semibold text-finbra-purple hover:underline">
-                        Ver seguimiento
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
+          <TablaSolicitudes solicitudes={enProceso} />
         )}
       </div>
 
@@ -118,6 +132,13 @@ export default async function OperacionesPage() {
           </Card>
         )}
       </div>
+
+      {rechazadas.length > 0 && (
+        <div>
+          <p className="mb-3 text-sm font-medium text-finbra-gray">No aprobadas</p>
+          <TablaSolicitudes solicitudes={rechazadas} />
+        </div>
+      )}
     </div>
   );
 }
