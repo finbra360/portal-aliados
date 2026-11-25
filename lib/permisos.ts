@@ -22,7 +22,8 @@ export type Permiso =
   | "originacion.ver"
   | "originacion.operar"
   | "originacion.analizar"
-  | "originacion.decidir";
+  | "originacion.decidir"
+  | "originacion.importar";
 
 export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly AdminRole[] }> = {
   "cartera.ver": {
@@ -62,6 +63,10 @@ export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly Ad
   },
   "originacion.decidir": {
     descripcion: "Registrar la decisión del comité de crédito (aprobado con sus condiciones, o rechazado). Aprobado pasa el negocio a Formalización.",
+    roles: ["super_admin"],
+  },
+  "originacion.importar": {
+    descripcion: "Importar los negocios abiertos de HubSpot desde su export (fase O7). Crea empresas prospecto y negocios para todo el equipo.",
     roles: ["super_admin"],
   },
 };

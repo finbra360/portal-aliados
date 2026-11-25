@@ -93,6 +93,11 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          {puede(session, "originacion.importar") && (
+            <Link href={`${BASE}/importar`} className="rounded-lg border border-black/10 px-4 py-2 text-sm font-semibold text-finbra-gray hover:bg-black/5">
+              Importar de HubSpot
+            </Link>
+          )}
           <Link href={`${BASE}/metricas`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">
             Métricas
           </Link>
