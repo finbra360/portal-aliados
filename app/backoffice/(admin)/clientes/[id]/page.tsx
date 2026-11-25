@@ -21,6 +21,8 @@ import { getNegociosEmpresa, type Negocio } from "@/lib/db/negocios";
 import { ORIGENES_NEGOCIO, TIPOS_NEGOCIO } from "@/lib/clientes/negocios";
 import EtapaNegocioChip from "../../negocios/EtapaNegocioChip";
 import EditarEmpresa from "./EditarEmpresa";
+import JuntarEmpresa from "./JuntarEmpresa";
+import { opcionesParaJuntar } from "@/lib/db/juntar-empresas";
 import ContactosEmpresa from "./ContactosEmpresa";
 import RegistrarActividad from "./RegistrarActividad";
 import { getContactos, getHistorial } from "@/lib/db/personas";
@@ -807,6 +809,19 @@ export default async function FichaClientePage({ params, searchParams }: { param
             {e.origen === "siac" ? "Se creó desde SIAC" : "Se dio de alta a mano"} el {formatFechaHora(e.createdAt)}
             {e.updatedBy && <> · última edición de {e.updatedBy} el {formatFechaHora(e.updatedAt)}</>}
           </p>
+        </Card>
+      )}
+
+      {pestana === "datos" && puede(session, "clientes.configurar") && contactos.clientes.length === 0 && (
+        <Card className="space-y-3">
+          <div>
+            <h2 className="text-lg font-bold">Juntar con otra empresa</h2>
+            <p className="text-sm text-finbra-gray">
+              Si este prospecto es la misma empresa que otra (por ejemplo, un cliente de SIAC con otro nombre), sus negocios, contactos, actividad y tareas pasan a
+              esa empresa y esta se borra. Lo que le falte a la otra (RFC, razón social, ejecutivo) se toma de esta. No se puede deshacer.
+            </p>
+          </div>
+          <JuntarEmpresa id={id} nombre={e.nombre} opciones={await opcionesParaJuntar(id)} />
         </Card>
       )}
     </div>
