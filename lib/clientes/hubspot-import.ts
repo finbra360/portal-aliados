@@ -71,7 +71,7 @@ const COLUMNAS = {
 type Columna = keyof typeof COLUMNAS;
 
 /** La columna de la empresa asociada (su nombre, no su ID), si el export la trae. */
-const esColumnaEmpresa = (h: string) => /^(empresa|empresas) asociada|^associated compan/.test(h) && !/\bid\b|\bids\b/.test(h);
+export const esColumnaEmpresa = (h: string) => /^(empresa|empresas) asociada|^associated compan/.test(h) && !/\bid\b|\bids\b/.test(h);
 
 export interface FilaHubspot {
   hubspotId: string;
@@ -250,7 +250,7 @@ export interface ParaImportar {
   problema: string | null;
 }
 
-const mismoNombre = (a: string, b: string) => {
+export const mismoNombre = (a: string, b: string) => {
   const x = [...palabrasDe(a)].sort().join(" ");
   return x !== "" && x === [...palabrasDe(b)].sort().join(" ");
 };
@@ -302,7 +302,7 @@ function columnasUtiles(encabezado: string[]): number[] {
     .filter((i) => i >= 0);
 }
 
-const comillas = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+export const comillas = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 /**
  * El export con solo las columnas que se usan, para mandarlo al servidor:
