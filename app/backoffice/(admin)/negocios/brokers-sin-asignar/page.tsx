@@ -29,8 +29,9 @@ export default async function BrokersSinAsignarPage() {
         <h1 className="mt-1 text-2xl font-bold">Brokers sin asignar</h1>
         <p className="mt-1 text-sm text-finbra-gray">
           Negocios que llegaron de un broker sin decir de cuál; casi todos vienen de HubSpot, que no lo guarda. Cuando otro negocio de la misma empresa ya
-          tiene broker, o el nombre se parece a un crédito de la colocación de un broker, aquí sale sugerido: revísalo y asígnalo. Lo que asignes ya lo ve ese
-          broker en su portal.
+          tiene broker, o el nombre se parece a un crédito de la colocación de un broker, aquí sale sugerido: revísalo y asígnalo. También salen las
+          renovaciones con alguna de esas pistas, porque al dispersarlas se le registra la colocación a su broker; si una no es de broker, márcala «No es de
+          broker». Lo que asignes ya lo ve ese broker en su portal.
         </p>
       </div>
       <Card>

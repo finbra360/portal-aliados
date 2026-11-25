@@ -13,6 +13,7 @@ import { ligarCreditoSiac } from "@/lib/db/siac-liga";
 import { importarDeHubspot, MAX_BYTES, vistaPreviaHubspot, type ResultadoImportacion, type VistaPrevia } from "@/lib/db/hubspot-import";
 import { importarContactos, MAX_BYTES_CONTACTOS, vistaPreviaContactos, type ResultadoContactos, type VistaContactos } from "@/lib/db/hubspot-contactos";
 import { PersonaError } from "@/lib/db/personas";
+import { marcarRenovacionSinBroker } from "@/lib/db/brokers-sin-asignar";
 
 export type NegocioResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -146,6 +147,21 @@ export async function asignarBrokersAction(pares: { id: string; brokerId: string
     return { ok: false, error: `${asignados > 0 ? `Se asignaron ${asignados}; ` : ""}${errores.length} no se pudieron: ${[...new Set(errores)].join(" ")}` };
   }
   return { ok: true, mensaje: asignados === 1 ? "Broker asignado." : `Se asignaron ${asignados} brokers.` };
+}
+
+/** «No es de broker»: la renovación sale de «Brokers sin asignar». */
+export async function renovacionSinBrokerAction(id: string): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  if (typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "El negocio no es válido." };
+  try {
+    await marcarRenovacionSinBroker({ id, actor: admin.email });
+    revalidatePath("/backoffice/negocios/brokers-sin-asignar");
+    return { ok: true, mensaje: "Listo: esa renovación ya no sale aquí." };
+  } catch (e) {
+    if (e instanceof NegocioError) return { ok: false, error: e.message };
+    const c = codigoDeError("originación: renovación sin broker", e);
+    return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
+  }
 }
 
 /** Mensaje que el broker ve en su portal. */

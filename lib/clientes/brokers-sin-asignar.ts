@@ -72,6 +72,15 @@ export function pistasDeBroker(n: NegocioSinBroker, colocaciones: ColocacionConR
   );
 }
 
+/**
+ * Qué negocios sin broker salen en la lista: todos los de origen broker, y las
+ * renovaciones solo si hay pista de un broker y nadie dijo «No es de broker»
+ * (la mayoría de las renovaciones son de clientes directos).
+ */
+export function enLaLista(r: { renovacion: boolean; pistas: Pista[]; descartada: boolean }): boolean {
+  return !r.renovacion || (r.pistas.length > 0 && !r.descartada);
+}
+
 /** La sugerencia que se puede confirmar en bloque: solo cuando apunta a un único broker. */
 export function sugerenciaUnica(pistas: Pista[]): string | null {
   return pistas.length === 1 ? pistas[0].brokerId : null;

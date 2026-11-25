@@ -79,12 +79,12 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
               Importar de HubSpot
             </Link>
           )}
-          {puedeOperar && sinBroker > 0 && (
+          {puedeOperar && (
             <Link
               href={`${BASE}/brokers-sin-asignar`}
               className="rounded-lg border border-finbra-lilac bg-finbra-lilac/25 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-lilac/40"
             >
-              Brokers sin asignar · {sinBroker}
+              Brokers sin asignar{sinBroker > 0 ? ` · ${sinBroker}` : ""}
             </Link>
           )}
           <Link href={`${BASE}/metricas`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">

@@ -17,6 +17,7 @@ import {
   type ResultadoBuro,
 } from "@/lib/clientes/comite";
 import {
+  admiteBroker,
   validarCambioEtapa,
   type DatosProceso,
   type DatosNegocio,
@@ -473,15 +474,15 @@ export async function editarNegocio(p: { id: string; responsableEmail: string | 
   if ((antes.notas ?? null) !== p.notas) cambios.notas = true;
   const origen = p.origen ?? (antes.origen as OrigenNegocio);
   if (origen !== antes.origen) {
-    if (antes.origen === "broker" && j.colocacion_id) {
+    if (j.colocacion_id) {
       throw new NegocioError("Ya se registró la colocación del broker al dispersarlo; el origen ya no cambia.");
     }
     cambios.origen = { antes: antes.origen, despues: origen };
   }
-  // Broker: el elegido si el origen es «broker»; ninguno si no lo es.
+  // Broker: el elegido si el origen admite broker (broker o renovación); ninguno si no.
   const conBroker = "broker_id" in j;
   const brokerAntes = (j.broker_id as string) ?? null;
-  const brokerNuevo = origen !== "broker" ? null : p.brokerId === undefined ? brokerAntes : p.brokerId;
+  const brokerNuevo = !admiteBroker(origen) ? null : p.brokerId === undefined ? brokerAntes : p.brokerId;
   if (conBroker && brokerNuevo !== brokerAntes) {
     if (j.colocacion_id) throw new NegocioError("Ya se registró la colocación del broker al dispersarlo; el broker ya no cambia.");
     if (brokerNuevo) await brokerValido(brokerNuevo);
@@ -521,7 +522,8 @@ export async function cambiarBroker(p: { id: string; brokerId: string | null; ac
   if ((j.broker_id ?? null) === p.brokerId) return false;
   if (j.colocacion_id) throw new NegocioError("Ya se creó su colocación al dispersarlo; el broker ya no se cambia aquí.");
   await sql`
-    UPDATE crm_negocios_credito SET broker_id = ${p.brokerId}, origen = CASE WHEN ${p.brokerId}::text IS NOT NULL THEN 'broker' ELSE origen END,
+    UPDATE crm_negocios_credito SET broker_id = ${p.brokerId},
+      origen = CASE WHEN ${p.brokerId}::text IS NOT NULL AND origen <> 'renovacion' THEN 'broker' ELSE origen END,
       updated_by = ${p.actor}, updated_at = now()
     WHERE id = ${p.id}
   `;
