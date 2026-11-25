@@ -9,6 +9,8 @@ import { runCorreosMora, runCorreosPreventivos, type CorreosRunResult } from "@/
 import { correrRadar, type ResultadoRadar } from "@/lib/db/renovaciones";
 import { correrPlaybooks, type ResultadoPlaybooks } from "@/lib/db/playbooks";
 import { guardarSaludDiaria, type ResultadoSaludDiaria } from "@/lib/db/salud-diaria";
+import { enviarResumenSemanal, type EnvioResumen } from "@/lib/db/resumen-semanal";
+import { fechaMexico } from "@/lib/collections/rules";
 
 // Una sola llamada a SIAC para la foto y, a las 9:00, hasta MAX_CONSULTAS_MONTO consultas de saldo (montos de
 // preventivos) y max_envios_mora_por_dia mensajes de WhatsApp (~0.75 s cada uno).
@@ -23,6 +25,7 @@ export const dynamic = "force-dynamic";
  *   9:00 CDMX   /api/cron/siac-sync?reintento=1   solo si la de las 6:00 no quedó completa,
  *                                                 después los recordatorios de WhatsApp (mora y preventivos)
  *                                                 y al final el reporte diario a Slack
+ *                                                 (y los lunes, el resumen semanal de originación)
  *
  * En las dos, con la foto de hoy, corren el radar de renovación, se guarda la salud de los
  * clientes y corren los playbooks de clientes (no duplican nada si corren dos veces).
@@ -147,7 +150,18 @@ export async function GET(req: NextRequest) {
         console.error("Cobranza: no se pudo armar el reporte diario:", (e as Error).message);
       }
     }
-    return NextResponse.json({ ...result, radar, salud, playbooks, whatsapp, correos, reporte },{ status: result.status === "error" ? 500 : 200 });
+    // Los lunes, el resumen semanal de originación al canal de onboarding de Slack
+    // (una vez por semana; no depende de la foto de SIAC).
+    let resumenSemanal: EnvioResumen | { error: string } | null = null;
+    if (reintento && !fecha && new Date(`${fechaMexico()}T12:00:00Z`).getUTCDay() === 1) {
+      try {
+        resumenSemanal = await enviarResumenSemanal({ actor: "cron" });
+      } catch (e) {
+        resumenSemanal = { error: (e as Error).message };
+        await notifySlack(`:warning: El resumen semanal de originación no se pudo mandar: ${(e as Error).message}`);
+      }
+    }
+    return NextResponse.json({ ...result, radar, salud, playbooks, whatsapp, correos, reporte, resumenSemanal },{ status: result.status === "error" ? 500 : 200 });
   } catch (e) {
     // Errores antes de poder registrar la corrida (base caída, fecha inválida).
     const mensaje = (e as Error).message;

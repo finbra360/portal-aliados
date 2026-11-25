@@ -14,6 +14,7 @@ import { importarDeHubspot, MAX_BYTES, vistaPreviaHubspot, type ResultadoImporta
 import { importarContactos, MAX_BYTES_CONTACTOS, vistaPreviaContactos, type ResultadoContactos, type VistaContactos } from "@/lib/db/hubspot-contactos";
 import { PersonaError } from "@/lib/db/personas";
 import { marcarRenovacionSinBroker } from "@/lib/db/brokers-sin-asignar";
+import { enviarResumenSemanal } from "@/lib/db/resumen-semanal";
 
 export type NegocioResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -161,6 +162,18 @@ export async function renovacionSinBrokerAction(id: string): Promise<NegocioResu
     if (e instanceof NegocioError) return { ok: false, error: e.message };
     const c = codigoDeError("originación: renovación sin broker", e);
     return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
+  }
+}
+
+/** Manda ahora el resumen semanal de originación a Slack (aunque ya haya salido esa semana). */
+export async function mandarResumenSemanalAction(): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "clientes.configurar");
+  try {
+    const r = await enviarResumenSemanal({ forzar: true, actor: admin.email });
+    return r.enviado ? { ok: true, mensaje: "Listo: el resumen ya está en el canal de onboarding." } : { ok: false, error: r.motivo };
+  } catch (e) {
+    const c = codigoDeError("originación: resumen semanal", e);
+    return { ok: false, error: `No se pudo mandar a Slack. Intenta de nuevo. (código ${c})` };
   }
 }
 

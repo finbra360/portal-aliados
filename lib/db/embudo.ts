@@ -13,7 +13,7 @@ import type { EtapaNegocio, OrigenNegocio, Producto } from "@/lib/clientes/negoc
 const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
 /** Todos los negocios del ambiente y su historial, listos para calcular. */
-async function datosEmbudo(): Promise<{ negocios: NegocioEmbudo[]; cambios: CambioEmbudo[] }> {
+export async function datosEmbudo(): Promise<{ negocios: NegocioEmbudo[]; cambios: CambioEmbudo[] }> {
   const ambiente = ambienteActual();
   const [negocios, cambios, brokers, [{ hayDecisiones }]] = await Promise.all([
     sql`
