@@ -11,7 +11,7 @@ import { ambienteActual } from "@/lib/db/collections";
 import { fechaMexico } from "@/lib/collections/rules";
 import { crearNegocio, NegocioError } from "@/lib/db/negocios";
 import { ETIQUETA_ETAPA } from "@/lib/clientes/negocios";
-import { leerExport, planImportacion, type ParaImportar } from "@/lib/clientes/hubspot-import";
+import { leerExport, planImportacion, type ColumnaFaltante, type ParaImportar } from "@/lib/clientes/hubspot-import";
 
 /** Tope del archivo (lo que cabe en una acción del servidor). */
 export const MAX_BYTES = 900_000;
@@ -31,14 +31,14 @@ async function contexto() {
   };
 }
 
-export type VistaPrevia = { ok: true; items: ParaImportar[]; sinEmpresa: boolean; excluidos: number } | { ok: false; error: string };
+export type VistaPrevia = { ok: true; items: ParaImportar[]; faltan: ColumnaFaltante[]; excluidos: number } | { ok: false; error: string };
 
 /** Lee el export y arma la vista previa (sin escribir nada). */
 export async function vistaPreviaHubspot(texto: string): Promise<VistaPrevia> {
   const r = leerExport(texto);
   if (!r.ok) return r;
   const items = planImportacion(r.filas, await contexto());
-  return { ok: true, items, sinEmpresa: r.sinEmpresa, excluidos: r.filas.length - items.length };
+  return { ok: true, items, faltan: r.faltan, excluidos: r.filas.length - items.length };
 }
 
 export interface ResultadoImportacion {

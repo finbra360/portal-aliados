@@ -57,6 +57,23 @@ test("export: columnas en español, monto con comas y la empresa asociada", () =
   assert.equal(pospuesto.cerradoEl, "2025-04-01");
   assert.equal(pospuesto.motivoPerdida, "Sin presupuesto este año");
   assert.equal(r.sinEmpresa, false);
+  assert.deepEqual(r.faltan, []);
+});
+
+test("export: avisa las columnas importantes que faltan (Origen, Valor, etc.)", () => {
+  // Como el export que dejó todo en «Otro»: sin Origen ni fechas.
+  const r = leerExport("ID de registro,Nombre del negocio,Etapa del negocio,Pipeline,Valor,Empresa asociada\n7,Ficticio,Oportunidad,Pipeline de ventas,1000,Ficticio SA");
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  const columnas = r.faltan.map((x) => x.columna);
+  assert.ok(columnas.includes("Origen"));
+  assert.ok(columnas.includes("Fecha de creación"));
+  assert.ok(!columnas.includes("Valor"));
+  assert.ok(!columnas.includes("Empresa asociada"));
+  assert.match(r.faltan.find((x) => x.columna === "Origen")!.efecto, /«Otro»/);
+  // Compactar conserva los encabezados: el aviso sigue igual después.
+  const c = leerExport(compactarExport("ID de registro,Nombre del negocio,Etapa del negocio,Pipeline,Otra cosa\n7,Ficticio,Oportunidad,Pipeline de ventas,x"));
+  assert.ok(c.ok && c.faltan.some((x) => x.columna === "Origen"));
 });
 
 test("export: sin las columnas mínimas da un error claro; sin empresa usa el nombre del negocio", () => {

@@ -9,7 +9,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ETIQUETA_ETAPA, ORIGENES_NEGOCIO } from "@/lib/clientes/negocios";
-import { GRUPOS, compactarExport, type GrupoImportacion, type ParaImportar } from "@/lib/clientes/hubspot-import";
+import { GRUPOS, compactarExport, type ColumnaFaltante, type GrupoImportacion, type ParaImportar } from "@/lib/clientes/hubspot-import";
 import { formatFecha, formatMoney } from "@/lib/format";
 import { importarHubspotAction, vistaPreviaHubspotAction } from "../actions";
 import { leerArchivo } from "../../brokers/importar/ImportarPanel";
@@ -34,11 +34,33 @@ const TANDA = 40;
 const pestana = (activa: boolean) =>
   `rounded-full px-3 py-1 text-sm font-medium ${activa ? "bg-finbra-purple text-white" : "bg-black/5 text-finbra-gray hover:bg-black/10"}`;
 
+/** Columnas importantes que el export no trae: qué pasa si se importa así y cómo traerlas. */
+function AvisoColumnas({ faltan }: { faltan: ColumnaFaltante[] }) {
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+      <p className="font-semibold">
+        Al archivo le {faltan.length === 1 ? "falta una columna" : `faltan ${faltan.length} columnas`}. Si lo importas así:
+      </p>
+      <ul className="list-disc space-y-1 pl-5">
+        {faltan.map((x) => (
+          <li key={x.columna}>
+            Sin <span className="font-semibold">«{x.columna}»</span>, {x.efecto}.
+          </li>
+        ))}
+      </ul>
+      <p>
+        Para traerlas, en HubSpot ve a Negocios, agrega esas columnas a la vista (o elige «Exportar todas las propiedades») y vuelve a exportar antes de importar: lo que ya
+        importaste no se duplica, pero tampoco se corrige al subirlo otra vez.
+      </p>
+    </div>
+  );
+}
+
 export default function ImportarHubspot() {
   const [texto, setTexto] = useState<string | null>(null);
   const [archivo, setArchivo] = useState("");
   const [items, setItems] = useState<ParaImportar[] | null>(null);
-  const [info, setInfo] = useState<{ sinEmpresa: boolean; excluidos: number } | null>(null);
+  const [info, setInfo] = useState<{ faltan: ColumnaFaltante[]; excluidos: number } | null>(null);
   const [grupo, setGrupo] = useState<GrupoImportacion>("abierto");
   const [avance, setAvance] = useState<string | null>(null);
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
@@ -73,7 +95,7 @@ export default function ImportarHubspot() {
       }
       setError(null);
       setItems(r.items);
-      setInfo({ sinEmpresa: r.sinEmpresa, excluidos: r.excluidos });
+      setInfo({ faltan: r.faltan, excluidos: r.excluidos });
       if (!conservar) setElegidos(new Set(r.items.filter((x) => x.marcado).map((x) => x.fila.hubspotId)));
       else setElegidos(new Set());
     });
@@ -120,7 +142,10 @@ export default function ImportarHubspot() {
       .filter(([, n]) => n > 0)
       .map(([g, n]) => `${n} ${g.toLowerCase()}`)
       .join(", ");
-    if (!window.confirm(`¿Importar ${elegidos.size} ${elegidos.size === 1 ? "negocio" : "negocios"} de HubSpot (${porGrupo})?`)) return;
+    const sinColumnas = info?.faltan.length ? `
+
+Ojo: al archivo le faltan ${info.faltan.map((x) => `«${x.columna}»`).join(", ")}.` : "";
+    if (!window.confirm(`¿Importar ${elegidos.size} ${elegidos.size === 1 ? "negocio" : "negocios"} de HubSpot (${porGrupo})?${sinColumnas}`)) return;
     const ids = [...elegidos];
     startTransition(async () => {
       const total: Resultado = { creados: 0, empresasNuevas: 0, yaEstaban: 0, conProblema: 0 };
@@ -224,6 +249,7 @@ export default function ImportarHubspot() {
               <span className="font-semibold">{elegidos.size} marcados en total.</span>
             </p>
           </div>
+          {info.faltan.length > 0 && <AvisoColumnas faltan={info.faltan} />}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2" role="tablist" aria-label="Qué negocios ver">
               {(Object.keys(GRUPOS) as GrupoImportacion[]).map((g) => (
@@ -263,11 +289,6 @@ export default function ImportarHubspot() {
                 : grupo === "rechazado"
                   ? "Entran como Rechazado, con su fecha de cierre y el motivo de HubSpot si el export lo trae."
                   : "Entran como Dispersado, con su fecha de cierre. No crean colocaciones ni piden ligarse a SIAC en Inicio (solo los dispersados de los últimos 90 días lo piden)."}
-            </p>
-          )}
-          {info.sinEmpresa && (
-            <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              El archivo no trae la empresa asociada: se usa el nombre del negocio como nombre de la empresa.
             </p>
           )}
           <div className="overflow-x-auto rounded-lg border border-black/5">
