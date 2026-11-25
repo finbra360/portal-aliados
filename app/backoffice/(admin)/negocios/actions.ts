@@ -83,12 +83,16 @@ export async function editarNegocioAction(id: string, _prev: NegocioResult | nul
   if (notas && notas.length > 4000) return { ok: false, error: "Las notas son demasiado largas (máximo 4,000 caracteres)." };
   const origenTexto = texto(fd, "origen").trim();
   if (origenTexto && !(origenTexto in ORIGENES_NEGOCIO)) return { ok: false, error: "El origen no es válido." };
+  // El campo de broker solo viene cuando el origen es «Broker»; vacío = sin asignar.
+  const brokerTexto = fd.has("brokerId") ? texto(fd, "brokerId").trim() : undefined;
+  if (brokerTexto && !/^[A-Za-z0-9_-]{1,40}$/.test(brokerTexto)) return { ok: false, error: "El broker no es válido." };
   try {
     const cambio = await editarNegocio({
       id,
       responsableEmail: texto(fd, "responsableEmail").trim().toLowerCase() || null,
       notas,
       origen: (origenTexto || undefined) as OrigenNegocio | undefined,
+      brokerId: brokerTexto === undefined ? undefined : brokerTexto || null,
       actor: admin.email,
     });
     refrescar();
