@@ -1,22 +1,31 @@
 "use client";
 
-// Tablero de negocios: una columna por etapa abierta. Quien opera originación
+// Tablero de negocios: una columna por etapa abierta y, al final, las de los
+// cerrados (dispersados, pospuestos y rechazados, los más recientes primero,
+// con liga a la lista completa). Quien opera originación
 // puede arrastrar una tarjeta a otra columna para moverla de etapa, con las
 // mismas reglas que en la ficha (cambiarEtapa): avanzar pide los datos de la
 // etapa; regresar pide el motivo. La tarjeta se mueve al instante y, si el
-// servidor no lo deja, regresa a su lugar con el porqué. Pospuesto, rechazado y
-// dispersado se hacen en la ficha, porque piden fecha, motivo o crean la colocación.
+// servidor no lo deja, regresa a su lugar con el porqué. Posponer, rechazar y
+// dispersar se hacen en la ficha, porque piden fecha, motivo o crean la
+// colocación: esas columnas no reciben tarjetas. Un pospuesto o rechazado sí se
+// puede arrastrar a una etapa abierta para reabrirlo.
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, PRODUCTOS, diasEnEtapa, totalesPorEtapa, type EtapaNegocio } from "@/lib/clientes/negocios";
+import { ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, PRODUCTOS, diasEnEtapa, estaAbierto, totalesPorEtapa, type EtapaNegocio } from "@/lib/clientes/negocios";
 import { formatMoney } from "@/lib/format";
 import type { Negocio } from "@/lib/db/negocios";
 import { moverNegocioAction } from "./actions";
 
 const BASE = "/backoffice/negocios";
 const ORDEN = new Map(ETAPAS_NEGOCIO.map((e, i) => [e.value, i]));
+/** Columnas de cerrados, al final del tablero. */
+const CERRADAS: EtapaNegocio[] = ["dispersado", "pospuesto", "rechazado"];
+const TITULO_CERRADA: Partial<Record<EtapaNegocio, string>> = { dispersado: "Dispersados", pospuesto: "Pospuestos", rechazado: "Rechazados" };
+/** Tarjetas que se muestran en cada columna de cerrados (las más recientes). */
+const MAX_CERRADAS = 8;
 
 type Aviso = { tipo: "ok" | "error"; texto: string; id?: string; empresa?: string };
 
@@ -62,7 +71,18 @@ function Tarjeta({ n, hoy, arrastrable, moviendo, onInicio, onFin }: {
   );
 }
 
-export default function TableroNegocios({ negocios, hoy, puedeOperar }: { negocios: Negocio[]; hoy: string; puedeOperar: boolean }) {
+export default function TableroNegocios({
+  negocios,
+  hoy,
+  puedeOperar,
+  verTodos,
+}: {
+  negocios: Negocio[];
+  hoy: string;
+  puedeOperar: boolean;
+  /** Liga a la lista de cada etapa cerrada. */
+  verTodos: Record<string, string>;
+}) {
   const router = useRouter();
   const [lista, setLista] = useState(negocios);
   const [arrastrando, setArrastrando] = useState<string | null>(null);
@@ -85,7 +105,8 @@ export default function TableroNegocios({ negocios, hoy, puedeOperar }: { negoci
     setArrastrando(null);
     const n = lista.find((x) => x.id === id);
     if (!n || n.etapa === etapa || moviendo) return;
-    const regresa = (ORDEN.get(etapa) ?? 0) < (ORDEN.get(n.etapa) ?? 0);
+    // Regresar es ir hacia atrás entre etapas abiertas; reabrir un pospuesto o rechazado no lo es.
+    const regresa = estaAbierto(n.etapa) && (ORDEN.get(etapa) ?? 0) < (ORDEN.get(n.etapa) ?? 0);
     let motivo = "";
     if (regresa) {
       const r = window.prompt(`¿Por qué regresa «${n.empresa}» de ${ETIQUETA_ETAPA[n.etapa]} a ${ETIQUETA_ETAPA[etapa]}?`);
@@ -118,7 +139,8 @@ export default function TableroNegocios({ negocios, hoy, puedeOperar }: { negoci
     <div className="space-y-2">
       {puedeOperar && (
         <p className="text-xs text-finbra-gray">
-          Arrastra una tarjeta a otra columna para moverla de etapa. Para posponer, rechazar o marcar como dispersado, abre el negocio.
+          Arrastra una tarjeta a otra columna para moverla de etapa (también un pospuesto o rechazado, para reabrirlo). Para posponer, rechazar o marcar como
+          dispersado, abre el negocio.
         </p>
       )}
       {aviso && (
@@ -139,7 +161,7 @@ export default function TableroNegocios({ negocios, hoy, puedeOperar }: { negoci
         </p>
       )}
       <div className="overflow-x-auto pb-2">
-        <div className="grid min-w-[1440px] grid-cols-8 gap-3">
+        <div className="grid min-w-[1980px] grid-cols-11 gap-3">
           {ETAPAS_ABIERTAS.map((e) => {
             const suyos = lista.filter((n) => n.etapa === e);
             const destino = arrastrando !== null && encima === e;
@@ -188,6 +210,45 @@ export default function TableroNegocios({ negocios, hoy, puedeOperar }: { negoci
                       />
                     ))}
                   </ul>
+                )}
+              </section>
+            );
+          })}
+          {CERRADAS.map((e) => {
+            const suyos = lista.filter((n) => n.etapa === e).sort((a, b) => b.etapaDesde.localeCompare(a.etapaDesde));
+            return (
+              <section key={e} aria-label={TITULO_CERRADA[e]} className="flex min-w-0 flex-col gap-2 rounded-xl border border-dashed border-black/10 p-2">
+                <header className="px-1">
+                  <h2 className="text-xs font-bold uppercase tracking-wide text-finbra-gray">{TITULO_CERRADA[e]}</h2>
+                  <p className="text-xs tabular-nums text-finbra-gray">
+                    {totales[e].n} · {formatMoney(totales[e].monto)}
+                  </p>
+                  {arrastrando && <p className="text-[11px] text-finbra-gray">Desde la ficha del negocio</p>}
+                </header>
+                {suyos.length === 0 ? (
+                  <p className="px-1 py-3 text-xs text-finbra-gray/70">Sin negocios</p>
+                ) : (
+                  <ul className="flex flex-col gap-2">
+                    {suyos.slice(0, MAX_CERRADAS).map((n) => (
+                      <Tarjeta
+                        key={n.id}
+                        n={n}
+                        hoy={hoy}
+                        arrastrable={puedeOperar && e !== "dispersado"}
+                        moviendo={moviendo === n.id}
+                        onInicio={() => setArrastrando(n.id)}
+                        onFin={() => {
+                          setArrastrando(null);
+                          setEncima(null);
+                        }}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {suyos.length > 0 && (
+                  <Link href={verTodos[e]} className="px-1 text-xs font-semibold text-finbra-purple hover:underline">
+                    {suyos.length > MAX_CERRADAS ? `Ver los ${suyos.length} →` : "Ver en la lista →"}
+                  </Link>
                 )}
               </section>
             );

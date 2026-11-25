@@ -5,7 +5,7 @@ import { codigoDeError } from "@/lib/collections/errors";
 import { fechaMexico } from "@/lib/collections/rules";
 import { formatFecha, formatMoney } from "@/lib/format";
 import { getNegocios, hayNegocios, type Negocio } from "@/lib/db/negocios";
-import { CIERRES, ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, ORIGENES_NEGOCIO, PRODUCTOS, diasEnEtapa, totalesPorEtapa, type EtapaNegocio } from "@/lib/clientes/negocios";
+import { CIERRES, ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ORIGENES_NEGOCIO, PRODUCTOS, diasEnEtapa, totalesPorEtapa, type EtapaNegocio } from "@/lib/clientes/negocios";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import EtapaNegocioChip from "./EtapaNegocioChip";
@@ -45,8 +45,8 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
     if (!(await hayNegocios())) {
       return <EmptyState title="Falta preparar la base de datos" description="Corre lib/db/crm-schema.sql y después security.sql en Supabase para activar los negocios de crédito." />;
     }
-    // El tablero muestra los cierres del último año; la lista, todos (también los traídos de HubSpot).
-    negocios = await getNegocios(vista === "lista" ? { diasCerrados: 36_500 } : {});
+    // Todos los cerrados, también los traídos de HubSpot: el tablero los muestra en sus columnas y la lista los filtra.
+    negocios = await getNegocios({ diasCerrados: 36_500 });
   } catch (e) {
     const c = codigoDeError("originación: negocios", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar los negocios. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -104,16 +104,12 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
         <EmptyState title="Todavía no hay negocios" description="Da de alta el primero con «Nuevo negocio»: puede ser de una empresa de Clientes o de una empresa nueva." />
       ) : vista === "tablero" ? (
         <>
-          <TableroNegocios negocios={visibles.filter((n) => ETAPAS_ABIERTAS.includes(n.etapa))} hoy={hoy} puedeOperar={puedeOperar} />
-          <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-finbra-gray">
-            {(["dispersado", ...CIERRES] as EtapaNegocio[]).map((e) => (
-              <Link key={e} href={href({ vista: "lista", filtro, etapa: e })} className="hover:text-finbra-purple hover:underline">
-                {ETIQUETA_ETAPA[e]}: <span className="font-semibold tabular-nums">{totales[e].n}</span>
-                {e === "dispersado" && totales[e].n > 0 && <> · {formatMoney(totales[e].monto)}</>}
-              </Link>
-            ))}
-            <span className="text-xs">Dispersados, pospuestos y rechazados del último año.</span>
-          </p>
+          <TableroNegocios
+            negocios={visibles}
+            hoy={hoy}
+            puedeOperar={puedeOperar}
+            verTodos={Object.fromEntries((["dispersado", ...CIERRES] as EtapaNegocio[]).map((e) => [e, href({ vista: "lista", filtro, etapa: e })]))}
+          />
         </>
       ) : (
         <>
