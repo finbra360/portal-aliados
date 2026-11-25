@@ -87,11 +87,30 @@ async function pendientesComercial(): Promise<AreaPendientes[]> {
   ];
 }
 
+/** Negocios que esperan el análisis o la decisión del comité (fase O5), según lo que el rol puede hacer. */
+async function pendientesOriginacion(role: AdminRole): Promise<AreaPendientes | null> {
+  const analiza = rolPuede(role, "originacion.analizar");
+  const decide = rolPuede(role, "originacion.decidir");
+  if (!analiza && !decide) return null;
+  const [{ hay }] = await sql`SELECT to_regclass('public.crm_negocio_decisiones') IS NOT NULL AS hay`;
+  if (!hay) return null;
+  const [c] = await sql`
+    SELECT count(*) FILTER (WHERE etapa = 'analisis' AND to_jsonb(n)->>'buro_resultado' IS NULL)::int AS analisis,
+           count(*) FILTER (WHERE etapa = 'comite')::int AS comite
+    FROM crm_negocios_credito n WHERE ambiente = ${ambienteActual()}
+  `;
+  const p: Pendiente[] = [];
+  if (analiza && c.analisis) p.push({ cantidad: c.analisis, texto: c.analisis === 1 ? "negocio esperando análisis" : "negocios esperando análisis", href: "/backoffice/negocios", tono: "atencion" });
+  if (decide && c.comite) p.push({ cantidad: c.comite, texto: c.comite === 1 ? "negocio esperando decisión del comité" : "negocios esperando decisión del comité", href: "/backoffice/negocios", tono: "atencion" });
+  return { area: "Originación", href: "/backoffice/negocios", pendientes: p };
+}
+
 /** Áreas que le tocan al rol, cada una con sus pendientes (puede venir vacía: "todo al día"). */
 export async function pendientesDeHoy(role: AdminRole): Promise<AreaPendientes[]> {
-  const [comercial, cobranza] = await Promise.all([
+  const [comercial, originacion, cobranza] = await Promise.all([
     COMERCIAL_ROLES.includes(role) ? pendientesComercial() : Promise.resolve([]),
+    pendientesOriginacion(role),
     rolPuede(role, "cobranza.operar") ? pendientesCobranza() : Promise.resolve(null),
   ]);
-  return [...comercial, ...(cobranza ? [cobranza] : [])];
+  return [...comercial, ...(originacion ? [originacion] : []), ...(cobranza ? [cobranza] : [])];
 }

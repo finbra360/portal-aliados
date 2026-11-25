@@ -6,6 +6,8 @@ import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { validarAjustes, CAMPOS, type ClaveAjustes } from "@/lib/clientes/ajustes";
 import { AjustesError, guardarAjustes, guardarEjecutivoPorOmision } from "@/lib/db/ajustes-clientes";
+import { validarListasDocumentos } from "@/lib/clientes/comite";
+import { guardarListasDocumentos } from "@/lib/db/comite";
 
 /** En un error se regresa lo que se capturó, para que el formulario no lo pierda. */
 export type AjustesResult = { ok: true; mensaje: string } | { ok: false; error: string; entrada?: Record<string, string | null> };
@@ -28,6 +30,22 @@ export async function guardarAjustesAction(clave: ClaveAjustes, _prev: AjustesRe
   } catch (e) {
     const c = codigoDeError(`clientes: ajustes ${clave}`, e);
     return { ok: false, error: `No pudimos guardar los ajustes. Intenta de nuevo. (código ${c})` };
+  }
+}
+
+/** Documentos del expediente por producto (Super Admin). */
+export async function guardarDocumentosAction(_prev: AjustesResult | null, fd: FormData): Promise<AjustesResult> {
+  const admin = requierePermiso(await getAdminSession(), "clientes.configurar");
+  const v = validarListasDocumentos(Object.fromEntries(fd.entries()));
+  if (!v.ok) return { ok: false, error: v.error };
+  try {
+    const cambio = await guardarListasDocumentos({ listas: v.datos, actor: admin.email });
+    refrescar();
+    revalidatePath("/backoffice/negocios", "layout");
+    return { ok: true, mensaje: cambio ? "Guardado. Los negocios ya piden esta lista." : "No había cambios." };
+  } catch (e) {
+    const c = codigoDeError("clientes: documentos del expediente", e);
+    return { ok: false, error: `No pudimos guardar. Intenta de nuevo. (código ${c})` };
   }
 }
 

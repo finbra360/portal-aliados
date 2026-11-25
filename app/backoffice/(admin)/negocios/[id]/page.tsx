@@ -17,6 +17,9 @@ import EmptyState from "@/components/ui/EmptyState";
 import PlazoChip from "../../clientes/PlazoChip";
 import EtapaNegocioChip from "../EtapaNegocioChip";
 import { BrokerDelNegocio, EditarNegocio, MoverEtapa, Solicitud } from "./Controles";
+import { Analisis, DecisionComite, Expediente, Oferta } from "./ControlesProceso";
+import { getProcesoNegocio } from "@/lib/db/comite";
+import { DECISIONES, ESTADOS_DOCUMENTO, RESPUESTAS_OFERTA, RESULTADOS_BURO, documentosPendientes } from "@/lib/clientes/comite";
 
 const PASOS = ETAPAS_NEGOCIO.filter((e) => e.value !== "pospuesto" && e.value !== "rechazado");
 
@@ -41,18 +44,24 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
   }
   if (!datos) notFound();
   const { negocio: n, etapas } = datos;
-  const [ejecutivos, tareas, historial, brokers, conBrokers] = await Promise.all([
+  const [ejecutivos, tareas, historial, brokers, conBrokers, proceso] = await Promise.all([
     puedeOperar ? listEjecutivos() : Promise.resolve([]),
     getTareasEmpresa(n.empresaId),
     getHistorial(n.empresaId),
     brokersParaNegocio(),
     operacionesSonNegocios(),
+    getProcesoNegocio(n.id),
   ]);
+  const puedeAnalizar = puede(session, "originacion.analizar");
+  const puedeDecidir = puede(session, "originacion.decidir");
+  const abierto = n.etapa !== "dispersado";
   const broker = brokers.find((b) => b.id === n.brokerId) ?? null;
   const dias = diasEnEtapa(n.etapaDesde, hoy);
   const actual = PASOS.findIndex((p) => p.value === n.etapa);
   const ficha = `/backoffice/clientes/${n.empresaId}`;
-  const requisitos: ParaRequisitos = { producto: n.producto, montoEstimado: n.montoEstimado, plazoMeses: n.plazoMeses, destino: n.destino, garantiaTipo: n.garantiaTipo, rfcEmpresa: n.rfcEmpresa };
+  const requisitos: ParaRequisitos = { producto: n.producto, montoEstimado: n.montoEstimado, plazoMeses: n.plazoMeses, destino: n.destino, garantiaTipo: n.garantiaTipo, rfcEmpresa: n.rfcEmpresa, proceso: proceso?.requisitos ?? null };
+  const pct = (x: number | null) => (x === null ? "—" : `${x.toLocaleString("es-MX")} %`);
+  const recibidos = proceso ? proceso.documentos.length - documentosPendientes(proceso.documentos) : 0;
 
   return (
     <div className="space-y-6">
@@ -139,7 +148,7 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
               </span>
             </div>
             {puedeOperar ? (
-              <Solicitud id={n.id} s={n} />
+              <Solicitud id={n.id} s={n} conComision={!proceso} />
             ) : (
               <dl className="grid gap-2 text-sm sm:grid-cols-2">
                 <div><dt className="text-finbra-gray">Producto</dt><dd>{n.producto ? PRODUCTOS[n.producto] : "—"}</dd></div>
@@ -156,6 +165,99 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
               </dl>
             )}
           </Card>
+          {proceso && (
+            <>
+              <Card className="space-y-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="text-lg font-bold">Análisis</h2>
+                  <span className="text-xs text-finbra-gray">
+                    {proceso.analisis.analizadoAt
+                      ? `${proceso.analisis.analizadoNombre ?? proceso.analisis.analizadoPor} · ${formatFechaHora(proceso.analisis.analizadoAt)}`
+                      : "Lo captura Finanzas o Super Admin"}
+                  </span>
+                </div>
+                {puedeAnalizar && abierto ? (
+                  <Analisis id={n.id} a={proceso.analisis} />
+                ) : (
+                  <dl className="grid gap-2 text-sm sm:grid-cols-2">
+                    <div><dt className="text-finbra-gray">Resultado de buró</dt><dd>{proceso.analisis.buroResultado ? RESULTADOS_BURO[proceso.analisis.buroResultado] : "—"}</dd></div>
+                    <div><dt className="text-finbra-gray">Capacidad de pago mensual</dt><dd>{proceso.analisis.capacidadPagoMensual !== null ? formatMoney(proceso.analisis.capacidadPagoMensual) : "—"}</dd></div>
+                    {proceso.analisis.notas && <div className="sm:col-span-2"><dt className="text-finbra-gray">Notas</dt><dd className="whitespace-pre-line">{proceso.analisis.notas}</dd></div>}
+                  </dl>
+                )}
+              </Card>
+              <Card className="space-y-3">
+                <h2 className="text-lg font-bold">Oferta</h2>
+                {puedeOperar && abierto ? (
+                  <Oferta id={n.id} o={proceso.oferta} conBroker={!!n.brokerId} conColocacion={!!n.colocacionId} />
+                ) : (
+                  <dl className="grid gap-2 text-sm sm:grid-cols-3">
+                    <div><dt className="text-finbra-gray">Monto</dt><dd>{proceso.oferta.monto !== null ? formatMoney(proceso.oferta.monto) : "—"}</dd></div>
+                    <div><dt className="text-finbra-gray">Tasa anual</dt><dd>{pct(proceso.oferta.tasaAnual)}</dd></div>
+                    <div><dt className="text-finbra-gray">Plazo</dt><dd>{proceso.oferta.plazoMeses ? `${proceso.oferta.plazoMeses} meses` : "—"}</dd></div>
+                    <div><dt className="text-finbra-gray">Comisión por apertura</dt><dd>{pct(proceso.oferta.comisionAperturaPct)}</dd></div>
+                    <div className="sm:col-span-2"><dt className="text-finbra-gray">Respuesta del cliente</dt><dd>{proceso.oferta.respuesta ? RESPUESTAS_OFERTA[proceso.oferta.respuesta] : "Todavía no responde"}</dd></div>
+                  </dl>
+                )}
+              </Card>
+              <Card className="space-y-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h2 className="text-lg font-bold">Expediente</h2>
+                  {proceso.documentos.length > 0 && (
+                    <span className={`text-xs ${recibidos === proceso.documentos.length ? "text-emerald-700" : "text-finbra-gray"}`}>
+                      {recibidos} de {proceso.documentos.length} listos
+                    </span>
+                  )}
+                </div>
+                {puedeOperar && abierto ? (
+                  <Expediente id={n.id} url={proceso.expedienteUrl} documentos={proceso.documentos} />
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    {proceso.expedienteUrl ? (
+                      <a href={proceso.expedienteUrl} target="_blank" rel="noopener noreferrer" className="text-finbra-purple hover:underline">Abrir la carpeta del expediente ↗</a>
+                    ) : (
+                      <p className="text-finbra-gray">Sin liga a la carpeta.</p>
+                    )}
+                    <ul className="space-y-1">
+                      {proceso.documentos.map((d) => (
+                        <li key={d.clave} className="flex justify-between gap-2">
+                          <span>{d.nombre}</span>
+                          <span className={d.estado === "recibido" ? "text-emerald-700" : "text-finbra-gray"}>{ESTADOS_DOCUMENTO[d.estado]}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </Card>
+              {(n.etapa === "comite" || proceso.decisiones.length > 0) && (
+                <Card className="space-y-3">
+                  <h2 className="text-lg font-bold">Comité</h2>
+                  {n.etapa === "comite" &&
+                    (puedeDecidir ? (
+                      <DecisionComite id={n.id} oferta={proceso.oferta} />
+                    ) : (
+                      <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">Esperando la decisión del comité. La registra Super Admin.</p>
+                    ))}
+                  {proceso.decisiones.length > 0 && (
+                    <ol className="space-y-3 border-l border-black/10 pl-4">
+                      {proceso.decisiones.map((d, i) => (
+                        <li key={i} className="text-sm">
+                          <p>
+                            <span className={`font-semibold ${d.decision === "aprobado" ? "text-emerald-700" : "text-red-700"}`}>{DECISIONES[d.decision]}</span>
+                            {d.decision === "aprobado" && d.monto !== null && (
+                              <span> · {formatMoney(d.monto)} a {d.plazoMeses} meses, tasa {pct(d.tasaAnual)}</span>
+                            )}
+                          </p>
+                          {d.condiciones && <p className="whitespace-pre-line text-finbra-gray">{d.condiciones}</p>}
+                          <p className="text-xs text-finbra-gray">{formatFechaHora(d.decididoAt)} · {d.decididoNombre ?? d.decididoPor}</p>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </Card>
+              )}
+            </>
+          )}
           <Card className="space-y-3">
             <h2 className="text-lg font-bold">Responsable y notas</h2>
             {puedeOperar ? (

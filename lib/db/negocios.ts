@@ -3,12 +3,22 @@
 // como prospecto (crm_empresas, origen 'manual') con su contacto; cuando el
 // crédito llegue a SIAC se liga en la fase O6.
 
-import { sql, transaccion } from "@/lib/db";
+import { sql, transaccion, type Tx } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { fechaMexico } from "@/lib/collections/rules";
 import {
+  documentosDelNegocio,
+  documentosPendientes,
+  listasDesdeAjuste,
+  type DecisionComite,
+  type EstadoDocumento,
+  type RespuestaOferta,
+  type ResultadoBuro,
+} from "@/lib/clientes/comite";
+import {
   validarCambioEtapa,
+  type DatosProceso,
   type DatosNegocio,
   type DatosSolicitud,
   type Destino,
@@ -289,8 +299,55 @@ export async function cambiarEtapa(p: {
   entrada: { motivo?: string; recontactarEl?: string; motivoRechazo?: string };
   actor: string;
 }): Promise<EtapaNegocio> {
+  const r = await transaccion((tx) => moverEnTx(tx, p));
+  await logAudit({ actorEmail: p.actor, action: "etapa_negocio", entityType: "negocio", entityId: p.id, metadata: r });
+  return r.a;
+}
+
+/** Hay columnas de la fase O5 (falta correr crm-schema.sql si no). */
+export const tieneProceso = (j: Record<string, unknown> | null | undefined) => !!j && "buro_resultado" in j;
+
+const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
+
+/** Lo que piden los pasos de O5 para avanzar; null si la base todavía no tiene sus columnas. */
+export async function cargarProceso(q: Tx, id: string, j: Record<string, unknown>): Promise<DatosProceso | null> {
+  if (!tieneProceso(j)) return null;
+  // Una tras otra: dentro de una transacción la conexión es una sola.
+  const [ajuste] = await q`SELECT value FROM crm_settings WHERE key = 'expediente'`;
+  const marcados = await q`SELECT clave, estado FROM crm_negocio_documentos WHERE negocio_id = ${id}`;
+  const [decision] = await q`SELECT decision FROM crm_negocio_decisiones WHERE negocio_id = ${id} ORDER BY decidido_at DESC, id DESC LIMIT 1`;
+  const producto = j.producto as Producto | null;
+  const lista = producto ? listasDesdeAjuste(ajuste?.value)[producto] : [];
+  const docs = documentosDelNegocio(
+    lista,
+    marcados.map((m) => ({ clave: m.clave as string, estado: m.estado as EstadoDocumento, actualizadoPor: null, actualizadoAt: null })),
+  );
+  return {
+    buroResultado: (j.buro_resultado as ResultadoBuro) ?? null,
+    capacidadPagoMensual: numero(j.capacidad_pago_mensual),
+    garantiaValor: numero(j.garantia_valor),
+    ofertaMonto: numero(j.oferta_monto),
+    ofertaTasaAnual: numero(j.oferta_tasa_anual),
+    ofertaPlazoMeses: numero(j.oferta_plazo_meses),
+    comisionAperturaPct: numero(j.comision_apertura_pct),
+    ofertaRespuesta: (j.oferta_respuesta as RespuestaOferta) ?? null,
+    expedienteUrl: (j.expediente_url as string) ?? null,
+    // Sin producto no hay lista: el requisito de producto ya lo detiene antes.
+    documentosPendientes: producto ? documentosPendientes(docs) : 0,
+    decision: (decision?.decision as DecisionComite) ?? null,
+  };
+}
+
+/**
+ * El cambio de etapa dentro de una transacción ya abierta (lo usan cambiarEtapa
+ * y la decisión del comité). Regresa lo que va a la auditoría.
+ */
+export async function moverEnTx(
+  tx: Tx,
+  p: { id: string; etapa: string; entrada: { motivo?: string; recontactarEl?: string; motivoRechazo?: string }; actor: string; porComite?: boolean },
+) {
   const hoy = fechaMexico();
-  const r = await transaccion(async (tx) => {
+  {
     const [n] = await tx`
       SELECT n.etapa, n.empresa_id, n.responsable_email, n.producto, n.monto_estimado, n.plazo_meses, n.destino, n.garantia_tipo, e.rfc, e.nombre AS empresa,
              to_jsonb(n) AS j
@@ -298,14 +355,22 @@ export async function cambiarEtapa(p: {
       WHERE n.id = ${p.id} AND n.ambiente = ${ambienteActual()} FOR UPDATE OF n
     `;
     if (!n) throw new NegocioError("Ese negocio no existe.");
-    const v = validarCambioEtapa(n.etapa as EtapaNegocio, p.etapa, p.entrada, hoy, {
-      producto: n.producto ?? null,
-      montoEstimado: n.monto_estimado === null ? null : Number(n.monto_estimado),
-      plazoMeses: n.plazo_meses === null ? null : Number(n.plazo_meses),
-      destino: n.destino ?? null,
-      garantiaTipo: n.garantia_tipo ?? null,
-      rfcEmpresa: n.rfc ?? null,
-    });
+    const v = validarCambioEtapa(
+      n.etapa as EtapaNegocio,
+      p.etapa,
+      p.entrada,
+      hoy,
+      {
+        producto: n.producto ?? null,
+        montoEstimado: n.monto_estimado === null ? null : Number(n.monto_estimado),
+        plazoMeses: n.plazo_meses === null ? null : Number(n.plazo_meses),
+        destino: n.destino ?? null,
+        garantiaTipo: n.garantia_tipo ?? null,
+        rfcEmpresa: n.rfc ?? null,
+        proceso: await cargarProceso(tx, p.id, (n.j ?? {}) as Record<string, unknown>),
+      },
+      p.porComite,
+    );
     if (!v.ok) throw new NegocioError(v.error);
     const d = v.datos;
     const cierre = d.etapa === "pospuesto" || d.etapa === "rechazado";
@@ -347,9 +412,7 @@ export async function cambiarEtapa(p: {
       await tx`UPDATE crm_negocios_credito SET colocacion_id = ${c.id} WHERE id = ${p.id}`;
     }
     return { de: n.etapa as EtapaNegocio, a: d.etapa, motivo: d.motivo, recontactarEl: d.recontactarEl, rechazoMotivo: d.rechazoMotivo, rechazoPor: d.rechazoPor, colocacionId };
-  });
-  await logAudit({ actorEmail: p.actor, action: "etapa_negocio", entityType: "negocio", entityId: p.id, metadata: r });
-  return r.a;
+  }
 }
 
 /** Guarda los datos de la solicitud (producto, monto, plazo, destino y garantía). Regresa si cambió algo. */
@@ -359,7 +422,8 @@ export async function guardarSolicitud(p: { id: string; datos: DatosSolicitud; a
     FROM crm_negocios_credito n WHERE id = ${p.id} AND ambiente = ${ambienteActual()}
   `;
   if (!antes) throw new NegocioError("Ese negocio no existe.");
-  const conComision = "comision_apertura_pct" in (antes.j ?? {});
+  // Con la fase O5 la comisión se captura en la oferta, no en la solicitud.
+  const conComision = "comision_apertura_pct" in (antes.j ?? {}) && !tieneProceso(antes.j);
   const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
   const d = p.datos;
   const pares: [string, unknown, unknown][] = [

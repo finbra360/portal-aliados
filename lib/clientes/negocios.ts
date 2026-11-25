@@ -4,6 +4,7 @@
 // Funciones puras, sin base de datos, para probarlas con `node --test`.
 
 import { validarRfc } from "./rfc.ts";
+import type { DecisionComite, RespuestaOferta, ResultadoBuro } from "./comite.ts";
 
 export type EtapaNegocio =
   | "prospecto"
@@ -193,6 +194,7 @@ export const MOTIVOS_RECHAZO: Record<string, { label: string; por: "finbra" | "c
   ya_no_necesita: { label: "Ya no lo necesita", por: "cliente" },
   no_responde: { label: "Dejó de responder", por: "cliente" },
   tiempos: { label: "Tiempos del proceso", por: "cliente" },
+  comite: { label: "Rechazado en comité", por: "finbra" },
 };
 
 export interface DatosSolicitud {
@@ -257,6 +259,24 @@ export interface ParaRequisitos {
   destino: Destino | null;
   garantiaTipo: TipoGarantia | null;
   rfcEmpresa: string | null;
+  /** Análisis, oferta, expediente y comité (fase O5). null o ausente: la base todavía no los tiene y no se piden. */
+  proceso?: DatosProceso | null;
+}
+
+export interface DatosProceso {
+  buroResultado: ResultadoBuro | null;
+  capacidadPagoMensual: number | null;
+  garantiaValor: number | null;
+  ofertaMonto: number | null;
+  ofertaTasaAnual: number | null;
+  ofertaPlazoMeses: number | null;
+  comisionAperturaPct: number | null;
+  ofertaRespuesta: RespuestaOferta | null;
+  expedienteUrl: string | null;
+  /** Documentos de la lista del producto que siguen pendientes. */
+  documentosPendientes: number;
+  /** Última decisión del comité. */
+  decision: DecisionComite | null;
 }
 
 /** Datos mínimos de cada etapa; las siguientes heredan los de las anteriores. */
@@ -269,11 +289,45 @@ const REQUISITOS: { desde: EtapaNegocio; texto: string; cumple: (n: ParaRequisit
   { desde: "solicitud", texto: "destino del crédito", cumple: (n) => !!n.destino },
 ];
 
-/** Lo que le falta al negocio para estar en `etapa` (vacío si no le falta nada o si es un cierre). */
-export function faltantesPara(etapa: EtapaNegocio, n: ParaRequisitos): string[] {
+/**
+ * Pasos del proceso (fase O5): se piden al cruzar la etapa, no después. Un
+ * negocio que ya estaba más adelante (migrado de Operaciones o anterior a O5)
+ * no tiene que capturarlos para seguir avanzando.
+ */
+const PASOS: { desde: EtapaNegocio; texto: (p: DatosProceso) => string; cumple: (p: DatosProceso, n: ParaRequisitos) => boolean }[] = [
+  { desde: "oferta", texto: () => "resultado de buró", cumple: (p) => !!p.buroResultado },
+  { desde: "oferta", texto: () => "capacidad de pago", cumple: (p) => p.capacidadPagoMensual !== null },
+  { desde: "oferta", texto: () => "valor de la garantía", cumple: (p, n) => n.garantiaTipo === "sin_garantia" || p.garantiaValor !== null },
+  {
+    desde: "expediente",
+    texto: () => "la oferta completa (monto, tasa, plazo y comisión)",
+    cumple: (p) => p.ofertaMonto !== null && p.ofertaTasaAnual !== null && p.ofertaPlazoMeses !== null && p.comisionAperturaPct !== null,
+  },
+  { desde: "expediente", texto: () => "que el cliente acepte la oferta", cumple: (p) => p.ofertaRespuesta === "aceptada" },
+  { desde: "comite", texto: () => "la liga a la carpeta del expediente", cumple: (p) => !!p.expedienteUrl },
+  {
+    desde: "comite",
+    texto: (p) => (p.documentosPendientes === 1 ? "1 documento del expediente" : `${p.documentosPendientes} documentos del expediente`),
+    cumple: (p) => p.documentosPendientes === 0,
+  },
+  { desde: "formalizacion", texto: () => "la aprobación del comité", cumple: (p) => p.decision === "aprobado" },
+];
+
+/**
+ * Lo que le falta al negocio para estar en `etapa` (vacío si no le falta nada
+ * o si es un cierre). Con `actual`, los pasos del proceso solo se piden si el
+ * negocio todavía no los había cruzado; un pospuesto o rechazado que se reabre
+ * los tiene que cumplir todos.
+ */
+export function faltantesPara(etapa: EtapaNegocio, n: ParaRequisitos, actual?: EtapaNegocio): string[] {
   if (CIERRES.includes(etapa)) return [];
   const hasta = ORDEN.get(etapa)!;
-  return REQUISITOS.filter((r) => ORDEN.get(r.desde)! <= hasta && !r.cumple(n)).map((r) => r.texto);
+  const datos = REQUISITOS.filter((r) => ORDEN.get(r.desde)! <= hasta && !r.cumple(n)).map((r) => r.texto);
+  const p = n.proceso;
+  if (!p) return datos;
+  const ya = actual && estaAbierto(actual) ? ORDEN.get(actual)! : -1;
+  const pasos = PASOS.filter((r) => ORDEN.get(r.desde)! <= hasta && ORDEN.get(r.desde)! > ya && !r.cumple(p, n)).map((r) => r.texto(p));
+  return [...datos, ...pasos];
 }
 
 /** Lista legible: «producto, monto estimado y plazo». */
@@ -303,6 +357,8 @@ export function validarCambioEtapa(
   entrada: { motivo?: string; recontactarEl?: string; motivoRechazo?: string },
   hoy: string,
   datos: ParaRequisitos,
+  /** Lo mueve la decisión del comité: puede rechazar con el motivo «comite». */
+  porComite = false,
 ): Validado<CambioValidado> {
   if (!ORDEN.has(nueva as EtapaNegocio)) return { ok: false, error: "Esa etapa no existe." };
   const etapa = nueva as EtapaNegocio;
@@ -322,6 +378,7 @@ export function validarCambioEtapa(
   }
   if (etapa === "rechazado") {
     const clave = (entrada.motivoRechazo ?? "").trim();
+    if (clave === "comite" && !porComite) return { ok: false, error: "El rechazo en comité se registra con la decisión del comité." };
     const motivo = MOTIVOS_RECHAZO[clave];
     if (!motivo) return { ok: false, error: "Elige el motivo del rechazo." };
     return { ok: true, datos: { ...base, motivo: m ? `${motivo.label}: ${m}` : motivo.label, rechazoMotivo: clave, rechazoPor: motivo.por } };
@@ -332,7 +389,7 @@ export function validarCambioEtapa(
     if (!m) return { ok: false, error: "Escribe por qué regresa a una etapa anterior." };
     return { ok: true, datos: base };
   }
-  const faltan = faltantesPara(etapa, datos);
+  const faltan = faltantesPara(etapa, datos, actual);
   if (faltan.length) return { ok: false, error: `Para pasar a ${ETIQUETA_ETAPA[etapa]} falta: ${listaLegible(faltan)}.` };
   return { ok: true, datos: base };
 }

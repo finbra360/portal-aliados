@@ -8,6 +8,9 @@ import { CAMPOS, DEFAULTS, valoresDe } from "@/lib/clientes/ajustes";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import { FormAjustes, FormEjecutivoPorOmision } from "./FormAjustes";
+import { FormDocumentos } from "./FormDocumentos";
+import { getListasDocumentos } from "@/lib/db/comite";
+import { DOCUMENTOS_DEFAULT } from "@/lib/clientes/comite";
 
 export default async function AjustesClientesPage() {
   const session = await getAdminSession();
@@ -17,8 +20,9 @@ export default async function AjustesClientesPage() {
 
   let ajustes: Awaited<ReturnType<typeof getAjustesClientes>>;
   let ejecutivos: Awaited<ReturnType<typeof listEjecutivos>>;
+  let documentos: Awaited<ReturnType<typeof getListasDocumentos>>;
   try {
-    [ajustes, ejecutivos] = await Promise.all([getAjustesClientes(), listEjecutivos()]);
+    [ajustes, ejecutivos, documentos] = await Promise.all([getAjustesClientes(), listEjecutivos(), getListasDocumentos()]);
   } catch (e) {
     const c = codigoDeError("clientes: ajustes", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar los ajustes. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -59,6 +63,14 @@ export default async function AjustesClientesPage() {
           <p className="text-sm text-finbra-gray">Tareas que se crean solas después de la foto diaria de SIAC. Apagar uno no borra las tareas que ya creó.</p>
         </div>
         <FormAjustes clave="playbooks" campos={CAMPOS.playbooks} valores={ajustes.playbooks} omision={valoresDe("playbooks", DEFAULTS.playbooks)} />
+      </Card>
+
+      <Card className="space-y-4">
+        <div>
+          <h2 className="text-lg font-bold">Documentos del expediente</h2>
+          <p className="text-sm text-finbra-gray">Lo que se pide en cada negocio según su producto. Para pasar a Comité todos tienen que estar recibidos o marcados «no aplica».</p>
+        </div>
+        <FormDocumentos listas={documentos} omision={DOCUMENTOS_DEFAULT} />
       </Card>
     </div>
   );

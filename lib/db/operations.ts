@@ -114,7 +114,16 @@ export async function getOperationOfBroker(id: string, brokerId: string): Promis
 export async function listOperationHistory(operationId: string): Promise<{ etapa: OperationStatus; fecha: string }[]> {
   if (/^[0-9a-f-]{36}$/i.test(operationId)) {
     const cambios = await sql`SELECT de, a, ocurrido_at FROM crm_negocio_etapas WHERE negocio_id = ${operationId} ORDER BY ocurrido_at, id`;
-    return historialParaBroker(cambios.map((c) => ({ de: (c.de as string) ?? null, a: c.a as string, fecha: (c.ocurrido_at as Date).toISOString() })));
+    const historial = historialParaBroker(cambios.map((c) => ({ de: (c.de as string) ?? null, a: c.a as string, fecha: (c.ocurrido_at as Date).toISOString() })));
+    // «Aprobada» no es una etapa del negocio: es la decisión del comité (fase O5).
+    const [{ hay }] = await sql`SELECT to_regclass('public.crm_negocio_decisiones') IS NOT NULL AS hay`;
+    if (hay) {
+      const [d] = await sql`
+        SELECT decidido_at FROM crm_negocio_decisiones WHERE negocio_id = ${operationId} AND decision = 'aprobado' ORDER BY decidido_at DESC, id DESC LIMIT 1
+      `;
+      if (d) historial.push({ etapa: "aprobada", fecha: (d.decidido_at as Date).toISOString() });
+    }
+    return historial;
   }
   const rows = await sql`
     SELECT etapa, created_at FROM operation_history WHERE operation_id = ${Number(operationId)} ORDER BY created_at, id
