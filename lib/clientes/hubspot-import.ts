@@ -102,7 +102,29 @@ export function leerFecha(v: string | undefined): string | null {
   return null;
 }
 
-export type LecturaExport = { ok: true; filas: FilaHubspot[]; sinEmpresa: boolean } | { ok: false; error: string };
+/** Una columna que el export no trae y qué pasa si se importa así. */
+export interface ColumnaFaltante {
+  columna: string;
+  efecto: string;
+}
+
+/**
+ * Columnas que no son obligatorias pero cambian lo que se importa. Si faltan,
+ * la vista previa lo avisa antes de importar: en nov-2026 un export sin
+ * «Origen» dejó todos los negocios como «Otro» y nadie lo notó.
+ */
+const IMPORTANTES: { col: Columna | "empresa"; columna: string; efecto: string }[] = [
+  { col: "empresa", columna: "Empresa asociada", efecto: "se usa el nombre del negocio como nombre de la empresa" },
+  { col: "origen", columna: "Origen", efecto: "todos entran con origen «Otro»: no se sabrá cuáles vienen de broker, Pymio, outbound o marketing" },
+  { col: "monto", columna: "Valor", efecto: "entran sin monto" },
+  { col: "propietario", columna: "Propietario del negocio", efecto: "entran sin responsable" },
+  { col: "creado", columna: "Fecha de creación", efecto: "su fecha de alta será la de hoy y las métricas de tiempo saldrán mal" },
+  { col: "cierre", columna: "Fecha de cierre", efecto: "los cerrados toman su fecha de alta como fecha de cierre" },
+  { col: "actividad", columna: "Última actividad", efecto: "no se pueden marcar solos los abiertos con actividad reciente" },
+  { col: "motivoPerdida", columna: "Motivo de pérdida", efecto: "los rechazados entran sin el motivo de HubSpot" },
+];
+
+export type LecturaExport = { ok: true; filas: FilaHubspot[]; sinEmpresa: boolean; faltan: ColumnaFaltante[] } | { ok: false; error: string };
 
 /** Lee el export de negocios de HubSpot. Pide al menos ID, nombre, etapa y pipeline. */
 export function leerExport(texto: string): LecturaExport {
@@ -115,10 +137,10 @@ export function leerExport(texto: string): LecturaExport {
   }
   // El motivo de pérdida cambia de nombre según el idioma de HubSpot.
   if (indice.motivoPerdida < 0) indice.motivoPerdida = encabezado.findIndex((h) => /motivo.*perdid|closed lost reason/.test(h));
-  const faltan = (["id", "nombre", "etapa", "pipeline"] as Columna[]).filter((c) => indice[c] < 0);
-  if (faltan.length) {
+  const obligatorias = (["id", "nombre", "etapa", "pipeline"] as Columna[]).filter((c) => indice[c] < 0);
+  if (obligatorias.length) {
     const nombres: Record<string, string> = { id: "ID de registro", nombre: "Nombre del negocio", etapa: "Etapa del negocio", pipeline: "Pipeline" };
-    return { ok: false, error: `Al archivo le faltan columnas: ${faltan.map((c) => `«${nombres[c]}»`).join(", ")}. Expórtalo desde Negocios con todas las propiedades.` };
+    return { ok: false, error: `Al archivo le faltan columnas: ${obligatorias.map((c) => `«${nombres[c]}»`).join(", ")}. Expórtalo desde Negocios con todas las propiedades.` };
   }
   const iEmpresa = encabezado.findIndex(esColumnaEmpresa);
   const valor = (f: string[], col: Columna) => (indice[col] >= 0 ? (f[indice[col]] ?? "").trim() : "");
@@ -145,7 +167,8 @@ export function leerExport(texto: string): LecturaExport {
     });
   }
   if (r.length === 0) return { ok: false, error: "No encontramos negocios con ID de HubSpot en el archivo." };
-  return { ok: true, filas: r, sinEmpresa: iEmpresa < 0 };
+  const faltan = IMPORTANTES.filter((x) => (x.col === "empresa" ? iEmpresa < 0 : indice[x.col] < 0)).map(({ columna, efecto }) => ({ columna, efecto }));
+  return { ok: true, filas: r, sinEmpresa: iEmpresa < 0, faltan };
 }
 
 /**
