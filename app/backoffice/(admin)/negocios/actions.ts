@@ -7,6 +7,8 @@ import { requierePermiso } from "@/lib/permisos";
 import { codigoDeError } from "@/lib/collections/errors";
 import { validarNegocio, validarSolicitud } from "@/lib/clientes/negocios";
 import { NegocioError, cambiarBroker, cambiarEtapa, crearNegocio, editarNegocio, guardarMensajeBroker, guardarSolicitud } from "@/lib/db/negocios";
+import { validarAnalisis, validarDecision, validarDocumentos, validarLigaExpediente, validarOferta } from "@/lib/clientes/comite";
+import { getProcesoNegocio, guardarAnalisis, guardarExpediente, guardarOferta, registrarDecision } from "@/lib/db/comite";
 
 export type NegocioResult = { ok: true; mensaje: string } | { ok: false; error: string };
 
@@ -114,5 +116,77 @@ export async function guardarMensajeBrokerAction(id: string, _prev: NegocioResul
     if (e instanceof NegocioError) return { ok: false, error: e.message };
     const c = codigoDeError("originación: mensaje al broker", e);
     return { ok: false, error: `No pudimos guardar el mensaje. Intenta de nuevo. (código ${c})` };
+  }
+}
+
+// ---------------------------------------------------------------- análisis, oferta, expediente y comité (fase O5)
+
+function errorDe(e: unknown, donde: string, que: string): NegocioResult {
+  if (e instanceof NegocioError) return { ok: false, error: e.message };
+  const c = codigoDeError(`originación: ${donde}`, e);
+  return { ok: false, error: `No pudimos guardar ${que}. Intenta de nuevo. (código ${c})` };
+}
+
+/** Resultado de buró, capacidad de pago y notas. Solo quien analiza crédito. */
+export async function guardarAnalisisAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.analizar");
+  const v = validarAnalisis(Object.fromEntries(fd.entries()));
+  if (!v.ok) return { ok: false, error: v.error };
+  try {
+    const cambio = await guardarAnalisis({ id, datos: v.datos, actor: admin.email });
+    refrescar();
+    return { ok: true, mensaje: cambio ? "Análisis guardado." : "No había cambios." };
+  } catch (e) {
+    return errorDe(e, "guardar análisis", "el análisis");
+  }
+}
+
+/** Monto, tasa, plazo, comisión por apertura y respuesta del cliente. */
+export async function guardarOfertaAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  const v = validarOferta(Object.fromEntries(fd.entries()));
+  if (!v.ok) return { ok: false, error: v.error };
+  try {
+    const cambio = await guardarOferta({ id, datos: v.datos, actor: admin.email });
+    refrescar();
+    return { ok: true, mensaje: cambio ? "Oferta guardada." : "No había cambios." };
+  } catch (e) {
+    return errorDe(e, "guardar oferta", "la oferta");
+  }
+}
+
+/** Liga a la carpeta y estado de cada documento de la lista del producto. */
+export async function guardarExpedienteAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  const entrada = Object.fromEntries(fd.entries());
+  const liga = validarLigaExpediente(entrada.expedienteUrl);
+  if (!liga.ok) return { ok: false, error: liga.error };
+  try {
+    const proceso = await getProcesoNegocio(id);
+    if (!proceso) return { ok: false, error: "Falta correr crm-schema.sql para capturar el expediente." };
+    const docs = validarDocumentos(
+      proceso.documentos.map((d) => d.nombre),
+      entrada,
+    );
+    if (!docs.ok) return { ok: false, error: docs.error };
+    const n = await guardarExpediente({ id, url: liga.datos, documentos: docs.datos, actor: admin.email });
+    refrescar();
+    return { ok: true, mensaje: n ? "Expediente guardado." : "No había cambios." };
+  } catch (e) {
+    return errorDe(e, "guardar expediente", "el expediente");
+  }
+}
+
+/** Decisión del comité. Solo quien decide en comité. */
+export async function registrarDecisionAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.decidir");
+  const v = validarDecision(Object.fromEntries(fd.entries()));
+  if (!v.ok) return { ok: false, error: v.error };
+  try {
+    const a = await registrarDecision({ id, datos: v.datos, actor: admin.email });
+    refrescar();
+    return { ok: true, mensaje: a === "formalizacion" ? "Aprobado: el negocio pasó a Formalización." : "Rechazado en comité: el negocio quedó cerrado." };
+  } catch (e) {
+    return errorDe(e, "decisión de comité", "la decisión");
   }
 }

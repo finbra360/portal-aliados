@@ -373,6 +373,50 @@ BEGIN
   WHERE n.origen_ref LIKE 'operacion:%' AND NOT EXISTS (SELECT 1 FROM crm_negocio_etapas x WHERE x.negocio_id = n.id);
 END $$;
 
+-- Fase O5: análisis, oferta, expediente y comité (lib/clientes/comite.ts).
+-- Análisis: lo captura quien tiene originacion.analizar.
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS buro_resultado TEXT CHECK (buro_resultado IN ('limpio', 'observaciones', 'malo'));
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS capacidad_pago_mensual NUMERIC(14, 2) CHECK (capacidad_pago_mensual > 0);
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS analisis_notas TEXT;
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS analizado_por TEXT;
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS analizado_at TIMESTAMPTZ;
+-- Oferta comercial (la comisión por apertura es comision_apertura_pct, de O4).
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS oferta_monto NUMERIC(14, 2) CHECK (oferta_monto > 0);
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS oferta_tasa_anual NUMERIC(5, 2) CHECK (oferta_tasa_anual > 0 AND oferta_tasa_anual <= 100);
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS oferta_plazo_meses INTEGER CHECK (oferta_plazo_meses BETWEEN 1 AND 120);
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS oferta_respuesta TEXT CHECK (oferta_respuesta IN ('aceptada', 'no_aceptada'));
+-- Carpeta del expediente (Drive u otra): los archivos no se suben al backoffice.
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS expediente_url TEXT;
+
+-- Estado de cada documento del expediente. La lista sale de crm_settings
+-- «expediente» según el producto; aquí solo los que alguien ya marcó. La clave
+-- sale del nombre (claveDocumento) y el nombre se guarda por si cambia la lista.
+CREATE TABLE IF NOT EXISTS crm_negocio_documentos (
+  negocio_id UUID NOT NULL REFERENCES crm_negocios_credito(id) ON DELETE CASCADE,
+  clave TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'recibido', 'no_aplica')),
+  actualizado_por TEXT NOT NULL,
+  actualizado_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (negocio_id, clave)
+);
+
+-- Decisiones del comité de crédito: cuenta la última. Aprobado lleva monto,
+-- tasa y plazo; rechazado lleva el porqué en condiciones.
+CREATE TABLE IF NOT EXISTS crm_negocio_decisiones (
+  id BIGSERIAL PRIMARY KEY,
+  negocio_id UUID NOT NULL REFERENCES crm_negocios_credito(id) ON DELETE CASCADE,
+  decision TEXT NOT NULL CHECK (decision IN ('aprobado', 'rechazado')),
+  monto NUMERIC(14, 2) CHECK (monto > 0),
+  tasa_anual NUMERIC(5, 2) CHECK (tasa_anual > 0 AND tasa_anual <= 100),
+  plazo_meses INTEGER CHECK (plazo_meses BETWEEN 1 AND 120),
+  condiciones TEXT,
+  decidido_por TEXT NOT NULL,
+  decidido_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (decision = 'rechazado' OR (monto IS NOT NULL AND tasa_anual IS NOT NULL AND plazo_meses IS NOT NULL))
+);
+CREATE INDEX IF NOT EXISTS idx_crm_negocio_decisiones_negocio ON crm_negocio_decisiones(negocio_id, decidido_at);
+
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
 INSERT INTO crm_empresas (ambiente, nombre, razon_social, origen, creada_desde_cliente, ejecutivo_email, created_by)
@@ -401,3 +445,5 @@ ALTER TABLE crm_salud_diaria ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_persona_canales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_negocios_credito ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_negocio_etapas ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_negocio_documentos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_negocio_decisiones ENABLE ROW LEVEL SECURITY;

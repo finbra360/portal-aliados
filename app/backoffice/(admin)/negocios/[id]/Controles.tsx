@@ -33,6 +33,16 @@ function Aviso({ r }: { r: NegocioResult | null }) {
 }
 
 const ORDEN = new Map(ETAPAS_NEGOCIO.map((e, i) => [e.value, i]));
+
+/** En qué tarjeta de la ficha se captura cada cosa que falta (faltantesPara). */
+function dondeSeCaptura(falta: string): string {
+  if (falta === "RFC de la empresa") return "los datos de la empresa";
+  if (falta === "resultado de buró" || falta === "capacidad de pago") return "«Análisis»";
+  if (falta.startsWith("la oferta") || falta.startsWith("que el cliente")) return "«Oferta»";
+  if (falta.startsWith("la liga") || falta.includes("documento")) return "«Expediente»";
+  if (falta.startsWith("la aprobación")) return "«Comité»";
+  return "«Solicitud»";
+}
 const mananaDe = (hoy: string) => new Date(Date.parse(`${hoy}T12:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 
 /**
@@ -56,7 +66,8 @@ export function MoverEtapa({ id, etapa, requisitos, hoy }: { id: string; etapa: 
   if (etapa === "dispersado") return <p className="text-sm text-finbra-gray">El crédito ya está dispersado; el negocio no cambia de etapa.</p>;
   const destino = nueva as EtapaNegocio;
   const regresa = !!nueva && estaAbierto(etapa) && estaAbierto(destino) && (ORDEN.get(destino) ?? 0) < (ORDEN.get(etapa) ?? 0);
-  const faltan = nueva && !regresa && !CIERRES.includes(destino) ? faltantesPara(destino, requisitos) : [];
+  const faltan = nueva && !regresa && !CIERRES.includes(destino) ? faltantesPara(destino, requisitos, etapa) : [];
+  const donde = [...new Set(faltan.map(dondeSeCaptura))];
   const siguiente = siguienteDe(etapa);
 
   return (
@@ -81,7 +92,7 @@ export function MoverEtapa({ id, etapa, requisitos, hoy }: { id: string; etapa: 
 
       {faltan.length > 0 && (
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Para pasar a {ETIQUETA_ETAPA[destino]} falta: {listaLegible(faltan)}. Captúralo en «Solicitud»{faltan.includes("RFC de la empresa") ? " (el RFC, en los datos de la empresa)" : ""}.
+          Para pasar a {ETIQUETA_ETAPA[destino]} falta: {listaLegible(faltan)}. Se captura en {listaLegible(donde)}.
         </p>
       )}
 
@@ -99,7 +110,7 @@ export function MoverEtapa({ id, etapa, requisitos, hoy }: { id: string; etapa: 
             <option value="" disabled>Elige el motivo</option>
             <optgroup label="Finbra no lo aprobó">
               {Object.entries(MOTIVOS_RECHAZO)
-                .filter(([, m]) => m.por === "finbra")
+                .filter(([k, m]) => m.por === "finbra" && k !== "comite")
                 .map(([k, m]) => (
                   <option key={k} value={k}>{m.label}</option>
                 ))}
@@ -137,8 +148,11 @@ export function MoverEtapa({ id, etapa, requisitos, hoy }: { id: string; etapa: 
   );
 }
 
-/** Producto, monto, plazo, destino y garantía. */
-export function Solicitud({ id, s }: { id: string; s: DatosSolicitud }) {
+/**
+ * Producto, monto, plazo, destino y garantía. La comisión por apertura va aquí
+ * solo mientras la base no tenga la fase O5; después se captura en la oferta.
+ */
+export function Solicitud({ id, s, conComision }: { id: string; s: DatosSolicitud; conComision: boolean }) {
   const [r, accion, guardando] = useActionState(guardarSolicitudAction.bind(null, id), null);
   const [garantia, setGarantia] = useState<string>(s.garantiaTipo ?? "");
   const pesos = (n: number | null) => (n !== null ? n.toLocaleString("es-MX") : "");
@@ -201,6 +215,7 @@ export function Solicitud({ id, s }: { id: string; s: DatosSolicitud }) {
           </>
         )}
       </div>
+      {conComision && (
       <div className="space-y-1 sm:w-1/3">
         <label htmlFor="comisionAperturaPct" className={etiqueta}>Comisión por apertura (%) <span className="font-normal text-finbra-gray">(opcional)</span></label>
         <input
@@ -213,6 +228,7 @@ export function Solicitud({ id, s }: { id: string; s: DatosSolicitud }) {
         />
         <p className="text-xs text-finbra-gray">En negocios de broker define su comisión al dispersar.</p>
       </div>
+      )}
       <div className="flex flex-wrap items-center gap-3">
         <button type="submit" disabled={guardando} className={boton}>{guardando ? "Guardando…" : "Guardar solicitud"}</button>
         <Aviso r={r} />

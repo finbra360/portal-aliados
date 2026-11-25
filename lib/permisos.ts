@@ -20,7 +20,9 @@ export type Permiso =
   | "cobranza.operar"
   | "cobranza.configurar"
   | "originacion.ver"
-  | "originacion.operar";
+  | "originacion.operar"
+  | "originacion.analizar"
+  | "originacion.decidir";
 
 export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly AdminRole[] }> = {
   "cartera.ver": {
@@ -51,8 +53,16 @@ export const PERMISOS: Record<Permiso, { descripcion: string; roles: readonly Ad
   },
   "originacion.operar": {
     descripcion:
-      "Dar de alta negocios y empresas prospecto, moverlos de etapa y editar monto, responsable y notas. Quién analiza y quién decide en comité se separa en la fase O5.",
+      "Dar de alta negocios y empresas prospecto, moverlos de etapa y editar la solicitud, la oferta, los documentos del expediente, responsable y notas. El análisis y la decisión de comité tienen su propio permiso.",
     roles: ["super_admin", "finanzas", "comercial"],
+  },
+  "originacion.analizar": {
+    descripcion: "Capturar el análisis de crédito de un negocio: resultado de buró, capacidad de pago y notas. Sin el análisis no pasa a Oferta.",
+    roles: ["super_admin", "finanzas"],
+  },
+  "originacion.decidir": {
+    descripcion: "Registrar la decisión del comité de crédito (aprobado con sus condiciones, o rechazado). Aprobado pasa el negocio a Formalización.",
+    roles: ["super_admin"],
   },
 };
 
