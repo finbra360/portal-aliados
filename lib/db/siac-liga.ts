@@ -4,10 +4,11 @@
 // empresa a su cliente, todo pasa a la del negocio y la de SIAC se borra.
 // Antes de correr crm-schema.sql no existe credit_id: no se ofrece ligar.
 
-import { sql, transaccion, type Tx } from "@/lib/db";
+import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { NegocioError } from "@/lib/db/negocios";
+import { juntarEmpresas } from "@/lib/db/juntar-empresas";
 import { comoJuntar, sugerirCreditos, VENTANA_DIAS, type CreditoSiac, type Sugerencia } from "@/lib/clientes/siac-liga";
 
 const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -98,62 +99,6 @@ export async function getLigaSiac(negocioId: string): Promise<LigaSiac | null> {
     ligado: null,
     sugerencias: sugerirCreditos({ empresaId: n.empresa_id as string, nombres, monto, dispersadoEl }, creditos.map(mapCredito)),
   };
-}
-
-/**
- * Pasa todo de la empresa que creó SIAC (`de`) a la del negocio (`a`) y borra
- * la de SIAC. Lo que choca (un segundo contacto principal, otra oportunidad
- * abierta del mismo tipo, la salud del mismo día) se queda en la de SIAC y se
- * borra con ella. Los datos que le falten a la del negocio se toman de la otra.
- */
-async function juntarEmpresas(tx: Tx, a: string, de: string) {
-  const movidos: Record<string, number> = {};
-  const contar = (k: string, filas: { length: number }) => {
-    if (filas.length) movidos[k] = filas.length;
-  };
-  contar("clientes", await tx`UPDATE col_clients SET empresa_id = ${a} WHERE empresa_id = ${de} RETURNING id`);
-  const [{ principal }] = await tx`SELECT EXISTS (SELECT 1 FROM crm_personas WHERE empresa_id = ${a} AND es_principal AND vigente) AS principal`;
-  if (principal) await tx`UPDATE crm_personas SET es_principal = false WHERE empresa_id = ${de} AND es_principal`;
-  contar("personas", await tx`UPDATE crm_personas SET empresa_id = ${a} WHERE empresa_id = ${de} RETURNING id`);
-  contar("actividades", await tx`UPDATE crm_actividades SET empresa_id = ${a} WHERE empresa_id = ${de} RETURNING id`);
-  contar("tareas", await tx`UPDATE crm_tareas SET empresa_id = ${a} WHERE empresa_id = ${de} RETURNING id`);
-  const [{ oportunidades }] = await tx`SELECT to_regclass('public.crm_oportunidades') IS NOT NULL AS oportunidades`;
-  if (oportunidades) {
-    contar(
-      "oportunidades",
-      await tx`
-        UPDATE crm_oportunidades o SET empresa_id = ${a}
-        WHERE o.empresa_id = ${de}
-          AND NOT (o.estado IN ('abierta', 'en_contacto', 'interesado') AND EXISTS (
-            SELECT 1 FROM crm_oportunidades x WHERE x.empresa_id = ${a} AND x.tipo = o.tipo AND x.estado IN ('abierta', 'en_contacto', 'interesado')
-          ))
-        RETURNING o.id
-      `,
-    );
-  }
-  const [{ salud }] = await tx`SELECT to_regclass('public.crm_salud_diaria') IS NOT NULL AS salud`;
-  if (salud) {
-    await tx`
-      UPDATE crm_salud_diaria s SET empresa_id = ${a}
-      WHERE s.empresa_id = ${de} AND NOT EXISTS (SELECT 1 FROM crm_salud_diaria x WHERE x.empresa_id = ${a} AND x.fecha = s.fecha)
-    `;
-  }
-  contar("negocios", await tx`UPDATE crm_negocios_credito SET empresa_id = ${a} WHERE empresa_id = ${de} RETURNING id`);
-  await tx`
-    UPDATE crm_empresas e SET
-      razon_social = COALESCE(e.razon_social, o.razon_social),
-      nombre_comercial = COALESCE(e.nombre_comercial, o.nombre_comercial),
-      industria = COALESCE(e.industria, o.industria),
-      scian_code = COALESCE(e.scian_code, o.scian_code),
-      sitio_web = COALESCE(e.sitio_web, o.sitio_web),
-      ejecutivo_email = COALESCE(e.ejecutivo_email, o.ejecutivo_email),
-      updated_at = now()
-    FROM crm_empresas o
-    WHERE e.id = ${a} AND o.id = ${de}
-  `;
-  await tx`UPDATE crm_empresas SET creada_desde_cliente = NULL WHERE id = ${de}`;
-  await tx`DELETE FROM crm_empresas WHERE id = ${de}`;
-  return movidos;
 }
 
 /**

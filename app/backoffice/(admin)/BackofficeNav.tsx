@@ -28,8 +28,9 @@ const NAV: NavEntry[] = [
     roles: PERMISOS["cartera.ver"].roles,
     items: [
       { href: "/backoffice/clientes/resumen", label: "Resumen de cartera" },
-      { href: "/backoffice/clientes", label: "Todos los clientes", excluir: ["/backoffice/clientes/renovaciones", "/backoffice/clientes/resumen", "/backoffice/clientes/ajustes"] },
+      { href: "/backoffice/clientes", label: "Todos los clientes", excluir: ["/backoffice/clientes/renovaciones", "/backoffice/clientes/resumen", "/backoffice/clientes/ajustes", "/backoffice/clientes/revisar"] },
       { href: "/backoffice/clientes/renovaciones", label: "Renovaciones" },
+      { href: "/backoffice/clientes/revisar", label: "Empresas por revisar", permiso: "clientes.configurar" },
       { href: "/backoffice/clientes/ajustes", label: "Ajustes", permiso: "clientes.configurar" },
     ],
   },
