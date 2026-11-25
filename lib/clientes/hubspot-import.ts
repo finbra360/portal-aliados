@@ -20,7 +20,9 @@ export const normal = (s: string) =>
 export function leerCsv(texto: string): string[][] {
   const t = texto.replace(/^﻿/, "");
   const primera = t.slice(0, t.search(/\r?\n/) === -1 ? t.length : t.search(/\r?\n/));
-  const sep = (primera.match(/;/g)?.length ?? 0) > (primera.match(/,/g)?.length ?? 0) ? ";" : ",";
+  // Coma (CSV), punto y coma (Excel en español) o tabulador (celdas pegadas desde Excel o Sheets).
+  const cuantos = (c: string) => primera.split(c).length - 1;
+  const sep = [",", ";", "\t"].reduce((a, b) => (cuantos(b) > cuantos(a) ? b : a));
   const filas: string[][] = [];
   let fila: string[] = [];
   let campo = "";
