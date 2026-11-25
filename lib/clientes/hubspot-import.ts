@@ -1,6 +1,8 @@
-// Importar a Originación los negocios abiertos de HubSpot (fase O7), desde el
-// export de negocios de HubSpot (CSV). No se trae la historia: solo los
-// abiertos que el equipo marque. Cada negocio guarda su ID de HubSpot
+// Importar a Originación los negocios de HubSpot (fase O7), desde el export
+// de negocios de HubSpot (CSV): los abiertos y, si se marcan, también los
+// cerrados (Seguimiento a futuro → Pospuesto, Rechazados → Rechazado y
+// ganados → Dispersado, con su fecha de cierre). Se importan solo los que el
+// equipo marque. Cada negocio guarda su ID de HubSpot
 // (origen_ref 'hubspot:<id>'), así que subir el export otra vez no duplica.
 // Funciones puras, sin base de datos, para probarlas con `node --test`.
 
@@ -63,6 +65,8 @@ const COLUMNAS = {
   actividad: ["ultima actividad", "fecha de la ultima actividad", "last activity date", "last activity"],
   propietario: ["propietario del negocio", "deal owner", "propietario"],
   origen: ["origen"],
+  cierre: ["fecha de cierre", "close date"],
+  motivoPerdida: ["motivo de perdida", "motivo de perdida del negocio", "motivo de perdida de negocio cerrado", "motivo de cierre perdido", "closed lost reason"],
 } as const;
 type Columna = keyof typeof COLUMNAS;
 
@@ -83,6 +87,9 @@ export interface FilaHubspot {
   ultimaActividad: string | null;
   propietario: string | null;
   origenHubspot: string | null;
+  /** YYYY-MM-DD */
+  cerradoEl: string | null;
+  motivoPerdida: string | null;
 }
 
 /** Fecha del export: «2025-07-14», «2025-07-14 10:32», ISO o «14/07/2025». */
@@ -106,6 +113,8 @@ export function leerExport(texto: string): LecturaExport {
   for (const [col, nombres] of Object.entries(COLUMNAS) as [Columna, readonly string[]][]) {
     indice[col] = encabezado.findIndex((h) => nombres.includes(h));
   }
+  // El motivo de pérdida cambia de nombre según el idioma de HubSpot.
+  if (indice.motivoPerdida < 0) indice.motivoPerdida = encabezado.findIndex((h) => /motivo.*perdid|closed lost reason/.test(h));
   const faltan = (["id", "nombre", "etapa", "pipeline"] as Columna[]).filter((c) => indice[c] < 0);
   if (faltan.length) {
     const nombres: Record<string, string> = { id: "ID de registro", nombre: "Nombre del negocio", etapa: "Etapa del negocio", pipeline: "Pipeline" };
@@ -131,14 +140,20 @@ export function leerExport(texto: string): LecturaExport {
       ultimaActividad: leerFecha(valor(f, "actividad")),
       propietario: valor(f, "propietario") || null,
       origenHubspot: valor(f, "origen") || null,
+      cerradoEl: leerFecha(valor(f, "cierre")),
+      motivoPerdida: valor(f, "motivoPerdida").slice(0, 500) || null,
     });
   }
   if (r.length === 0) return { ok: false, error: "No encontramos negocios con ID de HubSpot en el archivo." };
   return { ok: true, filas: r, sinEmpresa: iEmpresa < 0 };
 }
 
-/** Etapas de HubSpot (etiqueta o ID interno) → etapa del negocio, o «cerrado» si ya terminó. */
-const ETAPAS: Record<string, EtapaNegocio | "cerrado"> = {
+/**
+ * Etapas de HubSpot (etiqueta o ID interno) → etapa del negocio. Las cerradas:
+ * Seguimiento a futuro → Pospuesto, Rechazados → Rechazado, ganados →
+ * Dispersado. «Relación comercial» no es un crédito y no se trae («excluido»).
+ */
+const ETAPAS: Record<string, EtapaNegocio | "excluido"> = {
   "cliente potencial": "prospecto",
   appointmentscheduled: "prospecto",
   oportunidad: "calificado",
@@ -171,22 +186,33 @@ const ETAPAS: Record<string, EtapaNegocio | "cerrado"> = {
   "103420271": "formalizacion",
   "instalacion gps/mediacion": "formalizacion",
   "1320005254": "formalizacion",
-  "contrato ganado": "cerrado",
-  closedwon: "cerrado",
-  "1320560986": "cerrado",
-  "contrato ganado leasing": "cerrado",
-  "221384631": "cerrado",
-  "relacion comercial": "cerrado",
-  "103420272": "cerrado",
-  "seguimiento a futuro": "cerrado",
-  closedlost: "cerrado",
-  "1320560987": "cerrado",
-  rechazados: "cerrado",
-  "1192883721": "cerrado",
-  "1320560988": "cerrado",
+  "contrato ganado": "dispersado",
+  closedwon: "dispersado",
+  "1320560986": "dispersado",
+  "contrato ganado leasing": "dispersado",
+  "221384631": "dispersado",
+  "relacion comercial": "excluido",
+  "103420272": "excluido",
+  "seguimiento a futuro": "pospuesto",
+  closedlost: "pospuesto",
+  "1320560987": "pospuesto",
+  rechazados: "rechazado",
+  "1192883721": "rechazado",
+  "1320560988": "rechazado",
 };
 
-export const etapaDesdeHubspot = (etapa: string): EtapaNegocio | "cerrado" | null => ETAPAS[normal(etapa)] ?? null;
+export const etapaDesdeHubspot = (etapa: string): EtapaNegocio | "excluido" | null => ETAPAS[normal(etapa)] ?? null;
+
+/** Para las pestañas de la vista previa. */
+export type GrupoImportacion = "abierto" | "seguimiento" | "rechazado" | "ganado";
+export const GRUPOS: Record<GrupoImportacion, string> = {
+  abierto: "Abiertos",
+  seguimiento: "Seguimiento a futuro",
+  rechazado: "Rechazados",
+  ganado: "Ganados",
+};
+export const grupoDe = (etapa: EtapaNegocio): GrupoImportacion =>
+  etapa === "pospuesto" ? "seguimiento" : etapa === "rechazado" ? "rechazado" : etapa === "dispersado" ? "ganado" : "abierto";
 
 const ORIGENES: Record<string, OrigenNegocio> = {
   broker: "broker",
@@ -210,6 +236,7 @@ export const DIAS_ACTIVO = 180;
 export interface ParaImportar {
   fila: FilaHubspot;
   etapa: EtapaNegocio | null;
+  grupo: GrupoImportacion;
   origen: OrigenNegocio;
   tipo: TipoNegocio;
   /** Empresa de Clientes con el mismo nombre; null = se crea como prospecto. */
@@ -217,7 +244,7 @@ export interface ParaImportar {
   /** Usuario del backoffice que es el dueño en HubSpot; null = queda quien importa. */
   responsable: { email: string; nombre: string } | null;
   yaImportado: boolean;
-  /** Se marca solo: abierto, con actividad en los últimos DIAS_ACTIVO días y sin importar todavía. */
+  /** Se marca solo: abierto, con actividad en los últimos DIAS_ACTIVO días y sin importar todavía. Los cerrados nunca. */
   marcado: boolean;
   /** Por qué no se puede importar (etapa que no conocemos). */
   problema: string | null;
@@ -229,7 +256,7 @@ const mismoNombre = (a: string, b: string) => {
 };
 
 /**
- * La vista previa: solo los negocios abiertos (los cerrados no se traen), con
+ * La vista previa: abiertos y cerrados (menos «Relación comercial»), con
  * su etapa, origen, empresa y responsable. La empresa se reconoce por nombre
  * (las mismas palabras, sin tipo de sociedad); el responsable, por correo o
  * por nombre.
@@ -242,7 +269,8 @@ export function planImportacion(
   const r: ParaImportar[] = [];
   for (const fila of filas) {
     const etapa = etapaDesdeHubspot(fila.etapaHubspot);
-    if (etapa === "cerrado") continue;
+    if (etapa === "excluido") continue;
+    const grupo = etapa ? grupoDe(etapa) : "abierto";
     const { origen, tipo } = origenDesdeHubspot(fila.origenHubspot, fila.pipeline);
     const e = ctx.empresas.find((x) => mismoNombre(x.nombre, fila.empresa) || (x.razonSocial !== null && mismoNombre(x.razonSocial, fila.empresa)));
     const p = normal(fila.propietario ?? "");
@@ -252,15 +280,40 @@ export function planImportacion(
     r.push({
       fila,
       etapa,
+      grupo,
       origen,
       // Una empresa que no está en Clientes entra como prospecto: su negocio es un crédito nuevo.
       tipo: e ? tipo : "nuevo",
       empresa: e ? { id: e.id, nombre: e.nombre } : null,
       responsable: u ? { email: u.email, nombre: u.nombre } : null,
       yaImportado,
-      marcado: !yaImportado && !problema && !!fila.ultimaActividad && fila.ultimaActividad >= limite,
+      marcado: grupo === "abierto" && !yaImportado && !problema && !!fila.ultimaActividad && fila.ultimaActividad >= limite,
       problema,
     });
   }
   return r.sort((a, b) => Number(b.marcado) - Number(a.marcado) || (b.fila.ultimaActividad ?? "").localeCompare(a.fila.ultimaActividad ?? "") || a.fila.nombre.localeCompare(b.fila.nombre));
+}
+
+/** Encabezados normalizados de las columnas que usa el importador (para compactar el export). */
+function columnasUtiles(encabezado: string[]): number[] {
+  const todas = Object.values(COLUMNAS).flat() as string[];
+  return encabezado
+    .map((h, i) => (todas.includes(h) || esColumnaEmpresa(h) || /motivo.*perdid|closed lost reason/.test(h) ? i : -1))
+    .filter((i) => i >= 0);
+}
+
+const comillas = (v: string) => (/[",\r\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+
+/**
+ * El export con solo las columnas que se usan, para mandarlo al servidor:
+ * un export «con todas las propiedades» puede pasar de 1 MB. Si no trae las
+ * columnas mínimas, regresa el texto tal cual (el servidor dirá qué falta).
+ */
+export function compactarExport(texto: string): string {
+  const filas = leerCsv(texto);
+  if (filas.length < 2) return texto;
+  const encabezado = filas[0].map(normal);
+  const usar = columnasUtiles(encabezado);
+  if (usar.length < 4) return texto;
+  return filas.map((f) => usar.map((i) => comillas(f[i] ?? "")).join(",")).join("\n");
 }

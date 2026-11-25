@@ -1,13 +1,15 @@
 "use client";
 
 // Importar de HubSpot: se elige el export (CSV), se ve la vista previa con una
-// casilla por negocio abierto y se importan los marcados. El archivo se lee en
-// el navegador y se manda como texto; el servidor lo vuelve a leer al importar.
+// casilla por negocio, en pestañas (abiertos, seguimiento a futuro, rechazados
+// y ganados), y se importan los marcados, en tandas para no pasar el tiempo
+// del servidor. El archivo se lee en el navegador y se manda como texto; el
+// servidor lo vuelve a leer en cada tanda.
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { ETIQUETA_ETAPA, ORIGENES_NEGOCIO } from "@/lib/clientes/negocios";
-import type { ParaImportar } from "@/lib/clientes/hubspot-import";
+import { GRUPOS, compactarExport, type GrupoImportacion, type ParaImportar } from "@/lib/clientes/hubspot-import";
 import { formatFecha, formatMoney } from "@/lib/format";
 import { importarHubspotAction, vistaPreviaHubspotAction } from "../actions";
 import { leerArchivo } from "../../brokers/importar/ImportarPanel";
@@ -26,11 +28,19 @@ const secundario = "rounded-lg border border-black/10 px-3 py-1.5 text-sm hover:
 
 type Resultado = { creados: number; empresasNuevas: number; yaEstaban: number; conProblema: number };
 
+/** Negocios por tanda: cada una es una llamada al servidor. */
+const TANDA = 40;
+
+const pestana = (activa: boolean) =>
+  `rounded-full px-3 py-1 text-sm font-medium ${activa ? "bg-finbra-purple text-white" : "bg-black/5 text-finbra-gray hover:bg-black/10"}`;
+
 export default function ImportarHubspot() {
   const [texto, setTexto] = useState<string | null>(null);
   const [archivo, setArchivo] = useState("");
   const [items, setItems] = useState<ParaImportar[] | null>(null);
-  const [info, setInfo] = useState<{ sinEmpresa: boolean; cerrados: number } | null>(null);
+  const [info, setInfo] = useState<{ sinEmpresa: boolean; excluidos: number } | null>(null);
+  const [grupo, setGrupo] = useState<GrupoImportacion>("abierto");
+  const [avance, setAvance] = useState<string | null>(null);
   const [elegidos, setElegidos] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
@@ -39,6 +49,19 @@ export default function ImportarHubspot() {
   const [arrastrando, setArrastrando] = useState(false);
 
   const disponibles = (items ?? []).filter((x) => !x.yaImportado && !x.problema);
+  const delGrupo = (items ?? []).filter((x) => x.grupo === grupo);
+  const disponiblesDelGrupo = disponibles.filter((x) => x.grupo === grupo);
+  const cuantos = (g: GrupoImportacion) => (items ?? []).filter((x) => x.grupo === g).length;
+  const marcadosEn = (g: GrupoImportacion) => (items ?? []).filter((x) => x.grupo === g && elegidos.has(x.fila.hubspotId)).length;
+  const marcarGrupo = (si: boolean) =>
+    setElegidos((s) => {
+      const n = new Set(s);
+      for (const x of disponiblesDelGrupo) {
+        if (si) n.add(x.fila.hubspotId);
+        else n.delete(x.fila.hubspotId);
+      }
+      return n;
+    });
 
   function previsualizar(t: string, conservar = false) {
     startTransition(async () => {
@@ -50,7 +73,7 @@ export default function ImportarHubspot() {
       }
       setError(null);
       setItems(r.items);
-      setInfo({ sinEmpresa: r.sinEmpresa, cerrados: r.cerrados });
+      setInfo({ sinEmpresa: r.sinEmpresa, excluidos: r.excluidos });
       if (!conservar) setElegidos(new Set(r.items.filter((x) => x.marcado).map((x) => x.fila.hubspotId)));
       else setElegidos(new Set());
     });
@@ -65,11 +88,16 @@ export default function ImportarHubspot() {
       setError(tipo);
       return;
     }
-    if (f.size > 900_000) {
+    if (f.size > 30_000_000) {
       setError("El archivo es demasiado grande. Exporta solo los negocios (sin actividades ni notas).");
       return;
     }
-    const t = await leerArchivo(f);
+    // Al servidor solo van las columnas que se usan: un export con todas las propiedades puede pasar de 1 MB.
+    const t = compactarExport(await leerArchivo(f));
+    if (t.length > 900_000) {
+      setError("El archivo es demasiado grande aun quitando las columnas que no se usan. Exporta solo los negocios, sin actividades ni notas.");
+      return;
+    }
     setArchivo(f.name);
     setTexto(t);
     previsualizar(t);
@@ -79,21 +107,37 @@ export default function ImportarHubspot() {
     setResultado(null);
     setError(null);
     if (!pegado.trim()) return;
+    const t = compactarExport(pegado);
     setArchivo("Celdas pegadas");
-    setTexto(pegado);
-    previsualizar(pegado);
+    setTexto(t);
+    previsualizar(t);
   }
 
   function importar() {
     if (!texto || elegidos.size === 0) return;
-    if (!window.confirm(`¿Importar ${elegidos.size} ${elegidos.size === 1 ? "negocio" : "negocios"} de HubSpot?`)) return;
+    const porGrupo = (Object.keys(GRUPOS) as GrupoImportacion[])
+      .map((g) => [GRUPOS[g], marcadosEn(g)] as const)
+      .filter(([, n]) => n > 0)
+      .map(([g, n]) => `${n} ${g.toLowerCase()}`)
+      .join(", ");
+    if (!window.confirm(`¿Importar ${elegidos.size} ${elegidos.size === 1 ? "negocio" : "negocios"} de HubSpot (${porGrupo})?`)) return;
+    const ids = [...elegidos];
     startTransition(async () => {
-      const r = await importarHubspotAction(texto, [...elegidos]);
-      if (!r.ok) {
-        setError(r.error);
-        return;
+      const total: Resultado = { creados: 0, empresasNuevas: 0, yaEstaban: 0, conProblema: 0 };
+      for (let i = 0; i < ids.length; i += TANDA) {
+        setAvance(`Importando ${Math.min(i + TANDA, ids.length)} de ${ids.length}…`);
+        const r = await importarHubspotAction(texto, ids.slice(i, i + TANDA));
+        if (!r.ok) {
+          setError(`${r.error} Alcanzaron a entrar ${total.creados}.`);
+          break;
+        }
+        total.creados += r.r.creados;
+        total.empresasNuevas += r.r.empresasNuevas;
+        total.yaEstaban += r.r.yaEstaban;
+        total.conProblema += r.r.conProblema;
       }
-      setResultado(r.r);
+      setAvance(null);
+      setResultado(total);
       previsualizar(texto, true);
     });
   }
@@ -169,27 +213,58 @@ export default function ImportarHubspot() {
           <Link href="/backoffice/negocios" className="font-semibold underline">Ver los negocios</Link>
         </p>
       )}
-      {pendiente && <p className="text-sm text-finbra-gray" role="status">Leyendo…</p>}
+      {pendiente && <p className="text-sm text-finbra-gray" role="status">{avance ?? "Leyendo…"}</p>}
 
       {items && info && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-sm">
-              <span className="font-semibold">{archivo}</span>: {items.length} {items.length === 1 ? "negocio abierto" : "negocios abiertos"} ({info.cerrados} {info.cerrados === 1 ? "cerrado no se trae" : "cerrados no se traen"}).{" "}
-              <span className="font-semibold">{elegidos.size} marcados.</span>
+              <span className="font-semibold">{archivo}</span>: {items.length} {items.length === 1 ? "negocio" : "negocios"}
+              {info.excluidos > 0 && ` (${info.excluidos} de «Relación comercial» no se traen)`}.{" "}
+              <span className="font-semibold">{elegidos.size} marcados en total.</span>
             </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2" role="tablist" aria-label="Qué negocios ver">
+              {(Object.keys(GRUPOS) as GrupoImportacion[]).map((g) => (
+                <button key={g} type="button" role="tab" aria-selected={grupo === g} onClick={() => setGrupo(g)} className={pestana(grupo === g)}>
+                  {GRUPOS[g]} ({cuantos(g)}){marcadosEn(g) > 0 && ` · ${marcadosEn(g)} marcados`}
+                </button>
+              ))}
+            </div>
             <div className="flex flex-wrap gap-2">
-              <button type="button" className={secundario} onClick={() => setElegidos(new Set(disponibles.filter((x) => x.marcado).map((x) => x.fila.hubspotId)))}>
-                Solo los activos
+              {grupo === "abierto" && (
+                <button
+                  type="button"
+                  className={secundario}
+                  onClick={() =>
+                    setElegidos((s) => {
+                      const n = new Set([...s].filter((id) => !disponiblesDelGrupo.some((x) => x.fila.hubspotId === id)));
+                      for (const x of disponiblesDelGrupo) if (x.marcado) n.add(x.fila.hubspotId);
+                      return n;
+                    })
+                  }
+                >
+                  Solo los activos
+                </button>
+              )}
+              <button type="button" className={secundario} onClick={() => marcarGrupo(true)}>
+                Todos los de esta lista
               </button>
-              <button type="button" className={secundario} onClick={() => setElegidos(new Set(disponibles.map((x) => x.fila.hubspotId)))}>
-                Todos
-              </button>
-              <button type="button" className={secundario} onClick={() => setElegidos(new Set())}>
-                Ninguno
+              <button type="button" className={secundario} onClick={() => marcarGrupo(false)}>
+                Ninguno de esta lista
               </button>
             </div>
           </div>
+          {grupo !== "abierto" && (
+            <p className="rounded-lg bg-black/5 px-3 py-2 text-sm text-finbra-gray">
+              {grupo === "seguimiento"
+                ? "Entran como Pospuesto, con su fecha de cierre de HubSpot y sin fecha para volver a contactarlos: no crean tareas."
+                : grupo === "rechazado"
+                  ? "Entran como Rechazado, con su fecha de cierre y el motivo de HubSpot si el export lo trae."
+                  : "Entran como Dispersado, con su fecha de cierre. No crean colocaciones ni piden ligarse a SIAC en Inicio (solo los dispersados de los últimos 90 días lo piden)."}
+            </p>
+          )}
           {info.sinEmpresa && (
             <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
               El archivo no trae la empresa asociada: se usa el nombre del negocio como nombre de la empresa.
@@ -205,11 +280,11 @@ export default function ImportarHubspot() {
                   <th scope="col" className="px-3 py-2 text-right">Monto</th>
                   <th scope="col" className="px-3 py-2">Origen</th>
                   <th scope="col" className="px-3 py-2">Responsable</th>
-                  <th scope="col" className="px-3 py-2">Última actividad</th>
+                  <th scope="col" className="px-3 py-2">{grupo === "abierto" ? "Última actividad" : "Cerrado"}</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((x) => {
+                {delGrupo.map((x) => {
                   const f = x.fila;
                   const bloqueado = x.yaImportado || !!x.problema;
                   return (
@@ -243,7 +318,16 @@ export default function ImportarHubspot() {
                       <td className="px-3 py-2 align-top">
                         {x.responsable ? x.responsable.nombre : <span className="text-finbra-gray">Tú{f.propietario ? ` (en HubSpot: ${f.propietario})` : ""}</span>}
                       </td>
-                      <td className="px-3 py-2 align-top">{f.ultimaActividad ? formatFecha(f.ultimaActividad) : <span className="text-finbra-gray">Nunca</span>}</td>
+                      <td className="px-3 py-2 align-top">
+                        {grupo === "abierto" ? (
+                          f.ultimaActividad ? formatFecha(f.ultimaActividad) : <span className="text-finbra-gray">Nunca</span>
+                        ) : f.cerradoEl ? (
+                          formatFecha(f.cerradoEl)
+                        ) : (
+                          <span className="text-finbra-gray">Sin fecha</span>
+                        )}
+                        {f.motivoPerdida && <p className="text-xs text-finbra-gray">{f.motivoPerdida}</p>}
+                      </td>
                     </tr>
                   );
                 })}
@@ -254,7 +338,7 @@ export default function ImportarHubspot() {
             <button type="button" onClick={importar} disabled={pendiente || elegidos.size === 0} className={boton}>
               {pendiente ? "Importando…" : `Importar ${elegidos.size} ${elegidos.size === 1 ? "negocio" : "negocios"}`}
             </button>
-            <p className="text-xs text-finbra-gray">Entran en su etapa, con su monto y su fecha de alta de HubSpot. Si los vuelves a subir, no se duplican.</p>
+            <p className="text-xs text-finbra-gray">Se importan los marcados de todas las pestañas, en su etapa, con su monto y su fecha de alta de HubSpot. Si los vuelves a subir, no se duplican.</p>
           </div>
         </div>
       )}

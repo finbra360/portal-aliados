@@ -1,8 +1,9 @@
-// Importar negocios abiertos de HubSpot (fase O7). Las reglas (leer el
-// export, etapas, empresa y responsable) están en lib/clientes/hubspot-import.ts.
+// Importar negocios de HubSpot (fase O7). Las reglas (leer el export,
+// etapas, empresa y responsable) están en lib/clientes/hubspot-import.ts.
 // Cada negocio se crea con crearNegocio y origen_ref 'hubspot:<id>': si ya
 // existe, no se vuelve a crear. Luego se pone en su etapa, con la fecha de
-// alta de HubSpot.
+// alta de HubSpot. Los cerrados (pospuesto, rechazado, dispersado) quedan con
+// su fecha de cierre y sin efectos: no crean tareas ni colocaciones.
 
 import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
@@ -30,14 +31,14 @@ async function contexto() {
   };
 }
 
-export type VistaPrevia = { ok: true; items: ParaImportar[]; sinEmpresa: boolean; cerrados: number } | { ok: false; error: string };
+export type VistaPrevia = { ok: true; items: ParaImportar[]; sinEmpresa: boolean; excluidos: number } | { ok: false; error: string };
 
 /** Lee el export y arma la vista previa (sin escribir nada). */
 export async function vistaPreviaHubspot(texto: string): Promise<VistaPrevia> {
   const r = leerExport(texto);
   if (!r.ok) return r;
   const items = planImportacion(r.filas, await contexto());
-  return { ok: true, items, sinEmpresa: r.sinEmpresa, cerrados: r.filas.length - items.length };
+  return { ok: true, items, sinEmpresa: r.sinEmpresa, excluidos: r.filas.length - items.length };
 }
 
 export interface ResultadoImportacion {
@@ -74,6 +75,7 @@ export async function importarDeHubspot(p: { texto: string; ids: string[]; actor
       `Etapa en HubSpot: ${f.etapaHubspot}.`,
       f.propietario ? `Dueño en HubSpot: ${f.propietario}.` : null,
       f.ultimaActividad ? `Última actividad en HubSpot: ${f.ultimaActividad}.` : null,
+      f.cerradoEl && x.grupo !== "abierto" ? `Cerrado en HubSpot: ${f.cerradoEl}.` : null,
     ]
       .filter(Boolean)
       .join(" ");
@@ -94,6 +96,13 @@ export async function importarDeHubspot(p: { texto: string; ids: string[]; actor
     });
     if (!x.empresa) res.empresasNuevas++;
     const creado = f.creadoEl ? `${f.creadoEl}T18:00:00Z` : null;
+    // Un cerrado queda en su etapa desde la fecha de cierre de HubSpot (para las métricas); un abierto, desde hoy.
+    const cerrado = x.grupo !== "abierto";
+    const desde = cerrado ? (f.cerradoEl ? `${f.cerradoEl}T18:00:00Z` : creado) : null;
+    const motivoCierre =
+      x.etapa === "pospuesto" ? `Seguimiento a futuro en HubSpot${f.motivoPerdida ? `: ${f.motivoPerdida}` : ""}`
+      : x.etapa === "rechazado" ? `Rechazado en HubSpot${f.motivoPerdida ? `: ${f.motivoPerdida}` : ""}`
+      : null;
     await transaccion(async (tx) => {
       const [n] = await tx`SELECT etapa FROM crm_negocios_credito WHERE id = ${id} FOR UPDATE`;
       if (creado) {
@@ -101,10 +110,15 @@ export async function importarDeHubspot(p: { texto: string; ids: string[]; actor
         await tx`UPDATE crm_negocio_etapas SET ocurrido_at = ${creado}::timestamptz WHERE negocio_id = ${id} AND de IS NULL`;
       }
       if (n.etapa === "prospecto" && x.etapa !== "prospecto") {
-        await tx`UPDATE crm_negocios_credito SET etapa = ${x.etapa}, etapa_desde = now() WHERE id = ${id}`;
         await tx`
-          INSERT INTO crm_negocio_etapas (negocio_id, de, a, motivo, actor)
-          VALUES (${id}, 'prospecto', ${x.etapa}, ${`Importado de HubSpot (etapa «${f.etapaHubspot}» → ${ETIQUETA_ETAPA[x.etapa!]})`}, ${p.actor})
+          UPDATE crm_negocios_credito
+          SET etapa = ${x.etapa}, etapa_desde = COALESCE(${desde}::timestamptz, now()), motivo_cierre = ${motivoCierre}
+          WHERE id = ${id}
+        `;
+        await tx`
+          INSERT INTO crm_negocio_etapas (negocio_id, de, a, motivo, actor, ocurrido_at)
+          VALUES (${id}, 'prospecto', ${x.etapa}, ${`Importado de HubSpot (etapa «${f.etapaHubspot}» → ${ETIQUETA_ETAPA[x.etapa!]})${motivoCierre ? `. ${motivoCierre}` : ""}`.slice(0, 1000)},
+                  ${p.actor}, COALESCE(${desde}::timestamptz, now()))
         `;
       }
     });

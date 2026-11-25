@@ -67,7 +67,8 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
     if (!(await hayNegocios())) {
       return <EmptyState title="Falta preparar la base de datos" description="Corre lib/db/crm-schema.sql y después security.sql en Supabase para activar los negocios de crédito." />;
     }
-    negocios = await getNegocios();
+    // El tablero muestra los cierres del último año; la lista, todos (también los traídos de HubSpot).
+    negocios = await getNegocios(vista === "lista" ? { diasCerrados: 36_500 } : {});
   } catch (e) {
     const c = codigoDeError("originación: negocios", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar los negocios. <span className="text-sm opacity-70">(código {c})</span></div>;
