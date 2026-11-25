@@ -55,6 +55,30 @@ function mapCredito(r: Record<string, unknown>): CreditoEmpresaRow {
   };
 }
 
+/**
+ * El broker que refirió a cada empresa: el de su negocio más reciente con broker
+ * (o, si ninguno tiene broker asignado, uno de origen «Broker» sin nombre).
+ * Vacío si todavía no existen los negocios.
+ */
+export async function brokersDeEmpresas(empresaId?: string): Promise<Map<string, { id: string | null; nombre: string | null }>> {
+  const [{ hay }] = await sql`SELECT to_regclass('public.crm_negocios_credito') IS NOT NULL AS hay`;
+  if (!hay) return new Map();
+  const filas = await sql`
+    SELECT DISTINCT ON (n.empresa_id) n.empresa_id, to_jsonb(n)->>'broker_id' AS broker_id, b.nombre
+    FROM crm_negocios_credito n
+    LEFT JOIN brokers b ON b.id = to_jsonb(n)->>'broker_id'
+    WHERE n.ambiente = ${ambienteActual()} AND (to_jsonb(n)->>'broker_id' IS NOT NULL OR n.origen = 'broker')
+      ${empresaId ? sql`AND n.empresa_id = ${empresaId}` : sql``}
+    ORDER BY n.empresa_id, (to_jsonb(n)->>'broker_id' IS NULL), n.created_at DESC
+  `;
+  return new Map(
+    filas.map((f) => [
+      f.empresa_id as string,
+      { id: (f.broker_id as string) ?? null, nombre: (f.nombre as string) ?? (f.broker_id as string) ?? null },
+    ]),
+  );
+}
+
 // Fragmento nuevo en cada consulta: un fragmento de postgres.js no se reutiliza.
 const empresaSelect = () => sql`
   SELECT e.id, e.nombre, e.razon_social, e.rfc, e.industria, e.ejecutivo_email, a.nombre AS ejecutivo_nombre,
@@ -72,7 +96,7 @@ const empresaSelect = () => sql`
  */
 export async function getEmpresasLista(fechaCorte: string | null, opts: { filtro: EmpresaFilter; q: string; orden: EmpresaOrder; yo: string }) {
   const ambiente = ambienteActual();
-  const [empresas, creditos, umbral, umbralesSemaforo, ajustesSalud] = await Promise.all([
+  const [empresas, creditos, umbral, umbralesSemaforo, ajustesSalud, brokers] = await Promise.all([
     sql`${empresaSelect()} WHERE e.ambiente = ${ambiente} GROUP BY e.id, a.nombre`,
     sql`
       SELECT c.empresa_id, cr.id, cr.no_credito, cr.en_listado, cr.etapa_manual, cr.monto_credito,
@@ -87,8 +111,9 @@ export async function getEmpresasLista(fechaCorte: string | null, opts: { filtro
     getSetting("umbral_mora", UMBRAL_MORA_DEFAULT),
     getUmbralesSemaforo(),
     getAjustesSalud(),
+    brokersDeEmpresas(),
   ]);
-  const filas = empresas.map(mapEmpresa);
+  const filas = empresas.map((r) => ({ ...mapEmpresa(r), broker: brokers.get(r.id as string) ?? null }));
   const relacion = await relacionDeEmpresas(
     filas.map((e) => e.empresaId),
     ajustesSalud,

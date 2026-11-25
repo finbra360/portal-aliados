@@ -97,7 +97,7 @@ test("semáforo con lo peor de sus créditos en la foto; sin foto no hay semáfo
 
 const EMPRESAS = [
   empresa({ empresaId: "a", nombre: "Ágora Logística", rfc: "ALO150101AB1", ejecutivoEmail: "yo@finbra.test", numerosCliente: ["000000101"] }),
-  empresa({ empresaId: "b", nombre: "Transportes Norte", numerosCliente: ["000000102"] }),
+  empresa({ empresaId: "b", nombre: "Transportes Norte", numerosCliente: ["000000102"], broker: { id: "B001", nombre: "Broker Ficticio" } }),
   empresa({ empresaId: "c", nombre: "Clínica Centro", ejecutivoEmail: "otro@finbra.test", numerosCliente: ["000000103"] }),
   empresa({ empresaId: "d", nombre: "Ya Liquidó", numerosCliente: ["000000104"] }),
 ];
@@ -114,11 +114,12 @@ const ids = (opts: Partial<Parameters<typeof buildEmpresasLista>[4]>) => lista(o
 test("filtros y conteos de la lista", () => {
   const r = lista({});
   assert.equal(r.total, 4);
-  assert.deepEqual(r.conteos, { todos: 4, mios: 1, activos: 3, por_liquidar: 1, mora: 1, riesgo: 0, atencion: 0, especial: 1, ex_clientes: 1, sin_ejecutivo: 2, sin_rfc: 3 });
+  assert.deepEqual(r.conteos, { todos: 4, mios: 1, activos: 3, por_liquidar: 1, mora: 1, riesgo: 0, atencion: 0, especial: 1, ex_clientes: 1, sin_ejecutivo: 2, sin_rfc: 3, brokers: 1 });
   assert.deepEqual(ids({ filtro: "mora" }), ["b"], "los $300 de la clínica son residuo, no mora");
   assert.deepEqual(ids({ filtro: "por_liquidar" }), ["c"]);
   assert.deepEqual(ids({ filtro: "mios" }), ["a"]);
   assert.deepEqual(ids({ filtro: "ex_clientes" }), ["d"]);
+  assert.deepEqual(ids({ filtro: "brokers" }), ["b"], "las que refirió un broker");
 });
 
 test("los totales cuadran con la suma de los créditos vigentes en la foto", () => {

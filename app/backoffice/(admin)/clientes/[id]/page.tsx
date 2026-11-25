@@ -1,10 +1,11 @@
 import Link from "next/link";
+import BrokerChip from "@/app/backoffice/(admin)/BrokerChip";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { puede } from "@/lib/permisos";
 import { getPhotoStatus } from "@/lib/db/collections";
-import { getEmpresa, listEjecutivos, type FichaCredito } from "@/lib/db/empresas";
+import { brokersDeEmpresas, getEmpresa, listEjecutivos, type FichaCredito } from "@/lib/db/empresas";
 import { ETAPAS } from "@/lib/collections/gestiones";
 import { codigoDeError } from "@/lib/collections/errors";
 import { formatFecha, formatFechaHora, formatMoney, formatTelefono } from "@/lib/format";
@@ -414,6 +415,7 @@ export default async function FichaClientePage({ params, searchParams }: { param
               <EtapaChip etapa={r.etapa} />
               <SaludChip salud={r.salud} />
               <SemaforoPill semaforo={r.semaforo} historial={r.historial} detalle />
+              <BrokerChip broker={(await brokersDeEmpresas(id)).get(id)} />
             </div>
           </div>
           <div className="space-y-2 text-sm sm:text-right">

@@ -22,6 +22,7 @@ import { ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ETIQUETA_ETAPA, PRODUCTOS, diasEnEtapa
 import { formatMoney } from "@/lib/format";
 import type { Negocio } from "@/lib/db/negocios";
 import { moverNegocioAction } from "./actions";
+import BrokerChip from "@/app/backoffice/(admin)/BrokerChip";
 
 const BASE = "/backoffice/negocios";
 const ORDEN = new Map(ETAPAS_NEGOCIO.map((e, i) => [e.value, i]));
@@ -83,6 +84,11 @@ function Tarjeta({
           </span>
           {n.producto && <span className="truncate text-[11px] text-finbra-gray">{PRODUCTOS[n.producto]}{n.plazoMeses ? ` · ${n.plazoMeses} m` : ""}</span>}
         </div>
+        {(n.brokerId || n.origen === "broker") && (
+          <div className="mt-1.5">
+            <BrokerChip broker={n.brokerId || n.origen === "broker" ? { id: n.brokerId, nombre: n.brokerNombre ?? n.brokerId } : null} compacto />
+          </div>
+        )}
         <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-finbra-gray">
           <span className="truncate">{n.responsableNombre ?? "Sin responsable"}</span>
           <span

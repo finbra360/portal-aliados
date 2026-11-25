@@ -10,6 +10,7 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import EtapaNegocioChip from "./EtapaNegocioChip";
 import TableroNegocios from "./TableroNegocios";
+import BrokerChip from "@/app/backoffice/(admin)/BrokerChip";
 
 const BASE = "/backoffice/negocios";
 type Vista = "tablero" | "lista";
@@ -143,6 +144,11 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
                       <td className="px-4 py-3">
                         <Link href={`${BASE}/${n.id}`} className="font-medium text-finbra-purple hover:underline">{n.empresa}</Link>
                         {!n.esCliente && <span className="ml-2 text-xs text-finbra-gray">Prospecto</span>}
+                        {(n.brokerId || n.origen === "broker") && (
+                          <div className="mt-1">
+                            <BrokerChip broker={n.brokerId || n.origen === "broker" ? { id: n.brokerId, nombre: n.brokerNombre ?? n.brokerId } : null} compacto />
+                          </div>
+                        )}
                         {n.motivoCierre && <p className="text-xs text-finbra-gray">{n.motivoCierre}</p>}
                         {n.etapa === "pospuesto" && n.recontactarEl && (
                           <p className={`text-xs ${n.recontactarEl <= hoy ? "font-semibold text-amber-800" : "text-finbra-gray"}`}>Volver a contactar el {formatFecha(n.recontactarEl)}</p>

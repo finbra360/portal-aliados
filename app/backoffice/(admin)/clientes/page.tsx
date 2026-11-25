@@ -1,4 +1,5 @@
 import Link from "next/link";
+import BrokerChip from "@/app/backoffice/(admin)/BrokerChip";
 import { getAdminSession } from "@/lib/get-admin-session";
 import { puede } from "@/lib/permisos";
 import { getPhotoStatus } from "@/lib/db/collections";
@@ -153,6 +154,11 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                       {e.industria && <> · {e.industria}</>}
                     </p>
                     {e.numerosCliente.length > 0 && <p className="font-mono text-xs text-finbra-gray">{e.numerosCliente.join(", ")}</p>}
+                    {e.broker && (
+                      <div className="mt-1">
+                        <BrokerChip broker={e.broker} compacto />
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <SaludChip salud={e.salud} />
