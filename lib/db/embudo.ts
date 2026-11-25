@@ -7,16 +7,15 @@ import { sql } from "@/lib/db";
 import { ambienteActual } from "@/lib/db/collections";
 import { getAjustesPlaybooks } from "@/lib/db/playbooks";
 import { fechaMexico } from "@/lib/collections/rules";
-import { calcularEmbudo, type Embudo, type Periodo } from "@/lib/clientes/embudo";
-import type { EtapaNegocio, OrigenNegocio } from "@/lib/clientes/negocios";
+import { calcularEmbudo, porTrimestre, type CambioEmbudo, type Embudo, type NegocioEmbudo, type Periodo, type Trimestre } from "@/lib/clientes/embudo";
+import type { EtapaNegocio, OrigenNegocio, Producto } from "@/lib/clientes/negocios";
 
 const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
-export async function getEmbudo(periodo: Periodo): Promise<Embudo & { diasAtorado: number; desde: string; hasta: string }> {
+/** Todos los negocios del ambiente y su historial, listos para calcular. */
+async function datosEmbudo(): Promise<{ negocios: NegocioEmbudo[]; cambios: CambioEmbudo[] }> {
   const ambiente = ambienteActual();
-  const hasta = new Date();
-  const desde = new Date(hasta.getTime() - periodo * 86_400_000);
-  const [negocios, cambios, brokers, [{ hayDecisiones }], ajustes] = await Promise.all([
+  const [negocios, cambios, brokers, [{ hayDecisiones }]] = await Promise.all([
     sql`
       SELECT n.id, e.nombre AS empresa, n.origen, COALESCE(a.nombre, n.responsable_email) AS responsable, n.created_at, n.etapa, n.etapa_desde,
              n.monto_estimado, to_jsonb(n) AS j
@@ -24,13 +23,12 @@ export async function getEmbudo(periodo: Periodo): Promise<Embudo & { diasAtorad
       WHERE n.ambiente = ${ambiente}
     `,
     sql`
-      SELECT h.negocio_id, h.de, h.a, h.ocurrido_at
+      SELECT h.negocio_id, h.de, h.a, h.ocurrido_at, coalesce(h.motivo LIKE 'Importado de HubSpot%', false) AS importado
       FROM crm_negocio_etapas h JOIN crm_negocios_credito n ON n.id = h.negocio_id
       WHERE n.ambiente = ${ambiente}
     `,
     sql`SELECT id, nombre FROM brokers`,
     sql`SELECT to_regclass('public.crm_negocio_decisiones') IS NOT NULL AS "hayDecisiones"`,
-    getAjustesPlaybooks(),
   ]);
   const aprobado = new Map<string, number>();
   if (hayDecisiones) {
@@ -50,8 +48,7 @@ export async function getEmbudo(periodo: Periodo): Promise<Embudo & { diasAtorad
     }
   }
   const nombreBroker = new Map(brokers.map((b) => [b.id as string, b.nombre as string]));
-
-  const r = calcularEmbudo({
+  return {
     negocios: negocios.map((n) => {
       const j = n.j as Record<string, unknown>;
       const creditId = (j.credit_id as string) ?? null;
@@ -65,6 +62,9 @@ export async function getEmbudo(periodo: Periodo): Promise<Embudo & { diasAtorad
         etapa: n.etapa as EtapaNegocio,
         etapaDesde: (n.etapa_desde as Date).toISOString(),
         monto: (creditId ? montoCredito.get(creditId) : undefined) ?? aprobado.get(n.id as string) ?? numero(j.oferta_monto) ?? numero(n.monto_estimado),
+        producto: (j.producto as Producto) ?? null,
+        rechazoMotivo: (j.rechazo_motivo as string) ?? null,
+        rechazoPor: (j.rechazo_por as "finbra" | "cliente") ?? null,
       };
     }),
     cambios: cambios.map((c) => ({
@@ -72,11 +72,39 @@ export async function getEmbudo(periodo: Periodo): Promise<Embudo & { diasAtorad
       de: (c.de as EtapaNegocio) ?? null,
       a: c.a as EtapaNegocio,
       ocurridoAt: (c.ocurrido_at as Date).toISOString(),
+      importado: !!c.importado,
     })),
+  };
+}
+
+export interface MetricasNegocios extends Embudo {
+  diasAtorado: number;
+  desde: string;
+  hasta: string;
+  /** El mismo cálculo para el periodo anterior de igual duración (null con «toda la historia»). */
+  anterior: Pick<Embudo, "entraron" | "dispersados" | "conversion" | "rechazados"> | null;
+  trimestres: Trimestre[];
+}
+
+/** Métricas del periodo (días hacia atrás; 0 = toda la historia), su comparación y los últimos 8 trimestres. */
+export async function getEmbudo(periodo: Periodo): Promise<MetricasNegocios> {
+  const [{ negocios, cambios }, ajustes] = await Promise.all([datosEmbudo(), getAjustesPlaybooks()]);
+  const hoy = fechaMexico();
+  const hasta = new Date();
+  const desde = periodo === 0 ? new Date("2000-01-01T00:00:00Z") : new Date(hasta.getTime() - periodo * 86_400_000);
+  const base = { negocios, cambios, hoy, diasAtorado: ajustes.estancadoDias };
+  const actual = calcularEmbudo({ ...base, desde: desde.toISOString(), hasta: hasta.toISOString() });
+  let anterior: MetricasNegocios["anterior"] = null;
+  if (periodo !== 0) {
+    const a = calcularEmbudo({ ...base, desde: new Date(desde.getTime() - periodo * 86_400_000).toISOString(), hasta: new Date(desde.getTime() - 1).toISOString() });
+    anterior = { entraron: a.entraron, dispersados: a.dispersados, conversion: a.conversion, rechazados: a.rechazados };
+  }
+  return {
+    ...actual,
+    diasAtorado: ajustes.estancadoDias,
     desde: desde.toISOString(),
     hasta: hasta.toISOString(),
-    hoy: fechaMexico(),
-    diasAtorado: ajustes.estancadoDias,
-  });
-  return { ...r, diasAtorado: ajustes.estancadoDias, desde: desde.toISOString(), hasta: hasta.toISOString() };
+    anterior,
+    trimestres: porTrimestre({ negocios, cambios, hoy, cuantos: 8 }),
+  };
 }
