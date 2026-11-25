@@ -118,6 +118,36 @@ export async function cambiarBrokerAction(id: string, _prev: NegocioResult | nul
   }
 }
 
+/**
+ * «Brokers sin asignar»: asigna el broker a uno o varios negocios (el renglón
+ * o «Asignar las sugeridas»). Cada uno se guarda por separado; si alguno
+ * falla, los demás quedan.
+ */
+export async function asignarBrokersAction(pares: { id: string; brokerId: string }[]): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  const validos =
+    Array.isArray(pares) &&
+    pares.length > 0 &&
+    pares.length <= 500 &&
+    pares.every((p) => typeof p?.id === "string" && /^[0-9a-f-]{36}$/i.test(p.id) && typeof p.brokerId === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(p.brokerId));
+  if (!validos) return { ok: false, error: "La selección no es válida." };
+  let asignados = 0;
+  const errores: string[] = [];
+  for (const p of pares) {
+    try {
+      if (await cambiarBroker({ id: p.id, brokerId: p.brokerId, actor: admin.email })) asignados++;
+    } catch (e) {
+      if (e instanceof NegocioError) errores.push(e.message);
+      else errores.push(`No pudimos guardar uno. (código ${codigoDeError("originación: asignar brokers", e)})`);
+    }
+  }
+  if (asignados > 0) refrescar();
+  if (errores.length > 0) {
+    return { ok: false, error: `${asignados > 0 ? `Se asignaron ${asignados}; ` : ""}${errores.length} no se pudieron: ${[...new Set(errores)].join(" ")}` };
+  }
+  return { ok: true, mensaje: asignados === 1 ? "Broker asignado." : `Se asignaron ${asignados} brokers.` };
+}
+
 /** Mensaje que el broker ve en su portal. */
 export async function guardarMensajeBrokerAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
   const admin = requierePermiso(await getAdminSession(), "originacion.operar");
