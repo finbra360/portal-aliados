@@ -112,3 +112,11 @@ test("vista previa: sin cerrados; empresa por nombre; responsable por nombre o c
   // Los marcados van primero.
   assert.equal(plan[0].fila.hubspotId, "101");
 });
+
+test("export pegado desde Excel: separado por tabuladores", () => {
+  const r = leerExport("ID de registro\tNombre del negocio\tEtapa del negocio\tPipeline\tValor\n201\tFicticio Pegado, SA\tOferta Comercial\tPipeline de ventas\t1,500,000");
+  assert.ok(r.ok);
+  if (!r.ok) return;
+  assert.equal(r.filas[0].nombre, "Ficticio Pegado, SA");
+  assert.equal(r.filas[0].monto, 1_500_000);
+});

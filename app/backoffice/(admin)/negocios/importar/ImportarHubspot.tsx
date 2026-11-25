@@ -10,6 +10,16 @@ import { ETIQUETA_ETAPA, ORIGENES_NEGOCIO } from "@/lib/clientes/negocios";
 import type { ParaImportar } from "@/lib/clientes/hubspot-import";
 import { formatFecha, formatMoney } from "@/lib/format";
 import { importarHubspotAction, vistaPreviaHubspotAction } from "../actions";
+import { leerArchivo } from "../../brokers/importar/ImportarPanel";
+
+/** Lo que conviene decir si el archivo no es un CSV. */
+function errorDeTipo(nombre: string): string | null {
+  if (/\.xlsx?$/i.test(nombre)) {
+    return "Ese archivo es de Excel. En HubSpot vuelve a exportar y elige el formato CSV, o abre el Excel, copia todas las celdas (con los encabezados) y pégalas abajo.";
+  }
+  if (/\.zip$/i.test(nombre)) return "HubSpot lo mandó comprimido (.zip). Ábrelo y sube el archivo CSV de negocios que viene adentro.";
+  return null;
+}
 
 const boton = "rounded-lg bg-finbra-purple px-4 py-2 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50";
 const secundario = "rounded-lg border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5";
@@ -25,6 +35,8 @@ export default function ImportarHubspot() {
   const [error, setError] = useState<string | null>(null);
   const [resultado, setResultado] = useState<Resultado | null>(null);
   const [pendiente, startTransition] = useTransition();
+  const [pegado, setPegado] = useState("");
+  const [arrastrando, setArrastrando] = useState(false);
 
   const disponibles = (items ?? []).filter((x) => !x.yaImportado && !x.problema);
 
@@ -48,14 +60,28 @@ export default function ImportarHubspot() {
     setResultado(null);
     setError(null);
     if (!f) return;
+    const tipo = errorDeTipo(f.name);
+    if (tipo) {
+      setError(tipo);
+      return;
+    }
     if (f.size > 900_000) {
       setError("El archivo es demasiado grande. Exporta solo los negocios (sin actividades ni notas).");
       return;
     }
-    const t = await f.text();
+    const t = await leerArchivo(f);
     setArchivo(f.name);
     setTexto(t);
     previsualizar(t);
+  }
+
+  function revisarPegado() {
+    setResultado(null);
+    setError(null);
+    if (!pegado.trim()) return;
+    setArchivo("Celdas pegadas");
+    setTexto(pegado);
+    previsualizar(pegado);
   }
 
   function importar() {
@@ -82,13 +108,56 @@ export default function ImportarHubspot() {
 
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <label htmlFor="archivo" className="block text-sm font-medium">Export de negocios de HubSpot (CSV)</label>
-        <input id="archivo" type="file" accept=".csv,text/csv" onChange={(e) => elegirArchivo(e.target.files?.[0])} className="block text-sm" />
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          setArrastrando(true);
+        }}
+        onDragLeave={() => setArrastrando(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setArrastrando(false);
+          elegirArchivo(e.dataTransfer.files?.[0]);
+        }}
+        className={`space-y-3 rounded-xl border-2 border-dashed p-6 text-center ${arrastrando ? "border-finbra-purple bg-finbra-purple/5" : "border-black/10"}`}
+      >
+        <p className="text-sm font-medium">Arrastra aquí el export de negocios de HubSpot</p>
+        <label className={`${boton} inline-block cursor-pointer`}>
+          Elegir archivo
+          {/* Sin filtro de tipo: si eligen un Excel o un .zip, se les dice qué hacer en vez de no dejarlos elegirlo. */}
+          <input
+            id="archivo"
+            type="file"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = "";
+              elegirArchivo(f);
+            }}
+            className="sr-only"
+          />
+        </label>
         <p className="text-xs text-finbra-gray">
-          En HubSpot: Negocios → Exportar → formato CSV, con todas las propiedades. Súbelo tal cual, sin abrirlo en Excel.
+          En HubSpot: Negocios → Exportar → formato <span className="font-semibold">CSV</span>, con todas las propiedades. Si te llega un .zip, sube el CSV que viene adentro.
         </p>
+        {archivo && <p className="text-xs text-finbra-gray">Archivo: {archivo}</p>}
       </div>
+
+      <details className="rounded-lg border border-black/5 px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-medium">¿No puedes subir el archivo? Pega las celdas</summary>
+        <div className="mt-3 space-y-2">
+          <p className="text-xs text-finbra-gray">Abre el export en Excel o Google Sheets, selecciona todo (con la fila de encabezados), copia y pega aquí.</p>
+          <textarea
+            value={pegado}
+            onChange={(e) => setPegado(e.target.value)}
+            rows={6}
+            spellCheck={false}
+            className="w-full rounded-lg border border-black/10 bg-white px-3 py-2 font-mono text-xs"
+          />
+          <button type="button" onClick={revisarPegado} disabled={pendiente || !pegado.trim()} className={secundario}>
+            Revisar lo pegado
+          </button>
+        </div>
+      </details>
 
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">{error}</p>}
       {resultado && (
