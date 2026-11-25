@@ -236,12 +236,19 @@ export async function ligarCreditoSiac(p: { negocioId: string; creditId?: string
   return r;
 }
 
-/** Negocios dispersados que todavía no se ligan a su crédito; null si la base no tiene la columna. */
+/**
+ * Negocios dispersados en los últimos 90 días que todavía no se ligan a su
+ * crédito; null si la base no tiene la columna. Los más viejos (por ejemplo,
+ * los ganados que se trajeron de HubSpot) no se piden.
+ */
 export async function dispersadosSinLigar(): Promise<number | null> {
   const [col] = await sql`
     SELECT 1 FROM information_schema.columns WHERE table_name = 'crm_negocios_credito' AND column_name = 'credit_id'
   `;
   if (!col) return null;
-  const [r] = await sql`SELECT count(*)::int AS n FROM crm_negocios_credito WHERE ambiente = ${ambienteActual()} AND etapa = 'dispersado' AND credit_id IS NULL`;
+  const [r] = await sql`
+    SELECT count(*)::int AS n FROM crm_negocios_credito
+    WHERE ambiente = ${ambienteActual()} AND etapa = 'dispersado' AND credit_id IS NULL AND etapa_desde > now() - interval '90 days'
+  `;
   return r.n as number;
 }

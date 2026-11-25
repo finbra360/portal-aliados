@@ -16,8 +16,9 @@ export default async function ImportarHubspotPage() {
         <Link href="/backoffice/negocios" className="text-sm text-finbra-purple hover:underline">← Negocios</Link>
         <h1 className="mt-2 text-2xl font-bold">Importar de HubSpot</h1>
         <p className="mt-1 text-sm text-finbra-gray">
-          Trae los negocios abiertos que siguen vivos. No se trae la historia (cerrados, notas ni actividades) ni los teléfonos y correos de los contactos: esos
-          se capturan en la ficha. Se marcan solos los que tuvieron actividad en los últimos 6 meses; tú decides cuáles entran.
+          Trae los negocios de HubSpot: los abiertos y, si los marcas, también los cerrados (Seguimiento a futuro, Rechazados y Ganados) con su fecha de cierre.
+          No se traen las notas ni las actividades, ni los teléfonos y correos de los contactos: esos se capturan en la ficha. De inicio se marcan solo los abiertos
+          con actividad en los últimos 6 meses; tú decides cuáles entran.
         </p>
       </div>
       <Card>

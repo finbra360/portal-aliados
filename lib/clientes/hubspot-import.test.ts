@@ -1,14 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { etapaDesdeHubspot, leerCsv, leerExport, leerFecha, origenDesdeHubspot, planImportacion } from "./hubspot-import.ts";
+import { compactarExport, etapaDesdeHubspot, leerCsv, leerExport, leerFecha, origenDesdeHubspot, planImportacion } from "./hubspot-import.ts";
 
 // Export ficticio, como lo baja HubSpot en español (con BOM y una nota con coma y salto de renglón).
 const EXPORT = [
-  "﻿ID de registro,Nombre del negocio,Etapa del negocio,Pipeline,Valor,Fecha de creación,Última actividad,Propietario del negocio,Origen,Empresa asociada",
+  "﻿ID de registro,Nombre del negocio,Etapa del negocio,Pipeline,Valor,Fecha de creación,Última actividad,Propietario del negocio,Origen,Empresa asociada,Fecha de cierre,Motivo de pérdida del negocio",
   '101,"Mudanzas Ficticias, crédito",Oferta Comercial,Pipeline de ventas,"1,200,000",2026-08-01 10:00,2026-11-10 09:00,Ana Demo,Broker,"MUDANZAS FICTICIAS DEL CENTRO, S.A. DE C.V."',
   "102,Panadería Ficticia,Cliente Potencial,Pipeline de ventas,500000,2025-05-01,2025-06-01,Persona Externa,Pymio,Panadería Ficticia",
   "103,Talleres Ejemplo renovación,Solicitud de crédito,Renovaciones/Financieras,800000,2026-10-01,2026-11-20,ana@finbra.test,,Talleres Ejemplo Norte",
-  "104,Cerrado Ficticio,Contrato Ganado,Pipeline de ventas,900000,2025-01-01,2025-02-01,Ana Demo,,Cerrado Ficticio",
+  "104,Ganado Ficticio,Contrato Ganado,Pipeline de ventas,900000,2025-01-01,2025-02-01,Ana Demo,,Ganado Ficticio,2025-03-15,",
+  "106,Pospuesto Ficticio,Seguimiento a futuro,Pipeline de ventas,300000,2025-02-01,2025-03-01,Ana Demo,,Pospuesto Ficticio,2025-04-01,Sin presupuesto este año",
+  "107,Relación Ficticia,Relación comercial,Pipeline de ventas,0,2025-02-01,,,,Relación Ficticia,,",
   "105,Raro Ficticio,Etapa Inventada,Pipeline de ventas,,2026-11-01,2026-11-02,,,Raro Ficticio",
   "",
 ].join("\r\n");
@@ -36,7 +38,7 @@ test("export: columnas en español, monto con comas y la empresa asociada", () =
   const r = leerExport(EXPORT);
   assert.ok(r.ok);
   if (!r.ok) return;
-  assert.equal(r.filas.length, 5);
+  assert.equal(r.filas.length, 7);
   assert.deepEqual(r.filas[0], {
     hubspotId: "101",
     nombre: "Mudanzas Ficticias, crédito",
@@ -48,7 +50,12 @@ test("export: columnas en español, monto con comas y la empresa asociada", () =
     ultimaActividad: "2026-11-10",
     propietario: "Ana Demo",
     origenHubspot: "Broker",
+    cerradoEl: null,
+    motivoPerdida: null,
   });
+  const pospuesto = r.filas.find((f) => f.hubspotId === "106")!;
+  assert.equal(pospuesto.cerradoEl, "2025-04-01");
+  assert.equal(pospuesto.motivoPerdida, "Sin presupuesto este año");
   assert.equal(r.sinEmpresa, false);
 });
 
@@ -66,15 +73,18 @@ test("etapas y orígenes de HubSpot", () => {
   assert.equal(etapaDesdeHubspot("Cotización"), "calificado");
   assert.equal(etapaDesdeHubspot("Visita domiciliaria"), "analisis");
   assert.equal(etapaDesdeHubspot("Instalación GPS/Mediación"), "formalizacion");
-  assert.equal(etapaDesdeHubspot("closedlost"), "cerrado");
-  assert.equal(etapaDesdeHubspot("Rechazados"), "cerrado");
+  assert.equal(etapaDesdeHubspot("closedlost"), "pospuesto");
+  assert.equal(etapaDesdeHubspot("Seguimiento a futuro"), "pospuesto");
+  assert.equal(etapaDesdeHubspot("Rechazados"), "rechazado");
+  assert.equal(etapaDesdeHubspot("Contrato ganado Leasing"), "dispersado");
+  assert.equal(etapaDesdeHubspot("Relación comercial"), "excluido");
   assert.equal(etapaDesdeHubspot("Otra"), null);
   assert.deepEqual(origenDesdeHubspot("Página web", "Pipeline de ventas"), { origen: "web", tipo: "nuevo" });
   assert.deepEqual(origenDesdeHubspot(null, "Pipeline de ventas"), { origen: "manual", tipo: "nuevo" });
   assert.deepEqual(origenDesdeHubspot("Broker", "Renovaciones/Financieras"), { origen: "renovacion", tipo: "renovacion" });
 });
 
-test("vista previa: sin cerrados; empresa por nombre; responsable por nombre o correo; marcados los activos", () => {
+test("vista previa: cerrados en su grupo y sin marcar; sin «Relación comercial»; empresa, responsable y activos", () => {
   const r = leerExport(EXPORT);
   assert.ok(r.ok);
   if (!r.ok) return;
@@ -89,8 +99,15 @@ test("vista previa: sin cerrados; empresa por nombre; responsable por nombre o c
     usuarios: [{ email: "ana@finbra.test", nombre: "Ana Demo" }],
   });
   const por = Object.fromEntries(plan.map((p) => [p.fila.hubspotId, p]));
-  assert.equal(por["104"], undefined); // Contrato Ganado: no se trae.
-  assert.equal(plan.length, 4);
+  assert.equal(por["107"], undefined); // Relación comercial: no se trae.
+  assert.equal(plan.length, 6);
+  assert.equal(por["104"].etapa, "dispersado");
+  assert.equal(por["104"].grupo, "ganado");
+  assert.equal(por["104"].marcado, false);
+  assert.equal(por["106"].etapa, "pospuesto");
+  assert.equal(por["106"].grupo, "seguimiento");
+  assert.equal(por["106"].marcado, false);
+  assert.equal(por["101"].grupo, "abierto");
   // Activo y sin importar: se marca solo, con su empresa (no la que solo se llama «Mudanzas») y su responsable.
   assert.equal(por["101"].marcado, true);
   assert.deepEqual(por["101"].empresa, { id: "e1", nombre: "Mudanzas Ficticias del Centro" });
@@ -119,4 +136,16 @@ test("export pegado desde Excel: separado por tabuladores", () => {
   if (!r.ok) return;
   assert.equal(r.filas[0].nombre, "Ficticio Pegado, SA");
   assert.equal(r.filas[0].monto, 1_500_000);
+});
+
+test("compactar el export: solo las columnas que se usan, y se lee igual", () => {
+  const ancho = [
+    "ID de registro,Nombre del negocio,Columna Que No Sirve,Etapa del negocio,Pipeline,Valor,Otra Más",
+    '301,"Ficticio, con coma",basura,Oferta Comercial,Pipeline de ventas,"1,000,000",x',
+  ].join("\r\n");
+  const c = compactarExport(ancho);
+  assert.equal(c, 'ID de registro,Nombre del negocio,Etapa del negocio,Pipeline,Valor\n301,"Ficticio, con coma",Oferta Comercial,Pipeline de ventas,"1,000,000"');
+  const r = leerExport(c);
+  assert.ok(r.ok && r.filas[0].nombre === "Ficticio, con coma" && r.filas[0].monto === 1_000_000);
+  assert.equal(compactarExport("a,b\n1,2"), "a,b\n1,2");
 });
