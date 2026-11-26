@@ -7,7 +7,7 @@ import { sql, transaccion } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { addManualContact, ContactError } from "@/lib/db/collection-clients";
-import { chooseRecipient } from "@/lib/collections/contacts";
+import { chooseRecipients } from "@/lib/collections/contacts";
 import { ETIQUETAS_ACTIVIDAD } from "@/lib/collections/gestiones";
 import { unirHistorial, type DatosActividad, type DatosPersona, type OrigenHistorial } from "@/lib/clientes/personas";
 
@@ -92,9 +92,9 @@ export async function getContactos(empresaId: string): Promise<{ personas: Perso
         estatus: k.estatus,
         bajaWhatsappAt: k.baja_whatsapp_at ? String(k.baja_whatsapp_at) : null,
         esPrincipal: k.es_principal,
+        recibeRecordatorios: "recibe_recordatorios" in k ? Boolean(k.recibe_recordatorios) : undefined,
       }));
-    const r = chooseRecipient(suyos, c.contacto_cobranza_id);
-    if (r.contactId) destinatarios.add(r.contactId);
+    for (const id of chooseRecipients(suyos, c.contacto_cobranza_id).contactIds) destinatarios.add(id);
   }
 
   return {

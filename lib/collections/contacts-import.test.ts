@@ -63,7 +63,7 @@ test("teléfono y correo en la misma fila dan dos contactos; ya existentes y rep
   assert.equal(filas[4].tipoContacto, "contabilidad");
 });
 
-test("recordatorios: solo un teléfono del deudor, uno por cliente", () => {
+test("recordatorios: solo teléfonos del deudor; pueden ser varios por cliente", () => {
   const filas = revisar(
     "Numero de cliente,Telefono,Correo,Tipo,Recordatorios\n" +
       "101,5533334444,a@ejemplo.mx,Dueño,Sí\n" +
@@ -76,13 +76,13 @@ test("recordatorios: solo un teléfono del deudor, uno por cliente", () => {
   assert.deepEqual(filas.map((f) => [f.estado, f.usarParaRecordatorios]), [
     ["nuevo", true],
     ["nuevo", false],
-    ["error", true],
+    // Varios del mismo cliente pueden recibir los recordatorios.
+    ["nuevo", true],
     ["error", false],
     ["error", false],
     ["error", false],
     ["error", false],
   ]);
-  assert.match(filas[2].detalle!, /Solo un contacto por cliente/);
   assert.match(filas[3].detalle!, /aval o una referencia/);
   assert.match(filas[4].detalle!, /necesita teléfono/);
   assert.match(filas[5].detalle!, /Sí o No/);

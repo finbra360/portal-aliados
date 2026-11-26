@@ -18,7 +18,7 @@ export default async function ImportarContactosPage() {
           </p>
           <p>
             Opcionales: <strong>Nombre</strong> de la persona; <strong>Tipo</strong> (Dueño, Pagos, Contabilidad, Otro, Aval o Referencia; vacío = del deudor sin clasificar);{" "}
-            <strong>Recordatorios</strong> (Sí para que a ese teléfono le lleguen los recordatorios de cobranza; uno por cliente y nunca a un aval o referencia) y <strong>Notas</strong>.
+            <strong>Recordatorios</strong> (Sí para que a ese teléfono le lleguen los recordatorios de cobranza; pueden ser varios por cliente, nunca un aval o referencia) y <strong>Notas</strong>.
           </p>
           <p>Primero se revisa y te mostramos qué va a pasar con cada fila; nada se guarda hasta que confirmes. Los contactos que ya existen se omiten.</p>
         </div>

@@ -174,7 +174,7 @@ export default async function WhatsAppMoraPage() {
             </thead>
             <tbody>
               {[...salen, ...noSalen].map((f) => (
-                <tr key={f.clientId} className="border-b border-black/5 align-top last:border-0">
+                <tr key={`${f.clientId}:${f.contactId ?? ""}`} className="border-b border-black/5 align-top last:border-0">
                   <td className="px-4 py-2">
                     <Link href={`/backoffice/cobranza/clientes/${f.clientId}`} className="font-medium hover:text-finbra-purple hover:underline">{f.nombre}</Link>
                   </td>

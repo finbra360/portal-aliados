@@ -1,7 +1,7 @@
 // Lista de todos los clientes de cobranza: filtros, búsqueda y orden.
 // Función pura, sin base de datos, para poder probarla con `node --test`.
 
-import { chooseRecipient, type ContactLike } from "./contacts.ts";
+import { chooseRecipients, type ContactLike } from "./contacts.ts";
 import { estaEnMora } from "./rules.ts";
 import { UMBRALES_SEMAFORO_DEFAULT, semaforo, type Semaforo, type UmbralesSemaforo } from "./preventivos.ts";
 
@@ -31,7 +31,8 @@ export type ClientOrder = "nombre" | "vencido" | "adeudo" | "atraso";
 
 export interface ClientListItem extends ClientListRow {
   enMora: boolean;
-  recordatorios: { telefono: string | null; nombre: string | null; origen: "equipo" | "siac" | null };
+  /** El primer número que recibe los recordatorios y cuántos más los reciben. */
+  recordatorios: { telefono: string | null; nombre: string | null; origen: "equipo" | "siac" | null; otros: number };
   /** Comportamiento de pago con el mismo semáforo de los preventivos; null sin historial. */
   semaforo: Semaforo | null;
 }
@@ -65,7 +66,7 @@ const sinAcentos = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toL
 /**
  * Arma la lista. `contactos` trae todos los contactos de los clientes, con su
  * `clientId`; el destinatario de los recordatorios se calcula con la misma
- * regla que el perfil (chooseRecipient).
+ * regla que el perfil (chooseRecipients).
  */
 export function buildClientList(
   rows: ClientListRow[],
@@ -79,12 +80,12 @@ export function buildClientList(
 
   const todos: ClientListItem[] = rows.map((r) => {
     const suyos = porCliente.get(r.clientId) ?? [];
-    const rec = chooseRecipient(suyos, r.contactoCobranzaId);
-    const k = suyos.find((c) => c.id === rec.contactId);
+    const rec = chooseRecipients(suyos, r.contactoCobranzaId);
+    const k = suyos.find((c) => c.id === rec.contactIds[0]);
     return {
       ...r,
       enMora: estaEnMora(r.vencido, r.maxAtraso, umbral),
-      recordatorios: { telefono: k?.valor ?? null, nombre: k?.nombre ?? null, origen: rec.origen },
+      recordatorios: { telefono: k?.valor ?? null, nombre: k?.nombre ?? null, origen: rec.origen, otros: Math.max(0, rec.contactIds.length - 1) },
       semaforo: r.historial ? semaforo(r.historial, umbralesSemaforo) : null,
     };
   });

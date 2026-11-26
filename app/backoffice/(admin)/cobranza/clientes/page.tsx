@@ -142,9 +142,10 @@ export default async function CobranzaClientesPage({ searchParams }: { searchPar
                     {c.recordatorios.telefono ? (
                       <>
                         <span className="whitespace-nowrap">{formatTelefono(c.recordatorios.telefono)}</span>
+                        {c.recordatorios.otros > 0 && <span className="ml-1 whitespace-nowrap text-xs font-semibold text-finbra-purple-700">y {c.recordatorios.otros} más</span>}
                         <span className="block text-xs text-finbra-gray">
                           {c.recordatorios.nombre ? `${c.recordatorios.nombre} · ` : ""}
-                          {c.recordatorios.origen === "equipo" ? "elegido por el equipo" : "sugerido por SIAC"}
+                          {c.recordatorios.origen === "equipo" ? (c.recordatorios.otros > 0 ? "marcados por el equipo" : "elegido por el equipo") : "sugerido por SIAC"}
                         </span>
                       </>
                     ) : c.creditosActivos ? (

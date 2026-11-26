@@ -124,7 +124,6 @@ export function revisarContactos(
   const llave = (clientId: string, valor: string, wa: string | null) => `${clientId}|${wa ?? valor.toLowerCase()}`;
   const yaExiste = new Set(existentes.flatMap((k) => [llave(k.clientId, k.valor, null), ...(k.telefonoWhatsapp ? [llave(k.clientId, "", k.telefonoWhatsapp)] : [])]));
   const enArchivo = new Map<string, number>();
-  const recordatoriosEn = new Map<string, number>();
 
   const filas: FilaContacto[] = [];
   tabla.slice(1).forEach((r, i) => {
@@ -173,21 +172,13 @@ export function revisarContactos(
       const k = llave(cliente.id, v.valor, v.telefonoWhatsapp);
       const listo = { ...fila, valor: v.valor, telefonoWhatsapp: v.telefonoWhatsapp };
       if (yaExiste.has(k)) {
-        filas.push({ ...listo, usarParaRecordatorios: false, estado: "existe", detalle: usar ? "Ya está registrado; para que reciba los recordatorios, elígelo en el perfil del cliente" : null });
+        filas.push({ ...listo, usarParaRecordatorios: false, estado: "existe", detalle: usar ? "Ya está registrado; para que reciba los recordatorios, márcalo en el perfil del cliente" : null });
         continue;
       }
       const previa = enArchivo.get(k);
       if (previa) {
         filas.push({ ...listo, estado: "error", detalle: `Repetido en el archivo (fila ${previa})` });
         continue;
-      }
-      if (usar) {
-        const otra = recordatoriosEn.get(cliente.id);
-        if (otra) {
-          filas.push({ ...listo, estado: "error", detalle: `Solo un contacto por cliente recibe los recordatorios (ya va el de la fila ${otra})` });
-          continue;
-        }
-        recordatoriosEn.set(cliente.id, n);
       }
       enArchivo.set(k, n);
       filas.push({ ...listo, estado: "nuevo", detalle: null });

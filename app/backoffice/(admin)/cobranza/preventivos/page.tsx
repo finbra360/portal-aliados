@@ -40,7 +40,7 @@ export default async function PreventivosPage() {
   }
 
   const salen = p.filas.filter((f) => f.decision.enviar);
-  const faltaMonto = p.filas.filter((f) => !f.decision.enviar && f.decision.motivo === MOTIVO_FALTA_MONTO).length;
+  const faltaMonto = new Set(p.filas.filter((f) => !f.decision.enviar && f.decision.motivo === MOTIVO_FALTA_MONTO).map((f) => f.creditId)).size;
   const cuerpoDe = new Map(p.plantillas.map((t) => [t.nombre, t.cuerpo]));
   // Revisadas con Meta y sin texto = no existen allá todavía.
   const faltanEnMeta = p.plantillas.filter((t) => t.revisadaAt && !t.cuerpo).map((t) => t.nombre);
@@ -154,7 +154,7 @@ export default async function PreventivosPage() {
               </thead>
               <tbody>
                 {p.filas.map((f) => (
-                  <tr key={f.creditId} className="border-b border-black/5 align-top last:border-0">
+                  <tr key={`${f.creditId}:${f.contactId ?? ""}`} className="border-b border-black/5 align-top last:border-0">
                     <td className="px-4 py-2">
                       <Link href={`/backoffice/cobranza/clientes/${f.clientId}`} className="font-medium hover:text-finbra-purple hover:underline">{f.nombre}</Link>
                       <span className="block font-mono text-xs text-finbra-gray">{f.noCredito}</span>

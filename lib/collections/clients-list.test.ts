@@ -70,7 +70,7 @@ test("búsqueda por nombre sin acentos o por número de cliente", () => {
 test("muestra a quién le llegan los recordatorios, respetando la elección del equipo", () => {
   const rows = ROWS.map((r) => (r.clientId === "c" ? { ...r, contactoCobranzaId: "c2" } : r));
   const c = buildClientList(rows, CONTACTOS, 1000, { filtro: "todos", q: "" }).items.find((i) => i.clientId === "c")!;
-  assert.deepEqual(c.recordatorios, { telefono: "5533334444", nombre: "Contador", origen: "equipo" });
+  assert.deepEqual(c.recordatorios, { telefono: "5533334444", nombre: "Contador", origen: "equipo", otros: 0 });
   const a = buildClientList(rows, CONTACTOS, 1000, { filtro: "todos", q: "" }).items.find((i) => i.clientId === "a")!;
   assert.equal(a.recordatorios.origen, "siac");
 });
