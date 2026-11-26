@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { comoJuntar, palabrasDe, parecidoNombre, sugerirCreditos, type CreditoSiac } from "./siac-liga.ts";
+import { comoJuntar, ligasSeguras, palabrasDe, parecidoNombre, sugerirCreditos, type CreditoSiac } from "./siac-liga.ts";
 
 test("nombres: sin acentos, puntuación ni tipo de sociedad", () => {
   assert.deepEqual([...palabrasDe("Mudanzas Ficticias del Centro, S.A. de C.V.")], ["MUDANZAS", "FICTICIAS", "CENTRO"]);
@@ -59,4 +59,26 @@ test("juntar empresas: solo un prospecto con la empresa que creó SIAC", () => {
   assert.deepEqual(comoJuntar(deSiac, deSiac), { ok: true, accion: "misma" });
   assert.equal(comoJuntar({ ...prospecto, clientes: 1 }, deSiac).ok, false);
   assert.equal(comoJuntar(prospecto, { ...deSiac, origen: "manual" }).ok, false);
+});
+
+test("ligas seguras: 80 puntos, 20 de ventaja y un crédito para un solo negocio", () => {
+  const s = (creditId: string, puntos: number) => ({ ...credito({ creditId }), puntos, razones: [] });
+  assert.deepEqual(
+    ligasSeguras([
+      { id: "n1", sugerencias: [s("a", 100), s("b", 70)] },
+      // Poca ventaja sobre la segunda: se revisa a mano.
+      { id: "n2", sugerencias: [s("c", 95), s("d", 80)] },
+      // Pocos puntos.
+      { id: "n3", sugerencias: [s("e", 75)] },
+      { id: "n4", sugerencias: [] },
+      // El mismo crédito para dos negocios: ninguno es seguro.
+      { id: "n5", sugerencias: [s("f", 90)] },
+      { id: "n6", sugerencias: [s("f", 85)] },
+      { id: "n7", sugerencias: [s("g", 80)] },
+    ]),
+    [
+      { id: "n1", creditId: "a" },
+      { id: "n7", creditId: "g" },
+    ],
+  );
 });

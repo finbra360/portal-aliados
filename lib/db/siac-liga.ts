@@ -25,13 +25,13 @@ export interface LigaSiac {
   sugerencias: Sugerencia[];
 }
 
-const SELECT_CREDITO = () => sql`
+export const SELECT_CREDITO = () => sql`
   SELECT cr.id, cr.no_credito, cr.monto_credito, to_char(cr.fecha_ministracion, 'YYYY-MM-DD') AS ministracion,
          c.nombre AS cliente, c.numero_cliente, c.empresa_id
   FROM col_credits cr JOIN col_clients c ON c.id = cr.client_id
 `;
 
-function mapCredito(r: Record<string, unknown>): CreditoSiac {
+export function mapCredito(r: Record<string, unknown>): CreditoSiac {
   return {
     creditId: r.id as string,
     noCredito: r.no_credito as string,
@@ -181,19 +181,25 @@ export async function ligarCreditoSiac(p: { negocioId: string; creditId?: string
   return r;
 }
 
+/** crm_settings: negocios dispersados que se revisaron y no tienen crédito en SIAC. */
+export const CLAVE_SIN_CREDITO = "dispersados_sin_credito";
+
 /**
- * Negocios dispersados en los últimos 90 días que todavía no se ligan a su
- * crédito; null si la base no tiene la columna. Los más viejos (por ejemplo,
- * los ganados que se trajeron de HubSpot) no se piden.
+ * Negocios dispersados que todavía no se ligan a su crédito, sin contar los
+ * marcados «No tiene crédito en SIAC»; null si la base no tiene la columna.
+ * Con `dias`, solo los que se dispersaron en esos días (Inicio pide los de 90:
+ * los más viejos, como los ganados que se trajeron de HubSpot, no se piden ahí).
  */
-export async function dispersadosSinLigar(): Promise<number | null> {
+export async function dispersadosSinLigar(dias: number | null = 90): Promise<number | null> {
   const [col] = await sql`
     SELECT 1 FROM information_schema.columns WHERE table_name = 'crm_negocios_credito' AND column_name = 'credit_id'
   `;
   if (!col) return null;
   const [r] = await sql`
-    SELECT count(*)::int AS n FROM crm_negocios_credito
-    WHERE ambiente = ${ambienteActual()} AND etapa = 'dispersado' AND credit_id IS NULL AND etapa_desde > now() - interval '90 days'
+    SELECT count(*)::int AS n FROM crm_negocios_credito n
+    WHERE n.ambiente = ${ambienteActual()} AND n.etapa = 'dispersado' AND n.credit_id IS NULL
+      AND (${dias}::int IS NULL OR n.etapa_desde > now() - make_interval(days => ${dias}::int))
+      AND NOT COALESCE((SELECT value->'ids' FROM crm_settings WHERE key = ${CLAVE_SIN_CREDITO}) @> to_jsonb(n.id::text), false)
   `;
   return r.n as number;
 }

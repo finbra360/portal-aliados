@@ -126,3 +126,24 @@ export function comoJuntar(negocio: EmpresaParaJuntar, credito: EmpresaParaJunta
   }
   return { ok: true, accion: "juntar" };
 }
+
+/** Puntos mínimos y ventaja sobre la segunda para ligar sin revisar una por una. */
+export const PUNTOS_SEGURA = 80;
+export const VENTAJA_SEGURA = 20;
+
+/**
+ * Para «Ligar los seguros» en Por ligar con SIAC: a cada negocio, su primera
+ * sugerencia si tiene 80 puntos o más y le saca 20 a la segunda. Si el mismo
+ * crédito sale como seguro para dos negocios, no es seguro para ninguno.
+ */
+export function ligasSeguras(negocios: { id: string; sugerencias: Sugerencia[] }[]): { id: string; creditId: string }[] {
+  const candidatas = negocios.flatMap((n) => {
+    const [a, b] = n.sugerencias;
+    if (!a || a.puntos < PUNTOS_SEGURA) return [];
+    if (b && a.puntos - b.puntos < VENTAJA_SEGURA) return [];
+    return [{ id: n.id, creditId: a.creditId }];
+  });
+  const veces = new Map<string, number>();
+  for (const c of candidatas) veces.set(c.creditId, (veces.get(c.creditId) ?? 0) + 1);
+  return candidatas.filter((c) => veces.get(c.creditId) === 1);
+}

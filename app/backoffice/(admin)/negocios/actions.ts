@@ -10,6 +10,7 @@ import { NegocioError, cambiarBroker, cambiarEtapa, crearNegocio, editarNegocio,
 import { validarAnalisis, validarDecision, validarDocumentos, validarLigaExpediente, validarOferta } from "@/lib/clientes/comite";
 import { getProcesoNegocio, guardarAnalisis, guardarExpediente, guardarOferta, registrarDecision } from "@/lib/db/comite";
 import { ligarCreditoSiac } from "@/lib/db/siac-liga";
+import { marcarSinCredito } from "@/lib/db/por-ligar-siac";
 import { importarDeHubspot, MAX_BYTES, vistaPreviaHubspot, type ResultadoImportacion, type VistaPrevia } from "@/lib/db/hubspot-import";
 import { importarContactos, MAX_BYTES_CONTACTOS, vistaPreviaContactos, type ResultadoContactos, type VistaContactos } from "@/lib/db/hubspot-contactos";
 import { PersonaError } from "@/lib/db/personas";
@@ -288,6 +289,55 @@ export async function ligarCreditoSiacAction(id: string, _prev: NegocioResult | 
     };
   } catch (e) {
     return errorDe(e, "ligar con SIAC", "la liga con SIAC");
+  }
+}
+
+const UUID = /^[0-9a-f-]{36}$/i;
+
+/**
+ * «Por ligar con SIAC»: liga uno o varios negocios con el crédito elegido (el
+ * renglón o «Ligar los seguros»). Cada uno se guarda por separado; si alguno
+ * falla, los demás quedan.
+ */
+export async function ligarSiacEnLoteAction(pares: { id: string; creditId: string }[]): Promise<NegocioResult & { ligados?: string[] }> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  const validos =
+    Array.isArray(pares) &&
+    pares.length > 0 &&
+    pares.length <= 500 &&
+    pares.every((p) => typeof p?.id === "string" && UUID.test(p.id) && typeof p.creditId === "string" && UUID.test(p.creditId));
+  if (!validos) return { ok: false, error: "La selección no es válida." };
+  const ligados: string[] = [];
+  let juntadas = 0;
+  const errores: string[] = [];
+  for (const p of pares) {
+    try {
+      const r = await ligarCreditoSiac({ negocioId: p.id, creditId: p.creditId, actor: admin.email });
+      ligados.push(p.id);
+      if (r.accion === "juntar") juntadas++;
+    } catch (e) {
+      if (e instanceof NegocioError) errores.push(e.message);
+      else errores.push(`No pudimos ligar uno. (código ${codigoDeError("originación: ligar con SIAC en lote", e)})`);
+    }
+  }
+  if (ligados.length > 0) refrescar();
+  const juntas = juntadas === 0 ? "" : juntadas === 1 ? " Una empresa que había creado SIAC se juntó con la del negocio." : ` ${juntadas} empresas que había creado SIAC se juntaron con las de sus negocios.`;
+  if (errores.length > 0) {
+    return { ok: false, ligados, error: `${ligados.length > 0 ? `Se ligaron ${ligados.length};${juntas} ` : ""}${errores.length} no se pudieron: ${[...new Set(errores)].join(" ")}` };
+  }
+  return { ok: true, ligados, mensaje: `${ligados.length === 1 ? "Negocio ligado a su crédito." : `Se ligaron ${ligados.length} negocios a su crédito.`}${juntas}` };
+}
+
+/** «No tiene crédito en SIAC»: el negocio sale de Por ligar con SIAC, de Inicio y del resumen. */
+export async function sinCreditoSiacAction(id: string): Promise<NegocioResult> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.operar");
+  if (typeof id !== "string" || !UUID.test(id)) return { ok: false, error: "El negocio no es válido." };
+  try {
+    await marcarSinCredito({ id, actor: admin.email });
+    refrescar();
+    return { ok: true, mensaje: "Listo: ese negocio ya no se pide ligar." };
+  } catch (e) {
+    return errorDe(e, "sin crédito en SIAC", "el cambio");
   }
 }
 
