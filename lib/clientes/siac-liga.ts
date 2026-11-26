@@ -3,19 +3,30 @@
 // Nunca se liga solo: el equipo confirma la sugerencia. Funciones puras, sin
 // base de datos, para probarlas con `node --test`.
 
-/** Palabras que no distinguen a una empresa: tipo de sociedad y artículos. */
+/**
+ * Palabras que no distinguen a una empresa: tipo de sociedad, artículos y lo
+ * que HubSpot le pone al nombre (PFAE, crédito, renovación).
+ */
 const COMUNES = new Set([
   "SA", "DE", "CV", "SAPI", "SAB", "S", "RL", "SC", "SOFOM", "ENR", "ER", "SPR", "AC", "DEL", "LA", "LAS", "LOS", "EL", "Y", "E", "CIA", "GRUPO",
+  "SAS", "SRL", "SOCIEDAD", "ANONIMA", "VARIABLE", "RESPONSABILIDAD", "LIMITADA", "PFAE", "PF", "PM", "PERSONA", "FISICA", "MORAL", "CON", "ACTIVIDAD",
+  "EMPRESARIAL", "CREDITO", "RENOVACION", "PYME",
 ]);
+const PALABRAS = new Map<string, Set<string>>();
 
 /** Palabras que cuentan de un nombre: sin acentos, sin puntuación ni tipo de sociedad. */
 export function palabrasDe(nombre: string): Set<string> {
+  const ya = PALABRAS.get(nombre);
+  if (ya) return ya;
   const limpio = nombre
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
     .toUpperCase()
     .replace(/[^A-Z0-9Ñ ]+/g, " ");
-  return new Set(limpio.split(/\s+/).filter((p) => p.length > 1 && !COMUNES.has(p)));
+  const r = new Set(limpio.split(/\s+/).filter((p) => p.length > 1 && !COMUNES.has(p)));
+  if (PALABRAS.size > 20_000) PALABRAS.clear();
+  PALABRAS.set(nombre, r);
+  return r;
 }
 
 /** Qué tanto se parecen dos nombres, de 0 a 1 (palabras en común contra el nombre más corto). */
@@ -33,7 +44,7 @@ const diasEntre = (a: string, b: string) => Math.round((Date.parse(b.slice(0, 10
 
 export interface NegocioParaLigar {
   empresaId: string;
-  /** Nombre y razón social de la empresa del negocio. */
+  /** Nombre y razón social de la empresa del negocio (y el nombre del negocio en HubSpot, si se importó). */
   nombres: string[];
   /** Monto de referencia: el aprobado en comité, el de la oferta o el estimado. */
   monto: number | null;
@@ -56,16 +67,23 @@ export interface Sugerencia extends CreditoSiac {
   razones: string[];
 }
 
-/** Días alrededor de la dispersión en que se buscan créditos. */
+/** Días alrededor de la dispersión en que la fecha de ministración suma puntos. */
 export const VENTANA_DIAS = 60;
+/**
+ * Fuera de la ventana solo salen los de nombre muy parecido: la fecha de un
+ * ganado de HubSpot es la de cierre allá y puede quedar lejos de la ministración.
+ */
+export const NOMBRE_LEJOS = 0.75;
 const MINIMO = 40;
 const FECHA = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", timeZone: "UTC" });
+const FECHA_ANIO = new Intl.DateTimeFormat("es-MX", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 
 /**
  * Créditos que podrían ser el del negocio, de más a menos probable (hasta 5).
  * Puntos: nombre parecido (hasta 50; si ya es de la misma empresa, completo),
  * monto (hasta 30) y fecha de ministración cerca de la dispersión (hasta 20).
- * Solo los de 40 puntos o más, o los de la misma empresa.
+ * Solo los de 40 puntos o más, o los de la misma empresa. Fuera de la ventana
+ * de fechas, solo los de la misma empresa o con nombre muy parecido.
  */
 export function sugerirCreditos(n: NegocioParaLigar, creditos: CreditoSiac[]): Sugerencia[] {
   const r: Sugerencia[] = [];
@@ -88,9 +106,14 @@ export function sugerirCreditos(n: NegocioParaLigar, creditos: CreditoSiac[]): S
     let fecha = 0;
     if (c.fechaMinistracion) {
       const d = Math.abs(diasEntre(n.dispersadoEl, c.fechaMinistracion));
-      if (d > VENTANA_DIAS && !misma) continue;
-      fecha = d <= 7 ? 1 : Math.max(0, 1 - (d - 7) / (VENTANA_DIAS - 7));
-      razones.push(`ministrado el ${FECHA.format(new Date(`${c.fechaMinistracion}T00:00:00Z`)).replace(".", "")}`);
+      const cuando = new Date(`${c.fechaMinistracion}T00:00:00Z`);
+      if (d > VENTANA_DIAS) {
+        if (!misma && nombre < NOMBRE_LEJOS) continue;
+        razones.push(`ministrado el ${FECHA_ANIO.format(cuando).replace(".", "")}, lejos de la dispersión`);
+      } else {
+        fecha = d <= 7 ? 1 : Math.max(0, 1 - (d - 7) / (VENTANA_DIAS - 7));
+        razones.push(`ministrado el ${FECHA.format(cuando).replace(".", "")}`);
+      }
     }
 
     const puntos = Math.round(nombre * 50 + monto * 30 + fecha * 20);
@@ -146,4 +169,13 @@ export function ligasSeguras(negocios: { id: string; sugerencias: Sugerencia[] }
   const veces = new Map<string, number>();
   for (const c of candidatas) veces.set(c.creditId, (veces.get(c.creditId) ?? 0) + 1);
   return candidatas.filter((c) => veces.get(c.creditId) === 1);
+}
+
+/**
+ * El nombre del negocio en HubSpot, de la nota que dejó el importador
+ * («Importado de HubSpot (negocio 123: NOMBRE).»); null si no hay.
+ */
+export function nombreEnHubspot(notas: string | null | undefined): string | null {
+  const m = notas?.match(/Importado de HubSpot \(negocio [^:)]+: (.+?)\)\. /);
+  return m ? m[1].trim() : null;
 }

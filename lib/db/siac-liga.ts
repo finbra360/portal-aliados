@@ -9,7 +9,7 @@ import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { NegocioError } from "@/lib/db/negocios";
 import { juntarEmpresas } from "@/lib/db/juntar-empresas";
-import { comoJuntar, sugerirCreditos, VENTANA_DIAS, type CreditoSiac, type Sugerencia } from "@/lib/clientes/siac-liga";
+import { comoJuntar, nombreEnHubspot, sugerirCreditos, type CreditoSiac, type Sugerencia } from "@/lib/clientes/siac-liga";
 
 const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 
@@ -85,20 +85,27 @@ export async function getLigaSiac(negocioId: string): Promise<LigaSiac | null> {
     : [];
   const monto = numero(aprobado?.monto) ?? numero(j!.oferta_monto) ?? numero(n.monto_estimado);
   const dispersadoEl = n.dispersado_el as string;
-  const creditos = await sql`
-    ${SELECT_CREDITO()}
-    WHERE cr.ambiente = ${ambienteActual()}
-      AND NOT EXISTS (SELECT 1 FROM crm_negocios_credito x WHERE x.credit_id = cr.id)
-      AND (c.empresa_id = ${n.empresa_id as string}
-           OR cr.fecha_ministracion BETWEEN ${dispersadoEl}::date - ${VENTANA_DIAS}::int AND ${dispersadoEl}::date + ${VENTANA_DIAS}::int)
-    ORDER BY cr.fecha_ministracion DESC NULLS LAST
-    LIMIT 500
-  `;
-  const nombres = [n.nombre as string, ...(n.razon_social ? [n.razon_social as string] : [])];
+  // Todos los créditos libres: sugerirCreditos decide por fecha y, lejos de ella, por nombre.
+  const creditos = await creditosLibres();
+  const nombres = nombresDelNegocio(n.nombre as string, n.razon_social as string | null, j!.notas as string | null);
   return {
     ligado: null,
-    sugerencias: sugerirCreditos({ empresaId: n.empresa_id as string, nombres, monto, dispersadoEl }, creditos.map(mapCredito)),
+    sugerencias: sugerirCreditos({ empresaId: n.empresa_id as string, nombres, monto, dispersadoEl }, creditos),
   };
+}
+
+/** Créditos de SIAC que todavía no están ligados a ningún negocio. */
+export async function creditosLibres(): Promise<CreditoSiac[]> {
+  const rows = await sql`
+    ${SELECT_CREDITO()}
+    WHERE cr.ambiente = ${ambienteActual()} AND NOT EXISTS (SELECT 1 FROM crm_negocios_credito x WHERE x.credit_id = cr.id)
+  `;
+  return rows.map(mapCredito);
+}
+
+/** Con qué nombres buscar el crédito: el de la empresa, su razón social y el del negocio en HubSpot. */
+export function nombresDelNegocio(nombre: string, razonSocial: string | null, notas: string | null): string[] {
+  return [nombre, razonSocial, nombreEnHubspot(notas)].filter((x): x is string => !!x);
 }
 
 /**
