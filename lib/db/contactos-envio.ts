@@ -9,7 +9,8 @@ export type ContactoEnvio = ContactLike & { nombre: string | null };
 /** Por cliente: sus contactos (para elegir el WhatsApp) y los correos activos del deudor. */
 export async function contactosParaEnvio(ambiente: string): Promise<Map<string, { contactos: ContactoEnvio[]; correos: string[] }>> {
   const rows = await sql`
-    SELECT k.id, k.client_id, k.relacion, k.rol, k.tipo, k.telefono_whatsapp, k.estatus, k.baja_whatsapp_at, k.es_principal, k.nombre_contacto, k.valor_original
+    SELECT k.id, k.client_id, k.relacion, k.rol, k.tipo, k.telefono_whatsapp, k.estatus, k.baja_whatsapp_at, k.es_principal, k.nombre_contacto, k.valor_original,
+           (to_jsonb(k)->>'recibe_recordatorios')::boolean AS recibe
     FROM col_contacts k JOIN col_clients c ON c.id = k.client_id
     WHERE c.ambiente = ${ambiente}
   `;
@@ -25,6 +26,8 @@ export async function contactosParaEnvio(ambiente: string): Promise<Map<string, 
       estatus: k.estatus,
       bajaWhatsappAt: k.baja_whatsapp_at ? String(k.baja_whatsapp_at) : null,
       esPrincipal: k.es_principal,
+      // null: la base todavía no tiene la columna (se usa contacto_cobranza_id).
+      recibeRecordatorios: k.recibe ?? undefined,
       nombre: k.nombre_contacto,
     });
     // Correo del deudor: solo los del titular que siguen activos (nunca a un aval o referencia).

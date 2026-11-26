@@ -18,15 +18,16 @@ export async function getSetting<T>(key: string, porDefecto: T): Promise<T> {
 
 /**
  * Condición SQL: el cliente `c` (alias obligatorio) tiene a quién mandarle el
- * recordatorio. Es la misma regla que chooseRecipient (contacts.ts): el
- * contacto elegido por el equipo o, si no sirve, el sugerido por SIAC, siempre
- * que sea del deudor, con WhatsApp válido, activo y sin baja.
+ * recordatorio. Es la misma regla que chooseRecipients (contacts.ts): algún
+ * contacto marcado por el equipo o, si no sirve, el sugerido por SIAC, siempre
+ * que sea del deudor, con WhatsApp válido, activo y sin baja. Antes de la
+ * columna recibe_recordatorios, el marcado es contacto_cobranza_id.
  */
 export const tieneDestinatarioValido = () => sql`
   EXISTS (
     SELECT 1 FROM col_contacts k
     WHERE k.client_id = c.id
-      AND (k.id = c.contacto_cobranza_id OR k.es_principal)
+      AND (COALESCE((to_jsonb(k)->>'recibe_recordatorios')::boolean, k.id = c.contacto_cobranza_id) OR k.es_principal)
       AND k.relacion = 'titular' AND k.tipo = 'telefono' AND k.telefono_whatsapp IS NOT NULL
       AND k.estatus = 'activo' AND k.baja_whatsapp_at IS NULL
   )

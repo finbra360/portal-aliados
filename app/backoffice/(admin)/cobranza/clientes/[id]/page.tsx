@@ -185,17 +185,17 @@ export default async function ClientePerfilPage({ params }: { params: Promise<{ 
             {puedeOperar ? (
               <>
                 <p className="mb-4 text-sm text-finbra-gray">
-                  Define el tipo de cada contacto y a quién se le mandan los recordatorios de cobranza. Tu elección se respeta aunque SIAC cambie sus datos.
+                  Define el tipo de cada contacto y a quiénes se les mandan los recordatorios de cobranza (pueden ser varios). Tu elección se respeta aunque SIAC cambie sus datos.
                 </p>
                 <ContactsPanel
                   clientId={perfil.id}
                   contactos={perfil.contactos}
-                  recipient={perfil.recipient}
+                  recipients={perfil.recipients}
                   elegidoPor={{ por: perfil.contactoCobranza.por, at: perfil.contactoCobranza.at }}
                 />
               </>
             ) : (
-              <ContactosLectura contactos={perfil.contactos} destinatarioId={perfil.recipient.contactId} />
+              <ContactosLectura contactos={perfil.contactos} destinatarioIds={perfil.recipients.contactIds} />
             )}
           </Card>
 

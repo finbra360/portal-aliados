@@ -164,6 +164,16 @@ ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_id UUID REFER
 ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_por TEXT;
 ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_at TIMESTAMPTZ;
 
+-- Agregada el 2026-11-26. Contactos del deudor que el equipo marcó para recibir
+-- los recordatorios por WhatsApp: pueden ser varios (cada número recibe su
+-- mensaje). Si ninguno marcado sirve, se usa el sugerido por SIAC
+-- (es_principal). Reemplaza a col_clients.contacto_cobranza_id, que ya no se
+-- escribe: el elegido de antes queda marcado aquí.
+ALTER TABLE col_contacts ADD COLUMN IF NOT EXISTS recibe_recordatorios BOOLEAN NOT NULL DEFAULT false;
+UPDATE col_contacts k SET recibe_recordatorios = true
+FROM col_clients c
+WHERE c.contacto_cobranza_id = k.id AND NOT k.recibe_recordatorios;
+
 -- Agregadas el 2026-10-02. Cuentas de Finbra a las que los clientes transfieren
 -- sus pagos; los recordatorios incluyen la cuenta del cliente. No vienen de SIAC
 -- (su campo Referencia llega vacío). La CLABE no se edita: una cuenta distinta

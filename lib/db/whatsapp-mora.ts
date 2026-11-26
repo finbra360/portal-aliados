@@ -8,6 +8,7 @@ import { EJEMPLO_PREVENTIVA, PLANTILLAS_PREVENTIVAS } from "@/lib/collections/pr
 import { EJEMPLO_CONTACTO, PLANTILLA_CONTACTO } from "@/lib/collections/chat";
 import { logAudit } from "@/lib/db/audit";
 import { contactosParaEnvio } from "@/lib/db/contactos-envio";
+import { porDestinatario } from "@/lib/collections/contacts";
 import { esDiaHabil } from "@/lib/collections/dias-habiles";
 import { ambienteActual, getPhotoStatus } from "@/lib/db/collections";
 import { getSetting, openAlert, peso } from "@/lib/collections/store";
@@ -83,6 +84,20 @@ export async function plantillasDe(uso: "mora" | "preventiva" | null): Promise<P
   }));
 }
 
+/** Llave del recordatorio de mora: uno por cliente, número y día. (Antes del 2026-11-26 era sin contacto.) */
+export const dedupeMora = (clientId: string, hoy: string, contactId: string) => `mora:${clientId}:${hoy}:${contactId}`;
+
+/** Recordatorios de mora registrados hoy: la llave y, de los de antes del cambio, «llave|contacto». */
+async function moraRegistradosHoy(hoy: string): Promise<Set<string>> {
+  const rows = await sql`SELECT dedupe_key, contact_id FROM col_wa_messages WHERE origen = 'recordatorio_mora' AND dedupe_key LIKE ${`mora:%:${hoy}%`}`;
+  const s = new Set<string>();
+  for (const r of rows) {
+    s.add(r.dedupe_key as string);
+    if (r.contact_id) s.add(`${r.dedupe_key}|${r.contact_id}`);
+  }
+  return s;
+}
+
 /** Clientes con saldo vencido en la foto, con todo lo que decide si reciben recordatorio. */
 export async function candidatosMora(fechaCorte: string, hoy: string): Promise<MoraCandidate[]> {
   const ambiente = ambienteActual();
@@ -138,7 +153,8 @@ export interface MoraPreview {
   /** Lo mismo para un envío manual de Super Admin: ignora solo el interruptor. */
   bloqueosManual: string[];
   plantillas: PlantillaMora[];
-  filas: { clientId: string; nombre: string; totalVencido: number; decision: MoraDecision }[];
+  /** Un renglón por número que recibe el recordatorio. */
+  filas: { clientId: string; contactId: string | null; nombre: string; totalVencido: number; decision: MoraDecision }[];
   ultimos: { id: number; clientId: string | null; cliente: string | null; telefono: string; plantilla: string | null; estado: string; error: string | null; at: string }[];
   /** Resultado de la última "Revisar con Meta", o null si nunca se ha hecho. */
   revisionMeta: (NumeroMeta & { at: string; por: string }) | null;
@@ -170,13 +186,20 @@ export async function previewMora(): Promise<MoraPreview> {
   const bloqueos = bloqueosDeEnvio(condiciones);
   const bloqueosManual = bloqueosDeEnvio({ ...condiciones, activado: true });
 
-  const filas = status.fechaCorte
-    ? (await candidatosMora(status.fechaCorte, hoy))
-        .map((c) => ({ clientId: c.clientId, nombre: c.nombre, totalVencido: c.totalVencido, decision: decidirMora(c, { umbral, hoy, plantillasActivas: activas }) }))
+  const [candidatos, registrados] = status.fechaCorte ? await Promise.all([candidatosMora(status.fechaCorte, hoy), moraRegistradosHoy(hoy)]) : [[], new Set<string>()];
+  const filas = candidatos
+        // Un renglón por número que recibe el recordatorio; cada uno, una vez al día.
+        .flatMap((c) =>
+          porDestinatario(c).map(({ contactId, candidato }) => {
+            const yaSeIntentoHoy = contactId
+              ? registrados.has(dedupeMora(c.clientId, hoy, contactId)) || registrados.has(`mora:${c.clientId}:${hoy}|${contactId}`)
+              : c.yaSeIntentoHoy;
+            return { clientId: c.clientId, contactId, nombre: c.nombre, totalVencido: c.totalVencido, decision: decidirMora({ ...candidato, yaSeIntentoHoy }, { umbral, hoy, plantillasActivas: activas }) };
+          }),
+        )
         .filter((f) => f.decision.enviar || f.decision.motivo !== "Vence hoy: todavía no está en mora")
         .filter((f) => f.totalVencido >= umbral)
-        .sort((a, b) => Number(b.decision.enviar) - Number(a.decision.enviar) || b.totalVencido - a.totalVencido)
-    : [];
+        .sort((a, b) => Number(b.decision.enviar) - Number(a.decision.enviar) || b.totalVencido - a.totalVencido);
 
   const ultimos = await ultimosEnvios(["recordatorio_mora", "backoffice_manual"]);
   return {
@@ -251,7 +274,7 @@ export async function runMoraReminders(p: { disparadoPor: string; manual?: boole
             telefono: fila.decision.telefono,
             plantilla: porNombre.get(fila.decision.plantilla)!,
             parametros: fila.decision.parametros,
-            dedupeKey: `mora:${fila.clientId}:${preview.hoy}`,
+            dedupeKey: dedupeMora(fila.clientId, preview.hoy, fila.decision.contactId),
             descripcion: `Recordatorio de mora por WhatsApp (${fila.decision.plantilla}): vencido ${peso(fila.totalVencido)}`,
           }
         : null,

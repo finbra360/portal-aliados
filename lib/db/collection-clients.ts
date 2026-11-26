@@ -7,11 +7,13 @@ import { ambienteActual } from "@/lib/db/collections";
 import {
   TIPOS_CONTACTO,
   chooseRecipient,
+  chooseRecipients,
   motivoNoRecibe,
   tipoDe,
   validarContactoNuevo,
   type ContactLike,
   type Recipient,
+  type Recipients,
   type TipoContacto,
 } from "@/lib/collections/contacts";
 import type { Tx } from "@/lib/collections/store";
@@ -41,6 +43,10 @@ export interface ClientProfile {
   /** Cuenta a la que paga. null = sin cuenta: no recibe recordatorios. */
   cuentaPago: { id: string; alias: string; banco: string; beneficiario: string; clabe: string; por: string | null; at: string | null } | null;
   recipient: Recipient;
+  /** Todos los números que reciben los recordatorios por WhatsApp. */
+  recipients: Recipients;
+  /** La base ya tiene la marca de varios destinatarios (recibe_recordatorios). */
+  variosDestinatarios: boolean;
   creditos: {
     id: string;
     noCredito: string;
@@ -89,6 +95,8 @@ function mapContact(r: Record<string, unknown>): Omit<ProfileContact, "motivoNoR
     estatus: r.estatus as ContactLike["estatus"],
     bajaWhatsappAt: r.baja_whatsapp_at ? iso(r.baja_whatsapp_at) : null,
     esPrincipal: Boolean(r.es_principal),
+    // undefined: la base todavía no tiene la columna (se usa contacto_cobranza_id).
+    recibeRecordatorios: "recibe_recordatorios" in r ? Boolean(r.recibe_recordatorios) : undefined,
     origen: r.origen as "siac" | "manual",
     campoSiac: (r.campo_siac as string) ?? null,
     valor: r.valor_original as string,
@@ -179,6 +187,8 @@ export async function getClientProfile(clientId: string): Promise<ClientProfile 
         ? { id: c.cuenta_pago_id, ...c.cuenta, por: c.cuenta_pago_por, at: c.cuenta_pago_at ? iso(c.cuenta_pago_at) : null }
         : null,
     recipient: chooseRecipient(cs, c.contacto_cobranza_id),
+    recipients: chooseRecipients(cs, c.contacto_cobranza_id),
+    variosDestinatarios: contactos.length ? contactos.some((r) => "recibe_recordatorios" in r) : await hayMarca(sql),
     creditos: creditos.map((r) => ({
       id: r.id,
       noCredito: r.no_credito,
@@ -253,40 +263,69 @@ async function closePhoneAlertIfFixed(tx: Tx, clientId: string, actor: string) {
     WHERE a.client_id = c.id AND c.id = ${clientId} AND a.tipo = 'telefono_invalido' AND a.estado = 'abierta'
       AND EXISTS (
         SELECT 1 FROM col_contacts k
-        WHERE k.client_id = c.id AND (k.id = c.contacto_cobranza_id OR k.es_principal)
+        WHERE k.client_id = c.id AND (COALESCE((to_jsonb(k)->>'recibe_recordatorios')::boolean, k.id = c.contacto_cobranza_id) OR k.es_principal)
           AND k.relacion = 'titular' AND k.tipo = 'telefono' AND k.telefono_whatsapp IS NOT NULL
           AND k.estatus = 'activo' AND k.baja_whatsapp_at IS NULL
       )
   `;
 }
 
-/**
- * Elige el contacto que recibe los recordatorios de cobranza del cliente.
- * `contactId = null` regresa al sugerido por SIAC.
- */
-export async function setContactoCobranza(p: { clientId: string; contactId: string | null; actor: string }) {
-  await transaccion(async (tx) => {
-    const [c] = await tx`
-      SELECT id, contacto_cobranza_id FROM col_clients WHERE id = ${p.clientId} AND ambiente = ${ambienteActual()} FOR UPDATE
-    `;
-    if (!c) throw new ContactError("No encontramos ese cliente");
+/** La base ya tiene col_contacts.recibe_recordatorios (varios destinatarios). */
+async function hayMarca(q: Tx): Promise<boolean> {
+  const [r] = await q`SELECT 1 FROM information_schema.columns WHERE table_name = 'col_contacts' AND column_name = 'recibe_recordatorios'`;
+  return !!r;
+}
 
-    let descripcion = "Los recordatorios vuelven al contacto sugerido por SIAC";
-    if (p.contactId) {
-      const k = await loadContact(tx, p.contactId);
-      if (k.client_id !== p.clientId) throw new ContactError("Ese contacto no es de este cliente");
-      const motivo = motivoNoRecibe(mapContact(k));
-      if (motivo) throw new ContactError(`No se puede usar para recordatorios: ${motivo.toLowerCase()}`);
-      descripcion = `Los recordatorios de cobranza ahora van a ${describir(k)}`;
-    }
+/** Marca o desmarca un contacto para que reciba (o no) los recordatorios. Pueden ser varios por cliente. */
+async function marcar(tx: Tx, p: { clientId: string; contactId: string; recibe: boolean; actor: string }) {
+  if (await hayMarca(tx)) {
+    await tx`UPDATE col_contacts SET recibe_recordatorios = ${p.recibe}, updated_by = ${p.actor}, updated_at = now() WHERE id = ${p.contactId}`;
+  } else if (p.recibe) {
+    // Antes de correr el SQL: un solo elegido, como antes.
+    await tx`UPDATE col_clients SET contacto_cobranza_id = ${p.contactId}, contacto_cobranza_por = ${p.actor}, contacto_cobranza_at = now() WHERE id = ${p.clientId}`;
+  } else {
     await tx`
-      UPDATE col_clients SET contacto_cobranza_id = ${p.contactId}, contacto_cobranza_por = ${p.actor}, contacto_cobranza_at = now()
-      WHERE id = ${p.clientId}
+      UPDATE col_clients SET contacto_cobranza_id = NULL, contacto_cobranza_por = ${p.actor}, contacto_cobranza_at = now()
+      WHERE id = ${p.clientId} AND contacto_cobranza_id = ${p.contactId}
     `;
-    await activity(tx, p.clientId, descripcion, p.actor, { contactoAnterior: c.contacto_cobranza_id, contactoNuevo: p.contactId });
-    await closePhoneAlertIfFixed(tx, p.clientId, p.actor);
+  }
+}
+
+/** Que un contacto del deudor reciba o deje de recibir los recordatorios por WhatsApp. */
+export async function setRecibeRecordatorios(p: { contactId: string; recibe: boolean; actor: string }) {
+  let clientId = "";
+  await transaccion(async (tx) => {
+    const k = await loadContact(tx, p.contactId);
+    clientId = k.client_id;
+    if (p.recibe) {
+      const motivo = motivoNoRecibe(mapContact(k));
+      if (motivo) throw new ContactError(`No puede recibir los recordatorios: ${motivo.toLowerCase()}`);
+    }
+    await marcar(tx, { clientId, contactId: p.contactId, recibe: p.recibe, actor: p.actor });
+    await activity(
+      tx,
+      clientId,
+      p.recibe ? `${describir(k)} ahora recibe los recordatorios de cobranza` : `${describir(k)} ya no recibe los recordatorios de cobranza`,
+      p.actor,
+      { contactId: p.contactId, recibe: p.recibe },
+    );
+    if (p.recibe) await closePhoneAlertIfFixed(tx, clientId, p.actor);
   });
-  await logAudit({ actorEmail: p.actor, action: "cobranza_contacto_recordatorios", entityType: "col_client", entityId: p.clientId, metadata: { contactId: p.contactId } });
+  await logAudit({ actorEmail: p.actor, action: "cobranza_contacto_recordatorios", entityType: "col_contact", entityId: p.contactId, metadata: { clientId, recibe: p.recibe } });
+}
+
+/** Quita todas las marcas: los recordatorios vuelven al contacto sugerido por SIAC. */
+export async function volverAlSugerido(p: { clientId: string; actor: string }) {
+  await transaccion(async (tx) => {
+    const [c] = await tx`SELECT id FROM col_clients WHERE id = ${p.clientId} AND ambiente = ${ambienteActual()} FOR UPDATE`;
+    if (!c) throw new ContactError("No encontramos ese cliente");
+    if (await hayMarca(tx)) {
+      await tx`UPDATE col_contacts SET recibe_recordatorios = false, updated_by = ${p.actor}, updated_at = now() WHERE client_id = ${p.clientId} AND recibe_recordatorios`;
+    }
+    await tx`UPDATE col_clients SET contacto_cobranza_id = NULL, contacto_cobranza_por = ${p.actor}, contacto_cobranza_at = now() WHERE id = ${p.clientId}`;
+    await activity(tx, p.clientId, "Los recordatorios vuelven al contacto sugerido por SIAC", p.actor, {});
+  });
+  await logAudit({ actorEmail: p.actor, action: "cobranza_contacto_recordatorios", entityType: "col_client", entityId: p.clientId, metadata: { volverAlSugerido: true } });
 }
 
 /** Cambia el tipo de contacto. Si deja de ser del deudor y recibía los recordatorios, deja de recibirlos. */
@@ -303,8 +342,8 @@ export async function setContactTipo(p: { contactId: string; tipo: TipoContacto;
       WHERE id = ${p.contactId}
     `;
     let extra = "";
-    if (!tipo.deudor && k.contacto_cobranza_id === p.contactId) {
-      await tx`UPDATE col_clients SET contacto_cobranza_id = NULL, contacto_cobranza_por = ${p.actor}, contacto_cobranza_at = now() WHERE id = ${clientId}`;
+    if (!tipo.deudor && (k.recibe_recordatorios === true || k.contacto_cobranza_id === p.contactId)) {
+      await marcar(tx, { clientId, contactId: p.contactId, recibe: false, actor: p.actor });
       extra = "; dejó de recibir los recordatorios porque ya no es del deudor";
     }
     await activity(tx, clientId, `${describir(k)}: de "${antes}" a "${tipo.label}"${extra}`, p.actor, { contactId: p.contactId, tipo: p.tipo });
@@ -376,11 +415,8 @@ export async function addManualContact(p: {
     const quien = p.nombre?.trim() ? `${p.nombre.trim()} (${v.valor})` : v.valor;
     await activity(tx, p.clientId, `Se agregó el contacto ${quien} como "${tipo.label}"`, p.actor, { contactId, tipo: p.tipoContacto });
     if (p.usarParaRecordatorios) {
-      await tx`
-        UPDATE col_clients SET contacto_cobranza_id = ${contactId}, contacto_cobranza_por = ${p.actor}, contacto_cobranza_at = now()
-        WHERE id = ${p.clientId}
-      `;
-      await activity(tx, p.clientId, `Los recordatorios de cobranza ahora van a ${quien}`, p.actor, { contactoNuevo: contactId });
+      await marcar(tx, { clientId: p.clientId, contactId, recibe: true, actor: p.actor });
+      await activity(tx, p.clientId, `${quien} ahora recibe los recordatorios de cobranza`, p.actor, { contactoNuevo: contactId });
       await closePhoneAlertIfFixed(tx, p.clientId, p.actor);
     }
   });
@@ -465,11 +501,8 @@ export async function importarContactos(texto: string, actor: string) {
     for (const f of nuevos.filter((n) => n.usarParaRecordatorios)) {
       const contactId = idDe.get(`${f.clientId}|${f.valor}`);
       if (!contactId || !f.clientId) continue;
-      await tx`
-        UPDATE col_clients SET contacto_cobranza_id = ${contactId}, contacto_cobranza_por = ${actor}, contacto_cobranza_at = now()
-        WHERE id = ${f.clientId}
-      `;
-      await activity(tx, f.clientId, `Los recordatorios de cobranza ahora van a ${f.nombre ? `${f.nombre} (${f.valor})` : f.valor}`, actor, { contactoNuevo: contactId, cargaMasiva: true });
+      await marcar(tx, { clientId: f.clientId, contactId, recibe: true, actor });
+      await activity(tx, f.clientId, `${f.nombre ? `${f.nombre} (${f.valor})` : f.valor} ahora recibe los recordatorios de cobranza`, actor, { contactoNuevo: contactId, cargaMasiva: true });
       await closePhoneAlertIfFixed(tx, f.clientId, actor);
       conteo.recordatorios++;
     }

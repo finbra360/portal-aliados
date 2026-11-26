@@ -9,7 +9,8 @@ import {
   addManualContact,
   setContactEstatus,
   setContactTipo,
-  setContactoCobranza,
+  setRecibeRecordatorios,
+  volverAlSugerido,
 } from "@/lib/db/collection-clients";
 import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
 import {
@@ -45,8 +46,15 @@ async function run(clientId: string, fn: (actor: string) => Promise<unknown>): P
 
 const esTipo = (t: string): t is TipoContacto => t in TIPOS_CONTACTO;
 
-export async function setRecipientAction(clientId: string, contactId: string | null): Promise<ActionResult> {
-  return run(clientId, (actor) => setContactoCobranza({ clientId, contactId, actor }));
+/** Que el contacto reciba (o deje de recibir) los recordatorios por WhatsApp; pueden ser varios. */
+export async function setRecibeAction(clientId: string, contactId: string, recibe: boolean): Promise<ActionResult> {
+  if (typeof recibe !== "boolean") return { ok: false, error: "Opción no válida" };
+  return run(clientId, (actor) => setRecibeRecordatorios({ contactId, recibe, actor }));
+}
+
+/** Quita las marcas: los recordatorios vuelven al sugerido por SIAC. */
+export async function volverAlSugeridoAction(clientId: string): Promise<ActionResult> {
+  return run(clientId, (actor) => volverAlSugerido({ clientId, actor }));
 }
 
 export async function setTipoAction(clientId: string, contactId: string, tipo: string): Promise<ActionResult> {

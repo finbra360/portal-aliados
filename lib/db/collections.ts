@@ -203,7 +203,7 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
     `,
     sql`
       SELECT k.id, k.client_id, k.relacion, k.rol, k.tipo, k.telefono_whatsapp, k.estatus, k.baja_whatsapp_at,
-             k.es_principal, k.valor_original, k.nombre_contacto
+             k.es_principal, k.valor_original, k.nombre_contacto, (to_jsonb(k)->>'recibe_recordatorios')::boolean AS recibe
       FROM col_contacts k JOIN col_clients c ON c.id = k.client_id
       WHERE c.ambiente = ${ambiente}
     `,
@@ -235,6 +235,7 @@ export async function getClientsList(fechaCorte: string | null, opts: { filtro: 
       estatus: k.estatus,
       bajaWhatsappAt: k.baja_whatsapp_at ? String(k.baja_whatsapp_at) : null,
       esPrincipal: k.es_principal,
+      recibeRecordatorios: k.recibe ?? undefined,
       valor: k.valor_original,
       nombre: k.nombre_contacto,
     })),

@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
 import type { ProfileContact } from "@/lib/db/collection-clients";
 import { formatFechaHora, formatTelefono } from "@/lib/format";
-import { addContactAction, setEstatusAction, setRecipientAction, setTipoAction, type ActionResult } from "./actions";
+import { addContactAction, setEstatusAction, setRecibeAction, setTipoAction, volverAlSugeridoAction, type ActionResult } from "./actions";
 import { enviarSinBorrar } from "../../enviarSinBorrar";
 
 const TIPOS = Object.entries(TIPOS_CONTACTO) as [TipoContacto, (typeof TIPOS_CONTACTO)[TipoContacto]][];
@@ -31,11 +31,14 @@ function ContactRow({
   c,
   esDestinatario,
   origenDestinatario,
+  marcado,
 }: {
   clientId: string;
   c: ProfileContact;
   esDestinatario: boolean;
   origenDestinatario: "equipo" | "siac" | null;
+  /** El equipo lo marcó para recibir los recordatorios. */
+  marcado: boolean;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -89,15 +92,26 @@ function ContactRow({
             </optgroup>
           </select>
 
-          {!esDestinatario && !c.motivoNoRecibe && (
+          {marcado ? (
             <button
               type="button"
               disabled={pending}
-              onClick={() => correr(() => setRecipientAction(clientId, c.id))}
-              className="rounded-lg bg-finbra-purple px-3 py-1.5 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50"
+              onClick={() => correr(() => setRecibeAction(clientId, c.id, false))}
+              className="rounded-lg border border-finbra-purple/40 px-3 py-1.5 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-purple/10 disabled:opacity-50"
             >
-              Usar para recordatorios
+              Ya no mandarle recordatorios
             </button>
+          ) : (
+            !c.motivoNoRecibe && (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => correr(() => setRecibeAction(clientId, c.id, true))}
+                className="rounded-lg bg-finbra-purple px-3 py-1.5 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50"
+              >
+                {esDestinatario ? "Dejarlo fijo para recordatorios" : "Mandarle recordatorios"}
+              </button>
+            )
           )}
           {c.estatus === "activo" && !c.bajaWhatsappAt ? (
             <>
@@ -179,7 +193,7 @@ function AddContactForm({ clientId }: { clientId: string }) {
       </div>
       <label className={`flex items-center gap-2 text-sm ${puedeRecibir ? "" : "opacity-50"}`}>
         <input type="checkbox" name="usarParaRecordatorios" disabled={!puedeRecibir} />
-        Usar este contacto para los recordatorios de cobranza
+        Que este contacto reciba los recordatorios de cobranza
       </label>
       {state && !state.ok && <p className="text-sm text-red-700" role="alert">{state.error}</p>}
       <div className="flex gap-2">
@@ -197,41 +211,55 @@ function AddContactForm({ clientId }: { clientId: string }) {
 export default function ContactsPanel({
   clientId,
   contactos,
-  recipient,
+  recipients,
   elegidoPor,
 }: {
   clientId: string;
   contactos: ProfileContact[];
-  recipient: { contactId: string | null; origen: "equipo" | "siac" | null; aviso: string | null };
+  recipients: { contactIds: string[]; origen: "equipo" | "siac" | null; aviso: string | null };
   elegidoPor: { por: string | null; at: string | null };
 }) {
   const [pending, start] = useTransition();
   const deudor = contactos.filter((c) => c.relacion === "titular");
   const terceros = contactos.filter((c) => c.relacion !== "titular");
-  const destinatario = contactos.find((c) => c.id === recipient.contactId);
+  const destinatarios = recipients.contactIds.map((id) => contactos.find((c) => c.id === id)).filter((c): c is ProfileContact => !!c);
+  const destinatario = destinatarios[0];
+  // Marcado por el equipo: con la columna nueva, su marca; antes, el elegido (origen equipo).
+  const marcado = (c: ProfileContact) => (c.recibeRecordatorios !== undefined ? c.recibeRecordatorios : recipients.origen === "equipo" && recipients.contactIds.includes(c.id));
 
   return (
     <div className="space-y-4">
       <div className={`rounded-lg p-4 text-sm ${destinatario ? "bg-finbra-purple/5" : "bg-amber-50 text-amber-900"}`}>
         {destinatario ? (
           <p>
-            Los recordatorios de cobranza van a <strong>{formatTelefono(destinatario.valor)}</strong>
-            {destinatario.nombre && <> ({destinatario.nombre})</>}.{" "}
-            {recipient.origen === "equipo" && elegidoPor.por ? (
-              <span className="text-finbra-gray">Lo eligió {elegidoPor.por}{elegidoPor.at ? ` el ${formatFechaHora(elegidoPor.at)}` : "."}</span>
+            Los recordatorios por WhatsApp van a{" "}
+            {destinatarios.map((d, i) => (
+              <span key={d.id}>
+                {i > 0 && (i === destinatarios.length - 1 ? " y " : ", ")}
+                <strong>{formatTelefono(d.valor)}</strong>
+                {d.nombre && <> ({d.nombre})</>}
+              </span>
+            ))}
+            .{" "}
+            {recipients.origen === "equipo" ? (
+              destinatarios.length === 1 && elegidoPor.por && recipients.contactIds[0] === destinatario.id && destinatario.recibeRecordatorios === undefined ? (
+                <span className="text-finbra-gray">Lo eligió {elegidoPor.por}{elegidoPor.at ? ` el ${formatFechaHora(elegidoPor.at)}` : "."}</span>
+              ) : (
+                <span className="text-finbra-gray">{destinatarios.length === 1 ? "Lo marcó el equipo." : "Los marcó el equipo; cada número recibe su mensaje."}</span>
+              )
             ) : (
-              <span className="text-finbra-gray">Es el sugerido por SIAC (celular o, si falta, teléfono del cliente).</span>
+              <span className="text-finbra-gray">Es el sugerido por SIAC (celular o, si falta, teléfono del cliente). Marca los que quieras abajo.</span>
             )}
           </p>
         ) : (
-          <p><strong>Este cliente no tiene a quién mandarle recordatorios.</strong> Elige o agrega un teléfono del deudor con 10 dígitos.</p>
+          <p><strong>Este cliente no tiene a quién mandarle recordatorios.</strong> Marca o agrega un teléfono del deudor con 10 dígitos.</p>
         )}
-        {recipient.aviso && destinatario && <p className="mt-1 text-amber-800">{recipient.aviso}</p>}
-        {recipient.origen === "equipo" && (
+        {recipients.aviso && destinatario && <p className="mt-1 text-amber-800">{recipients.aviso}</p>}
+        {recipients.origen === "equipo" && (
           <button
             type="button"
             disabled={pending}
-            onClick={() => start(async () => void (await setRecipientAction(clientId, null)))}
+            onClick={() => start(async () => void (await volverAlSugeridoAction(clientId)))}
             className="mt-2 text-xs font-medium text-finbra-purple hover:underline disabled:opacity-50"
           >
             Volver al sugerido por SIAC
@@ -246,7 +274,14 @@ export default function ContactsPanel({
         ) : (
           <ul className="space-y-2">
             {deudor.map((c) => (
-              <ContactRow key={c.id} clientId={clientId} c={c} esDestinatario={c.id === recipient.contactId} origenDestinatario={recipient.origen} />
+              <ContactRow
+                key={c.id}
+                clientId={clientId}
+                c={c}
+                esDestinatario={recipients.contactIds.includes(c.id)}
+                origenDestinatario={recipients.origen}
+                marcado={marcado(c)}
+              />
             ))}
           </ul>
         )}
@@ -258,7 +293,7 @@ export default function ContactsPanel({
           <p className="text-xs text-finbra-gray">Se pueden consultar y llamar a mano, pero no reciben recordatorios automáticos mientras legal no valide otra cosa.</p>
           <ul className="space-y-2">
             {terceros.map((c) => (
-              <ContactRow key={c.id} clientId={clientId} c={c} esDestinatario={false} origenDestinatario={null} />
+              <ContactRow key={c.id} clientId={clientId} c={c} esDestinatario={false} origenDestinatario={null} marcado={false} />
             ))}
           </ul>
         </section>

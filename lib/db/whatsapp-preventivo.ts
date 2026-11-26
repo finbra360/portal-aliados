@@ -25,6 +25,7 @@ import { enviarLote, plantillasDe, ultimosEnvios, type EnvioReciente, type MoraR
 import { consultarSaldoAlDia } from "@/lib/db/collection-gestiones";
 import { contactosParaEnvio } from "@/lib/db/contactos-envio";
 import { diasCubiertos, esDiaHabil } from "@/lib/collections/dias-habiles";
+import { porDestinatario } from "@/lib/collections/contacts";
 
 const VENTANA_DEFAULT = { desde: "09:00", hasta: "19:00" };
 
@@ -140,6 +141,26 @@ export async function candidatosPreventivos(fechaCorte: string, hoy: string, umb
 }
 
 export const dedupeKey = (creditId: string, etapa: string, vencimiento: string) => `preventiva:${creditId}:${etapa}:${vencimiento}`;
+/** Desde que hay varios destinatarios, la llave lleva también el contacto: cada número recibe su recordatorio una vez. */
+export const dedupeKeyContacto = (creditId: string, etapa: string, vencimiento: string, contactId: string) =>
+  `${dedupeKey(creditId, etapa, vencimiento)}:${contactId}`;
+
+/**
+ * Recordatorios preventivos ya registrados (40 días), para no repetirlos: la
+ * llave con contacto y, de los de antes del cambio (llave sin contacto),
+ * «llave|contacto» con el contacto al que se le mandó.
+ */
+async function preventivosRegistrados(): Promise<Set<string>> {
+  const rows = await sql`
+    SELECT dedupe_key, contact_id FROM col_wa_messages WHERE origen = 'recordatorio_preventivo' AND created_at > now() - interval '40 days'
+  `;
+  const s = new Set<string>();
+  for (const r of rows) {
+    s.add(r.dedupe_key as string);
+    if (r.contact_id) s.add(`${r.dedupe_key}|${r.contact_id}`);
+  }
+  return s;
+}
 
 export interface PreventivosPreview {
   ambiente: string;
@@ -150,8 +171,8 @@ export interface PreventivosPreview {
   bloqueosManual: string[];
   umbrales: UmbralesSemaforo;
   plantillas: PlantillaMora[];
-  /** Los que vencen hoy, mañana o en 5 días (a los que hoy les toca recordatorio). */
-  filas: { creditId: string; clientId: string; nombre: string; noCredito: string; proximoVencimiento: string; decision: PreventivoDecision }[];
+  /** Los que vencen hoy, mañana o en 5 días (a los que hoy les toca recordatorio), un renglón por número que lo recibe. */
+  filas: { creditId: string; clientId: string; contactId: string | null; nombre: string; noCredito: string; proximoVencimiento: string; decision: PreventivoDecision }[];
   /** Los que vencen en 2 a 4 días: hoy no les toca, se muestran para planear. */
   proximos: { creditId: string; clientId: string; nombre: string; noCredito: string; proximoVencimiento: string; semaforo: Semaforo }[];
   ultimos: EnvioReciente[];
@@ -185,11 +206,21 @@ export async function previewPreventivos(): Promise<PreventivosPreview> {
   const proximos: PreventivosPreview["proximos"] = [];
   if (status.fechaCorte) {
     const cubiertos = diasCubiertos(hoy);
-    for (const c of await candidatosPreventivos(status.fechaCorte, hoy, umbralMora)) {
-      const decision = decidirPreventivo(c, { hoy, plantillasActivas: activas, umbrales, cubiertos });
+    const [candidatos, registrados] = await Promise.all([candidatosPreventivos(status.fechaCorte, hoy, umbralMora), preventivosRegistrados()]);
+    for (const c of candidatos) {
       const base = { creditId: c.creditId, clientId: c.clientId, nombre: c.nombre, noCredito: c.noCredito, proximoVencimiento: c.proximoVencimiento! };
-      if (decision) filas.push({ ...base, decision });
-      else proximos.push({ ...base, semaforo: semaforo(c.historial, umbrales) });
+      const etapa = etapaPara(hoy, c.proximoVencimiento, cubiertos.length ? cubiertos : [hoy]);
+      if (!etapa) {
+        proximos.push({ ...base, semaforo: semaforo(c.historial, umbrales) });
+        continue;
+      }
+      // Un renglón por número que recibe el recordatorio; cada uno se manda una vez.
+      for (const { contactId, candidato } of porDestinatario(c)) {
+        const viejo = dedupeKey(c.creditId, etapa, c.proximoVencimiento!);
+        const yaSeIntento = contactId ? registrados.has(dedupeKeyContacto(c.creditId, etapa, c.proximoVencimiento!, contactId)) || registrados.has(`${viejo}|${contactId}`) : c.yaSeIntento;
+        const decision = decidirPreventivo({ ...candidato, yaSeIntento }, { hoy, plantillasActivas: activas, umbrales, cubiertos });
+        if (decision) filas.push({ ...base, contactId, decision });
+      }
     }
   }
   return {
@@ -220,7 +251,8 @@ export const MAX_CONSULTAS_MONTO = 15;
 export async function obtenerMontosPreventivos(p: { actor: string; soloSiSeEnvia: boolean }): Promise<{ consultados: number; fallidos: number; pendientes: number; omitido: string | null }> {
   const preview = await previewPreventivos();
   if (p.soloSiSeEnvia && preview.bloqueos.length > 0) return { consultados: 0, fallidos: 0, pendientes: 0, omitido: preview.bloqueos.join("; ") };
-  const faltan = preview.filas.filter((f) => !f.decision.enviar && f.decision.motivo === MOTIVO_FALTA_MONTO);
+  // Una consulta por crédito aunque lo reciban varios números.
+  const faltan = [...new Map(preview.filas.filter((f) => !f.decision.enviar && f.decision.motivo === MOTIVO_FALTA_MONTO).map((f) => [f.creditId, f])).values()];
   let consultados = 0;
   let fallidos = 0;
   for (const f of faltan.slice(0, MAX_CONSULTAS_MONTO)) {
@@ -254,7 +286,7 @@ export async function runPreventivos(p: { disparadoPor: string; manual?: boolean
             telefono: f.decision.telefono,
             plantilla: porNombre.get(f.decision.plantilla)!,
             parametros: f.decision.parametros,
-            dedupeKey: dedupeKey(f.creditId, f.decision.etapa, f.proximoVencimiento),
+            dedupeKey: dedupeKeyContacto(f.creditId, f.decision.etapa, f.proximoVencimiento, f.decision.contactId),
             descripcion: `Recordatorio preventivo por WhatsApp, ${ETAPAS[f.decision.etapa].etiqueta} (crédito ${f.noCredito}, vence ${f.proximoVencimiento})`,
           }
         : null,

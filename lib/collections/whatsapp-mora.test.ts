@@ -15,6 +15,7 @@ import {
   textoCreditos,
   type MoraCandidate,
 } from "./whatsapp-mora.ts";
+import { porDestinatario } from "./contacts.ts";
 
 const HOY = "2026-10-14";
 const PLANTILLAS = ["finbra_mora_v1", "finbra_mora_v2", "finbra_mora_v3"];
@@ -143,4 +144,22 @@ test("mora: bloqueos antes de enviar", () => {
 test("mora: el día del vencimiento no sale recordatorio de mora", () => {
   const d = decidirMora(cliente({ diasAtraso: 0 }), { umbral: 1000, hoy: "2026-10-26", plantillasActivas: ["finbra_mora_v1"] });
   assert.deepEqual(d, { enviar: false, motivo: "Vence hoy: todavía no está en mora" });
+});
+
+test("varios números marcados: un recordatorio para cada uno, con el nombre de cada quien", () => {
+  const c = cliente({
+    contactos: [
+      tel({ id: "siac", esPrincipal: true, recibeRecordatorios: false }),
+      tel({ id: "dueno", telefonoWhatsapp: "525500000002", nombre: "Ana", esPrincipal: false, recibeRecordatorios: true }),
+      tel({ id: "pagos", telefonoWhatsapp: "525500000003", nombre: "Luis", esPrincipal: false, recibeRecordatorios: true }),
+    ],
+  });
+  const decisiones = porDestinatario(c).map(({ candidato }) => decidirMora(candidato, { umbral: 1000, hoy: HOY, plantillasActivas: PLANTILLAS }));
+  assert.deepEqual(
+    decisiones.map((d) => (d.enviar ? [d.contactId, d.telefono, d.parametros[0]] : d.motivo)),
+    [
+      ["dueno", "525500000002", "Ana"],
+      ["pagos", "525500000003", "Luis"],
+    ],
+  );
 });
