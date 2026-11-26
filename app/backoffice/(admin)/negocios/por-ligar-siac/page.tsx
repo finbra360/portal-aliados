@@ -5,16 +5,20 @@ import { codigoDeError } from "@/lib/collections/errors";
 import { getPorLigarSiac } from "@/lib/db/por-ligar-siac";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
+import { resumenHistoricos } from "@/lib/db/siac-historico";
 import LigarEnLote from "./LigarEnLote";
+import SubirEstadoClientes from "./SubirEstadoClientes";
 
 export default async function PorLigarSiacPage() {
   const session = await getAdminSession();
   if (!puede(session, "originacion.operar")) {
     return <EmptyState title="Sin acceso" description="Ligar negocios con SIAC es para quien opera los negocios." />;
   }
+  const subir = puede(session, "originacion.importar");
   let datos: Awaited<ReturnType<typeof getPorLigarSiac>>;
+  let historicos: Awaited<ReturnType<typeof resumenHistoricos>> = null;
   try {
-    datos = await getPorLigarSiac();
+    [datos, historicos] = await Promise.all([getPorLigarSiac(), subir ? resumenHistoricos() : Promise.resolve(null)]);
   } catch (e) {
     const c = codigoDeError("originación: por ligar con SIAC", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar los negocios. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -30,10 +34,20 @@ export default async function PorLigarSiacPage() {
         <p className="mt-1 text-sm text-finbra-gray">
           Negocios dispersados que todavía no tienen su crédito de SIAC, con los créditos que se le parecen por nombre, monto y fecha de ministración. Los
           «seguros» tienen una sugerencia clara y se pueden ligar todos de una vez; los demás, elige el crédito en cada uno. Al ligar, si SIAC le había
-          creado otra empresa al cliente, se junta con la del negocio. Si un negocio no tiene crédito en SIAC (por ejemplo, uno viejo de HubSpot), márcalo
-          y deja de pedirse.
+          creado otra empresa al cliente, se junta con la del negocio. Si un negocio de verdad no tiene crédito en SIAC, márcalo y deja de pedirse.
         </p>
       </div>
+      {subir && (
+        <Card>
+          {historicos ? (
+            <SubirEstadoClientes total={historicos.total} ultimaVez={historicos.ultimaVez} />
+          ) : (
+            <p className="text-sm text-amber-800">
+              Para ligar con créditos ya pagados falta preparar la base: corre lib/db/crm-schema.sql y después security.sql en Supabase.
+            </p>
+          )}
+        </Card>
+      )}
       <Card>
         <LigarEnLote renglones={datos.renglones} seguras={datos.seguras} />
       </Card>

@@ -425,6 +425,38 @@ ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS ligado_siac_por TEXT;
 ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS ligado_siac_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_negocios_credito_credit ON crm_negocios_credito(credit_id) WHERE credit_id IS NOT NULL;
 
+-- Créditos históricos de SIAC: los del reporte «Estado de Clientes» de SIAC
+-- Suite, también los pagados, que el listado de cobranza ya no trae. Solo para
+-- ligar negocios dispersados (Negocios → Por ligar con SIAC); la cobranza no
+-- los lee. Se suben desde el Excel; volver a subirlo actualiza, no duplica.
+-- credit_id: el mismo crédito en col_credits, si sigue en cobranza.
+CREATE TABLE IF NOT EXISTS crm_creditos_historicos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  ambiente TEXT NOT NULL CHECK (ambiente IN ('pruebas', 'produccion')),
+  no_credito TEXT NOT NULL,
+  numero_cliente TEXT NOT NULL,
+  nombre TEXT NOT NULL,
+  rfc TEXT,
+  personalidad TEXT,
+  tipo_contrato TEXT,
+  monto NUMERIC(14, 2),
+  fecha_otorgamiento DATE,
+  fecha_vencimiento DATE,
+  fecha_ultimo_pago DATE,
+  estado TEXT,
+  credit_id UUID REFERENCES col_credits(id) ON DELETE SET NULL,
+  importado_por TEXT NOT NULL,
+  importado_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (ambiente, no_credito)
+);
+CREATE INDEX IF NOT EXISTS idx_crm_creditos_historicos_cliente ON crm_creditos_historicos(ambiente, numero_cliente);
+
+-- El negocio dispersado ligado a un crédito histórico (ya no está en cobranza).
+-- Un negocio se liga a un crédito de cobranza (credit_id) o a uno histórico.
+ALTER TABLE crm_negocios_credito ADD COLUMN IF NOT EXISTS credito_historico_id UUID REFERENCES crm_creditos_historicos(id) ON DELETE SET NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_crm_negocios_credito_historico ON crm_negocios_credito(credito_historico_id) WHERE credito_historico_id IS NOT NULL;
+
 -- Una empresa por cada cliente de SIAC que todavía no tiene. Misma consulta que
 -- vincularEmpresasNuevas (lib/db/empresas.ts), para todos los ambientes.
 INSERT INTO crm_empresas (ambiente, nombre, razon_social, origen, creada_desde_cliente, ejecutivo_email, created_by)
@@ -455,3 +487,4 @@ ALTER TABLE crm_negocios_credito ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_negocio_etapas ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_negocio_documentos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE crm_negocio_decisiones ENABLE ROW LEVEL SECURITY;
+ALTER TABLE crm_creditos_historicos ENABLE ROW LEVEL SECURITY;

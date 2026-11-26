@@ -27,7 +27,7 @@ export interface RenglonPorLigar {
 export interface PorLigarSiac {
   renglones: RenglonPorLigar[];
   /** Los que se pueden ligar sin revisar uno por uno (ligasSeguras). */
-  seguras: { id: string; creditId: string }[];
+  seguras: { id: string; creditId: string; historico: boolean }[];
 }
 
 const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
@@ -57,7 +57,7 @@ export async function getPorLigarSiac(): Promise<PorLigarSiac | null> {
                (SELECT max(h.ocurrido_at) FROM crm_negocio_etapas h WHERE h.negocio_id = n.id AND h.a = 'dispersado'), n.etapa_desde
              ) AT TIME ZONE 'America/Mexico_City', 'YYYY-MM-DD') AS dispersado_el
       FROM crm_negocios_credito n JOIN crm_empresas e ON e.id = n.empresa_id
-      WHERE n.ambiente = ${amb} AND n.etapa = 'dispersado' AND n.credit_id IS NULL
+      WHERE n.ambiente = ${amb} AND n.etapa = 'dispersado' AND n.credit_id IS NULL AND to_jsonb(n)->>'credito_historico_id' IS NULL
     `,
     creditosLibres(),
     sinCredito(),
@@ -87,7 +87,10 @@ export async function getPorLigarSiac(): Promise<PorLigarSiac | null> {
 
 /** «No tiene crédito en SIAC»: el negocio deja de salir en Por ligar con SIAC, Inicio y el resumen. */
 export async function marcarSinCredito(p: { id: string; actor: string }): Promise<void> {
-  const [n] = await sql`SELECT etapa, to_jsonb(n)->>'credit_id' AS credit_id FROM crm_negocios_credito n WHERE id = ${p.id} AND ambiente = ${ambienteActual()}`;
+  const [n] = await sql`
+    SELECT etapa, COALESCE(to_jsonb(n)->>'credit_id', to_jsonb(n)->>'credito_historico_id') AS credit_id
+    FROM crm_negocios_credito n WHERE id = ${p.id} AND ambiente = ${ambienteActual()}
+  `;
   if (!n) throw new NegocioError("Ese negocio no existe.");
   if (n.etapa !== "dispersado") throw new NegocioError("Solo los negocios dispersados se ligan con SIAC.");
   if (n.credit_id) throw new NegocioError("Este negocio ya está ligado a un crédito de SIAC.");

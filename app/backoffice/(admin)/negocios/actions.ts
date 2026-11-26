@@ -11,6 +11,8 @@ import { validarAnalisis, validarDecision, validarDocumentos, validarLigaExpedie
 import { getProcesoNegocio, guardarAnalisis, guardarExpediente, guardarOferta, registrarDecision } from "@/lib/db/comite";
 import { ligarCreditoSiac } from "@/lib/db/siac-liga";
 import { marcarSinCredito } from "@/lib/db/por-ligar-siac";
+import { importarCreditosHistoricos, type ResultadoHistoricos } from "@/lib/db/siac-historico";
+import { validarCreditosHistoricos } from "@/lib/clientes/siac-historico";
 import { importarDeHubspot, MAX_BYTES, vistaPreviaHubspot, type ResultadoImportacion, type VistaPrevia } from "@/lib/db/hubspot-import";
 import { importarContactos, MAX_BYTES_CONTACTOS, vistaPreviaContactos, type ResultadoContactos, type VistaContactos } from "@/lib/db/hubspot-contactos";
 import { PersonaError } from "@/lib/db/personas";
@@ -273,12 +275,18 @@ export async function registrarDecisionAction(id: string, _prev: NegocioResult |
 export async function ligarCreditoSiacAction(id: string, _prev: NegocioResult | null, fd: FormData): Promise<NegocioResult> {
   const admin = requierePermiso(await getAdminSession(), "originacion.operar");
   const creditId = texto(fd, "creditId").trim();
+  const historicoId = texto(fd, "historicoId").trim();
   const noCredito = texto(fd, "noCredito").trim();
-  if (creditId && !/^[0-9a-f-]{36}$/i.test(creditId)) return { ok: false, error: "Ese crédito no es válido. Recarga la página." };
-  if (!creditId && !noCredito) return { ok: false, error: "Escribe el número de crédito de SIAC." };
+  const id36 = /^[0-9a-f-]{36}$/i;
+  if ((creditId && !id36.test(creditId)) || (historicoId && !id36.test(historicoId))) return { ok: false, error: "Ese crédito no es válido. Recarga la página." };
+  if (!creditId && !historicoId && !noCredito) return { ok: false, error: "Escribe el número de crédito de SIAC." };
   if (noCredito.length > 40) return { ok: false, error: "El número de crédito es demasiado largo." };
   try {
-    const r = await ligarCreditoSiac({ negocioId: id, creditId: creditId || undefined, noCredito: creditId ? undefined : noCredito, actor: admin.email });
+    const r = await ligarCreditoSiac({
+      negocioId: id,
+      ...(creditId ? { creditId } : historicoId ? { historicoId } : { noCredito }),
+      actor: admin.email,
+    });
     refrescar();
     return {
       ok: true,
@@ -299,20 +307,22 @@ const UUID = /^[0-9a-f-]{36}$/i;
  * renglón o «Ligar los seguros»). Cada uno se guarda por separado; si alguno
  * falla, los demás quedan.
  */
-export async function ligarSiacEnLoteAction(pares: { id: string; creditId: string }[]): Promise<NegocioResult & { ligados?: string[] }> {
+export async function ligarSiacEnLoteAction(pares: { id: string; creditId: string; historico?: boolean }[]): Promise<NegocioResult & { ligados?: string[] }> {
   const admin = requierePermiso(await getAdminSession(), "originacion.operar");
   const validos =
     Array.isArray(pares) &&
     pares.length > 0 &&
     pares.length <= 500 &&
-    pares.every((p) => typeof p?.id === "string" && UUID.test(p.id) && typeof p.creditId === "string" && UUID.test(p.creditId));
+    pares.every(
+      (p) => typeof p?.id === "string" && UUID.test(p.id) && typeof p.creditId === "string" && UUID.test(p.creditId) && (p.historico === undefined || typeof p.historico === "boolean"),
+    );
   if (!validos) return { ok: false, error: "La selección no es válida." };
   const ligados: string[] = [];
   let juntadas = 0;
   const errores: string[] = [];
   for (const p of pares) {
     try {
-      const r = await ligarCreditoSiac({ negocioId: p.id, creditId: p.creditId, actor: admin.email });
+      const r = await ligarCreditoSiac({ negocioId: p.id, ...(p.historico ? { historicoId: p.creditId } : { creditId: p.creditId }), actor: admin.email });
       ligados.push(p.id);
       if (r.accion === "juntar") juntadas++;
     } catch (e) {
@@ -326,6 +336,22 @@ export async function ligarSiacEnLoteAction(pares: { id: string; creditId: strin
     return { ok: false, ligados, error: `${ligados.length > 0 ? `Se ligaron ${ligados.length};${juntas} ` : ""}${errores.length} no se pudieron: ${[...new Set(errores)].join(" ")}` };
   }
   return { ok: true, ligados, mensaje: `${ligados.length === 1 ? "Negocio ligado a su crédito." : `Se ligaron ${ligados.length} negocios a su crédito.`}${juntas}` };
+}
+
+/** Sube los créditos del Excel «Estado de Clientes» de SIAC (ya leído en el navegador). */
+export async function importarHistoricosAction(creditos: unknown): Promise<{ ok: true; r: ResultadoHistoricos } | { ok: false; error: string }> {
+  const admin = requierePermiso(await getAdminSession(), "originacion.importar");
+  const v = validarCreditosHistoricos(creditos);
+  if (!v.ok) return v;
+  try {
+    const r = await importarCreditosHistoricos({ creditos: v.creditos, actor: admin.email });
+    refrescar();
+    return { ok: true, r };
+  } catch (e) {
+    if (e instanceof NegocioError) return { ok: false, error: e.message };
+    const c = codigoDeError("originación: créditos históricos", e);
+    return { ok: false, error: `No pudimos guardar los créditos. Intenta de nuevo. (código ${c})` };
+  }
 }
 
 /** «No tiene crédito en SIAC»: el negocio sale de Por ligar con SIAC, de Inicio y del resumen. */
