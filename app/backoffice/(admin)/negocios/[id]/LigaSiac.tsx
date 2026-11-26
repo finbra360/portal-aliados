@@ -5,7 +5,8 @@
 // SIAC le creó otra empresa al cliente, se junta con la del negocio.
 
 import { useActionState } from "react";
-import type { Sugerencia } from "@/lib/clientes/siac-liga";
+import { llaveCredito, type Sugerencia } from "@/lib/clientes/siac-liga";
+import { etiquetaEstado } from "@/lib/clientes/siac-historico";
 import { formatMoney } from "@/lib/format";
 import { ligarCreditoSiacAction, type NegocioResult } from "../actions";
 
@@ -35,17 +36,20 @@ export function LigarSiac({ id, sugerencias }: { id: string; sugerencias: Sugere
       ) : (
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {sugerencias.map((s) => (
-            <li key={s.creditId} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
+            <li key={llaveCredito(s)} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
               <div className="min-w-0 flex-1">
                 <p>
                   <span className="font-semibold">{s.cliente}</span>
                   <span className="text-finbra-gray"> · crédito {s.noCredito}</span>
                   {s.monto !== null && <span className="tabular-nums"> · {formatMoney(s.monto)}</span>}
+                  {s.historico && s.estado && (
+                    <span className="ml-2 rounded-full bg-black/5 px-2 py-0.5 text-xs font-semibold text-finbra-gray">{etiquetaEstado(s.estado)}</span>
+                  )}
                 </p>
                 <p className="text-xs text-finbra-gray">{s.razones.join(" · ")}</p>
               </div>
               <form action={accion} onSubmit={confirmar}>
-                <input type="hidden" name="creditId" value={s.creditId} />
+                <input type="hidden" name={s.historico ? "historicoId" : "creditId"} value={s.creditId} />
                 <button type="submit" disabled={guardando} className={boton}>{guardando ? "Ligando…" : "Es este"}</button>
               </form>
             </li>

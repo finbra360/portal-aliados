@@ -9,6 +9,8 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { formatFecha, formatMoney } from "@/lib/format";
 import type { RenglonPorLigar } from "@/lib/db/por-ligar-siac";
+import { llaveCredito, type Sugerencia } from "@/lib/clientes/siac-liga";
+import { etiquetaEstado } from "@/lib/clientes/siac-historico";
 import { ligarCreditoSiacAction, ligarSiacEnLoteAction, sinCreditoSiacAction } from "../actions";
 
 const BASE = "/backoffice/negocios";
@@ -16,15 +18,17 @@ const boton = "rounded-lg bg-finbra-purple px-3 py-1.5 text-sm font-semibold tex
 const secundario = "rounded-lg border border-black/10 px-3 py-1.5 text-sm hover:bg-black/5 disabled:opacity-50";
 const AVISO = "¿Ligar este negocio con el crédito? Si SIAC le creó otra empresa al cliente, se junta con la del negocio y no se puede deshacer.";
 
+type Segura = { id: string; creditId: string; historico: boolean };
+
 function Fila({ r, segura, onListo }: { r: RenglonPorLigar; segura: string | null; onListo: (texto: string) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pendiente, start] = useTransition();
-  const ligar = (creditId: string, noCredito: string) => {
+  const ligar = (s: Sugerencia) => {
     if (!window.confirm(AVISO)) return;
     start(async () => {
       setError(null);
-      const x = await ligarSiacEnLoteAction([{ id: r.id, creditId }]);
-      if (x.ok) onListo(`${r.empresa}: ligado al crédito ${noCredito}.`);
+      const x = await ligarSiacEnLoteAction([{ id: r.id, creditId: s.creditId, historico: !!s.historico }]);
+      if (x.ok) onListo(`${r.empresa}: ligado al crédito ${s.noCredito}.`);
       else setError(x.error);
     });
   };
@@ -62,19 +66,22 @@ function Fila({ r, segura, onListo }: { r: RenglonPorLigar; segura: string | nul
       {r.sugerencias.length > 0 ? (
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {r.sugerencias.slice(0, 3).map((s) => (
-            <li key={s.creditId} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
+            <li key={llaveCredito(s)} className="flex flex-wrap items-center justify-between gap-3 px-3 py-2 text-sm">
               <div className="min-w-0 flex-1">
                 <p>
                   <span className="font-semibold">{s.cliente}</span>
                   <span className="text-finbra-gray"> · crédito {s.noCredito}</span>
                   {s.monto !== null && <span className="tabular-nums"> · {formatMoney(s.monto)}</span>}
-                  {segura === s.creditId && (
+                  {s.historico && s.estado && (
+                    <span className="ml-2 rounded-full bg-black/5 px-2 py-0.5 text-xs font-semibold text-finbra-gray">{etiquetaEstado(s.estado)}</span>
+                  )}
+                  {segura === llaveCredito(s) && (
                     <span className="ml-2 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-800">Seguro</span>
                   )}
                 </p>
                 <p className="text-xs text-finbra-gray">{s.razones.join(" · ")}</p>
               </div>
-              <button type="button" onClick={() => ligar(s.creditId, s.noCredito)} disabled={pendiente} className={boton}>
+              <button type="button" onClick={() => ligar(s)} disabled={pendiente} className={boton}>
                 {pendiente ? "Guardando…" : "Es este"}
               </button>
             </li>
@@ -105,15 +112,15 @@ function Fila({ r, segura, onListo }: { r: RenglonPorLigar; segura: string | nul
   );
 }
 
-export default function LigarEnLote({ renglones, seguras }: { renglones: RenglonPorLigar[]; seguras: { id: string; creditId: string }[] }) {
+export default function LigarEnLote({ renglones, seguras }: { renglones: RenglonPorLigar[]; seguras: Segura[] }) {
   const [hechos, setHechos] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendiente, start] = useTransition();
 
   const visibles = renglones.filter((r) => !hechos.has(r.id));
-  const seguraDe = new Map(seguras.filter((s) => !hechos.has(s.id)).map((s) => [s.id, s.creditId]));
-  const porLigar = [...seguraDe.entries()].map(([id, creditId]) => ({ id, creditId }));
+  const porLigar = seguras.filter((s) => !hechos.has(s.id));
+  const seguraDe = new Map(porLigar.map((s) => [s.id, llaveCredito(s)]));
   // Seguros primero, luego los demás con sugerencia; los que no tienen, al final y plegados.
   const conSugerencia = [...visibles.filter((r) => seguraDe.has(r.id)), ...visibles.filter((r) => !seguraDe.has(r.id) && r.sugerencias.length > 0)];
   const sinSugerencia = visibles.filter((r) => r.sugerencias.length === 0);

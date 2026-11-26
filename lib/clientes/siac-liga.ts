@@ -60,7 +60,14 @@ export interface CreditoSiac {
   empresaId: string | null;
   monto: number | null;
   fechaMinistracion: string | null;
+  /** Del Excel «Estado de Clientes» (crm_creditos_historicos), no del listado de cobranza: creditId es el id de esa tabla. */
+  historico?: boolean;
+  /** Estado en SIAC de un histórico (PAGADO, VIGENTE, VENCIDO). */
+  estado?: string | null;
 }
+
+/** Llave de un crédito entre las dos fuentes (cobranza e históricos). */
+export const llaveCredito = (c: { creditId: string; historico?: boolean }) => `${c.historico ? "h" : "c"}:${c.creditId}`;
 
 export interface Sugerencia extends CreditoSiac {
   puntos: number;
@@ -159,16 +166,16 @@ export const VENTAJA_SEGURA = 20;
  * sugerencia si tiene 80 puntos o más y le saca 20 a la segunda. Si el mismo
  * crédito sale como seguro para dos negocios, no es seguro para ninguno.
  */
-export function ligasSeguras(negocios: { id: string; sugerencias: Sugerencia[] }[]): { id: string; creditId: string }[] {
+export function ligasSeguras(negocios: { id: string; sugerencias: Sugerencia[] }[]): { id: string; creditId: string; historico: boolean }[] {
   const candidatas = negocios.flatMap((n) => {
     const [a, b] = n.sugerencias;
     if (!a || a.puntos < PUNTOS_SEGURA) return [];
     if (b && a.puntos - b.puntos < VENTAJA_SEGURA) return [];
-    return [{ id: n.id, creditId: a.creditId }];
+    return [{ id: n.id, creditId: a.creditId, historico: !!a.historico }];
   });
   const veces = new Map<string, number>();
-  for (const c of candidatas) veces.set(c.creditId, (veces.get(c.creditId) ?? 0) + 1);
-  return candidatas.filter((c) => veces.get(c.creditId) === 1);
+  for (const c of candidatas) veces.set(llaveCredito(c), (veces.get(llaveCredito(c)) ?? 0) + 1);
+  return candidatas.filter((c) => veces.get(llaveCredito(c)) === 1);
 }
 
 /**

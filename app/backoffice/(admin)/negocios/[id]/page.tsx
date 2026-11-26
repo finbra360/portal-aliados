@@ -20,6 +20,7 @@ import { BrokerDelNegocio, EditarNegocio, MoverEtapa, Solicitud } from "./Contro
 import { Analisis, DecisionComite, Expediente, Oferta } from "./ControlesProceso";
 import { getProcesoNegocio } from "@/lib/db/comite";
 import { getLigaSiac } from "@/lib/db/siac-liga";
+import { etiquetaEstado } from "@/lib/clientes/siac-historico";
 import { LigarSiac } from "./LigaSiac";
 import BrokerChip from "@/app/backoffice/(admin)/BrokerChip";
 import { DECISIONES, ESTADOS_DOCUMENTO, RESPUESTAS_OFERTA, RESULTADOS_BURO, documentosPendientes } from "@/lib/clientes/comite";
@@ -154,9 +155,21 @@ export default async function NegocioPage({ params }: { params: Promise<{ id: st
               {liga.ligado ? (
                 <dl className="grid gap-2 text-sm sm:grid-cols-2">
                   <div><dt className="text-finbra-gray">Cliente de SIAC</dt><dd>{liga.ligado.cliente} <span className="font-mono text-xs text-finbra-gray">({liga.ligado.numeroCliente})</span></dd></div>
-                  <div><dt className="text-finbra-gray">Crédito</dt><dd><Link href={`${ficha}?tab=creditos`} className="font-mono text-finbra-purple hover:underline">{liga.ligado.noCredito}</Link></dd></div>
+                  <div>
+                    <dt className="text-finbra-gray">Crédito</dt>
+                    <dd>
+                      {liga.ligado.historico ? (
+                        <>
+                          <span className="font-mono">{liga.ligado.noCredito}</span>
+                          {liga.ligado.estado && <span className="ml-2 rounded-full bg-black/5 px-2 py-0.5 text-xs font-semibold text-finbra-gray">{etiquetaEstado(liga.ligado.estado)}</span>}
+                        </>
+                      ) : (
+                        <Link href={`${ficha}?tab=creditos`} className="font-mono text-finbra-purple hover:underline">{liga.ligado.noCredito}</Link>
+                      )}
+                    </dd>
+                  </div>
                   <div><dt className="text-finbra-gray">Monto</dt><dd>{liga.ligado.monto !== null ? formatMoney(liga.ligado.monto) : "—"}</dd></div>
-                  <div><dt className="text-finbra-gray">Ministración</dt><dd>{liga.ligado.fechaMinistracion ? formatFecha(liga.ligado.fechaMinistracion) : "—"}</dd></div>
+                  <div><dt className="text-finbra-gray">{liga.ligado.historico ? "Otorgamiento" : "Ministración"}</dt><dd>{liga.ligado.fechaMinistracion ? formatFecha(liga.ligado.fechaMinistracion) : "—"}</dd></div>
                 </dl>
               ) : puedeOperar ? (
                 <LigarSiac id={n.id} sugerencias={liga.sugerencias} />

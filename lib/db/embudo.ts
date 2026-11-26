@@ -47,11 +47,18 @@ export async function datosEmbudo(): Promise<{ negocios: NegocioEmbudo[]; cambio
       if (c.monto_credito !== null) montoCredito.set(c.id as string, Number(c.monto_credito));
     }
   }
+  // Los ligados a un crédito histórico (ya pagado): su monto del Estado de Clientes.
+  const historicoIds = negocios.map((n) => (n.j as Record<string, unknown>).credito_historico_id as string | undefined).filter((x): x is string => !!x);
+  if (historicoIds.length) {
+    for (const c of await sql`SELECT id, monto FROM crm_creditos_historicos WHERE id IN ${sql(historicoIds)}`) {
+      if (c.monto !== null) montoCredito.set(c.id as string, Number(c.monto));
+    }
+  }
   const nombreBroker = new Map(brokers.map((b) => [b.id as string, b.nombre as string]));
   return {
     negocios: negocios.map((n) => {
       const j = n.j as Record<string, unknown>;
-      const creditId = (j.credit_id as string) ?? null;
+      const creditId = (j.credit_id as string) ?? (j.credito_historico_id as string) ?? null;
       return {
         id: n.id as string,
         empresa: n.empresa as string,

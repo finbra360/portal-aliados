@@ -77,8 +77,8 @@ test("ligas seguras: 80 puntos, 20 de ventaja y un crédito para un solo negocio
       { id: "n7", sugerencias: [s("g", 80)] },
     ]),
     [
-      { id: "n1", creditId: "a" },
-      { id: "n7", creditId: "g" },
+      { id: "n1", creditId: "a", historico: false },
+      { id: "n7", creditId: "g", historico: false },
     ],
   );
 });
