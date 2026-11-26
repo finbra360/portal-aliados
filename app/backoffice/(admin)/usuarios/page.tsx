@@ -2,7 +2,9 @@ import { listAdminUsers } from "@/lib/db/admin-users";
 import { getAdminSession } from "@/lib/get-admin-session";
 import Card from "@/components/ui/Card";
 import Badge from "@/components/ui/Badge";
-import { createAdminUserAction, toggleAdminUserActiveAction } from "./actions";
+import { ROLES, etiquetaRol } from "@/lib/roles";
+import { createAdminUserAction } from "./actions";
+import { ActivarUsuario, CambiarRol } from "./ControlesUsuario";
 
 export default async function BackofficeUsuariosPage() {
   const session = await getAdminSession();
@@ -18,7 +20,12 @@ export default async function BackofficeUsuariosPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold">Usuarios internos</h1>
+      <div>
+        <h1 className="text-2xl font-bold">Usuarios internos</h1>
+        {isSuperAdmin && (
+          <p className="mt-1 text-sm text-finbra-gray">Cambia el rol de cualquier usuario desde su renglón; aplica de inmediato y queda en el Audit Log.</p>
+        )}
+      </div>
 
       {isSuperAdmin && (
         <Card>
@@ -27,9 +34,9 @@ export default async function BackofficeUsuariosPage() {
             <input name="nombre" required placeholder="Nombre" className="rounded-lg border border-black/10 px-3 py-2 text-sm" />
             <input name="email" type="email" required placeholder="email@finbra.com" className="rounded-lg border border-black/10 px-3 py-2 text-sm" />
             <select name="role" aria-label="Rol" className="rounded-lg border border-black/10 px-3 py-2 text-sm">
-              <option value="comercial">Comercial</option>
-              <option value="finanzas">Finanzas</option>
-              <option value="super_admin">Super Admin</option>
+              {ROLES.map((r) => (
+                <option key={r.value} value={r.value}>{r.label}</option>
+              ))}
             </select>
             <button type="submit" className="rounded-lg bg-finbra-purple px-4 py-2 text-sm font-bold text-white">
               Dar de alta
@@ -58,18 +65,18 @@ export default async function BackofficeUsuariosPage() {
                   <td className="px-6 py-4">{u.nombre}</td>
                   <td className="px-6 py-4 text-finbra-gray">{u.email}</td>
                   <td className="px-6 py-4">
-                    <Badge>{u.role}</Badge>
+                    {isSuperAdmin ? (
+                      <CambiarRol email={u.email} nombre={u.nombre} role={u.role} esYo={u.email === session?.email} />
+                    ) : (
+                      <Badge>{etiquetaRol(u.role)}</Badge>
+                    )}
                   </td>
                   <td className="px-6 py-4">
                     <Badge variant={u.activo ? "success" : "warning"}>{u.activo ? "activo" : "inactivo"}</Badge>
                   </td>
                   {isSuperAdmin && (
                     <td className="px-6 py-4 text-right">
-                      <form action={toggleAdminUserActiveAction.bind(null, u.email, !u.activo)}>
-                        <button type="submit" className="text-sm font-semibold text-finbra-purple hover:underline">
-                          {u.activo ? "Desactivar" : "Reactivar"}
-                        </button>
-                      </form>
+                      <ActivarUsuario email={u.email} nombre={u.nombre} activo={u.activo} />
                     </td>
                   )}
                 </tr>
