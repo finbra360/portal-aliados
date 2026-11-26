@@ -5,6 +5,7 @@ import { codigoDeError } from "@/lib/collections/errors";
 import { fechaMexico } from "@/lib/collections/rules";
 import { formatFecha, formatMoney } from "@/lib/format";
 import { getNegocios, hayNegocios, type Negocio } from "@/lib/db/negocios";
+import { dispersadosSinLigar } from "@/lib/db/siac-liga";
 import { CIERRES, ETAPAS_ABIERTAS, ETAPAS_NEGOCIO, ORIGENES_NEGOCIO, PRODUCTOS, diasEnEtapa, totalesPorEtapa, type EtapaNegocio } from "@/lib/clientes/negocios";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
@@ -42,12 +43,13 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
   const hoy = fechaMexico();
 
   let negocios: Negocio[];
+  let porLigar: number | null = null;
   try {
     if (!(await hayNegocios())) {
       return <EmptyState title="Falta preparar la base de datos" description="Corre lib/db/crm-schema.sql y después security.sql en Supabase para activar los negocios de crédito." />;
     }
     // Todos los cerrados, también los traídos de HubSpot: el tablero los muestra en sus columnas y la lista los filtra.
-    negocios = await getNegocios({ diasCerrados: 36_500 });
+    [negocios, porLigar] = await Promise.all([getNegocios({ diasCerrados: 36_500 }), puedeOperar ? dispersadosSinLigar(null) : Promise.resolve(null)]);
   } catch (e) {
     const c = codigoDeError("originación: negocios", e);
     return <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-red-700">No pudimos cargar los negocios. <span className="text-sm opacity-70">(código {c})</span></div>;
@@ -85,6 +87,14 @@ export default async function NegociosPage({ searchParams }: { searchParams: Pro
               className="rounded-lg border border-finbra-lilac bg-finbra-lilac/25 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-lilac/40"
             >
               Brokers sin asignar{sinBroker > 0 ? ` · ${sinBroker}` : ""}
+            </Link>
+          )}
+          {puedeOperar && porLigar !== null && (
+            <Link
+              href={`${BASE}/por-ligar-siac`}
+              className="rounded-lg border border-finbra-lilac bg-finbra-lilac/25 px-4 py-2 text-sm font-semibold text-finbra-purple-700 hover:bg-finbra-lilac/40"
+            >
+              Por ligar con SIAC{porLigar > 0 ? ` · ${porLigar}` : ""}
             </Link>
           )}
           <Link href={`${BASE}/metricas`} className="rounded-lg border border-finbra-purple px-4 py-2 text-sm font-semibold text-finbra-purple hover:bg-finbra-purple/5">

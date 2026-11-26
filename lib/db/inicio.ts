@@ -114,7 +114,7 @@ async function pendientesOriginacion(role: AdminRole): Promise<AreaPendientes | 
     p.push({
       cantidad: sinLigar,
       texto: sinLigar === 1 ? "negocio dispersado sin ligar a su crédito de SIAC" : "negocios dispersados sin ligar a su crédito de SIAC",
-      href: "/backoffice/negocios?vista=lista&etapa=dispersado",
+      href: "/backoffice/negocios/por-ligar-siac",
       tono: "normal",
     });
   }
