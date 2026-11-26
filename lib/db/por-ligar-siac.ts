@@ -9,12 +9,14 @@ import { sql } from "@/lib/db";
 import { logAudit } from "@/lib/db/audit";
 import { ambienteActual } from "@/lib/db/collections";
 import { NegocioError } from "@/lib/db/negocios";
-import { CLAVE_SIN_CREDITO, SELECT_CREDITO, mapCredito } from "@/lib/db/siac-liga";
-import { ligasSeguras, sugerirCreditos, VENTANA_DIAS, type Sugerencia } from "@/lib/clientes/siac-liga";
+import { CLAVE_SIN_CREDITO, creditosLibres, nombresDelNegocio } from "@/lib/db/siac-liga";
+import { ligasSeguras, nombreEnHubspot, sugerirCreditos, type Sugerencia } from "@/lib/clientes/siac-liga";
 
 export interface RenglonPorLigar {
   id: string;
   empresa: string;
+  /** Nombre del negocio en HubSpot, si se importó y es distinto al de la empresa. */
+  nombreHubspot: string | null;
   /** Monto de referencia: el aprobado en comité, el de la oferta o el estimado. */
   monto: number | null;
   /** Cuándo pasó a Dispersado (YYYY-MM-DD, hora de México). */
@@ -29,7 +31,6 @@ export interface PorLigarSiac {
 }
 
 const numero = (v: unknown) => (v === null || v === undefined ? null : Number(v));
-const MS_DIA = 86_400_000;
 
 async function sinCredito(): Promise<Set<string>> {
   const [r] = await sql`SELECT value FROM crm_settings WHERE key = ${CLAVE_SIN_CREDITO}`;
@@ -48,7 +49,7 @@ export async function getPorLigarSiac(): Promise<PorLigarSiac | null> {
   const hayDecisiones = (await sql`SELECT to_regclass('public.crm_negocio_decisiones') IS NOT NULL AS hay`)[0].hay as boolean;
   const [negocios, creditos, fuera] = await Promise.all([
     sql`
-      SELECT n.id, n.empresa_id, e.nombre AS empresa, e.razon_social, n.monto_estimado, to_jsonb(n)->>'oferta_monto' AS oferta_monto,
+      SELECT n.id, n.empresa_id, e.nombre AS empresa, e.razon_social, n.notas, n.monto_estimado, to_jsonb(n)->>'oferta_monto' AS oferta_monto,
              ${hayDecisiones
                ? sql`(SELECT d.monto FROM crm_negocio_decisiones d WHERE d.negocio_id = n.id AND d.decision = 'aprobado' ORDER BY d.decidido_at DESC, d.id DESC LIMIT 1)`
                : sql`NULL::numeric`} AS aprobado,
@@ -58,31 +59,25 @@ export async function getPorLigarSiac(): Promise<PorLigarSiac | null> {
       FROM crm_negocios_credito n JOIN crm_empresas e ON e.id = n.empresa_id
       WHERE n.ambiente = ${amb} AND n.etapa = 'dispersado' AND n.credit_id IS NULL
     `,
-    sql`
-      ${SELECT_CREDITO()}
-      WHERE cr.ambiente = ${amb} AND NOT EXISTS (SELECT 1 FROM crm_negocios_credito x WHERE x.credit_id = cr.id)
-    `,
+    creditosLibres(),
     sinCredito(),
   ]);
-  const todos = creditos.map(mapCredito);
   const renglones: RenglonPorLigar[] = negocios
     .filter((n) => !fuera.has(n.id as string))
     .map((n) => {
       const empresaId = n.empresa_id as string;
       const dispersadoEl = n.dispersado_el as string;
       const monto = numero(n.aprobado) ?? numero(n.oferta_monto) ?? numero(n.monto_estimado);
-      // Igual que la ficha: los de la misma empresa o los ministrados en la ventana.
-      const base = Date.parse(dispersadoEl);
-      const cerca = todos.filter(
-        (c) => c.empresaId === empresaId || (c.fechaMinistracion !== null && Math.abs(Date.parse(c.fechaMinistracion) - base) <= VENTANA_DIAS * MS_DIA),
-      );
-      const nombres = [n.empresa as string, ...(n.razon_social ? [n.razon_social as string] : [])];
+      const nombres = nombresDelNegocio(n.empresa as string, n.razon_social as string | null, n.notas as string | null);
+      const hubspot = nombreEnHubspot(n.notas as string | null);
       return {
         id: n.id as string,
         empresa: n.empresa as string,
+        nombreHubspot: hubspot && hubspot !== n.empresa ? hubspot : null,
         monto,
         dispersadoEl,
-        sugerencias: sugerirCreditos({ empresaId, nombres, monto, dispersadoEl }, cerca),
+        // Igual que la ficha: sugerirCreditos decide por fecha y, lejos de ella, por nombre.
+        sugerencias: sugerirCreditos({ empresaId, nombres, monto, dispersadoEl }, creditos),
       };
     })
     // Los más recientes primero.

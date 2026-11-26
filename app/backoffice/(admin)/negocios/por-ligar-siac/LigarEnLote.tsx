@@ -9,7 +9,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { formatFecha, formatMoney } from "@/lib/format";
 import type { RenglonPorLigar } from "@/lib/db/por-ligar-siac";
-import { ligarSiacEnLoteAction, sinCreditoSiacAction } from "../actions";
+import { ligarCreditoSiacAction, ligarSiacEnLoteAction, sinCreditoSiacAction } from "../actions";
 
 const BASE = "/backoffice/negocios";
 const boton = "rounded-lg bg-finbra-purple px-3 py-1.5 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50";
@@ -25,6 +25,19 @@ function Fila({ r, segura, onListo }: { r: RenglonPorLigar; segura: string | nul
       setError(null);
       const x = await ligarSiacEnLoteAction([{ id: r.id, creditId }]);
       if (x.ok) onListo(`${r.empresa}: ligado al crédito ${noCredito}.`);
+      else setError(x.error);
+    });
+  };
+  const [numero, setNumero] = useState("");
+  const ligarNumero = () => {
+    const no = numero.trim();
+    if (!no || !window.confirm(AVISO)) return;
+    start(async () => {
+      setError(null);
+      const fd = new FormData();
+      fd.set("noCredito", no);
+      const x = await ligarCreditoSiacAction(r.id, null, fd);
+      if (x.ok) onListo(`${r.empresa}: ${x.mensaje}`);
       else setError(x.error);
     });
   };
@@ -45,6 +58,7 @@ function Fila({ r, segura, onListo }: { r: RenglonPorLigar; segura: string | nul
           {r.monto !== null ? `${formatMoney(r.monto)} · ` : ""}dispersado el {formatFecha(r.dispersadoEl)}
         </span>
       </div>
+      {r.nombreHubspot && <p className="text-xs text-finbra-gray">En HubSpot: «{r.nombreHubspot}»</p>}
       {r.sugerencias.length > 0 ? (
         <ul className="divide-y divide-black/5 rounded-lg border border-black/5">
           {r.sugerencias.slice(0, 3).map((s) => (
@@ -67,18 +81,24 @@ function Fila({ r, segura, onListo }: { r: RenglonPorLigar; segura: string | nul
           ))}
         </ul>
       ) : (
-        <p className="text-sm text-finbra-gray">
-          Sin sugerencias: no hay en SIAC un crédito libre con nombre, monto o fecha parecidos. Si sabes cuál es, búscalo por su número en la{" "}
-          <Link href={`${BASE}/${r.id}`} className="text-finbra-purple hover:underline">ficha</Link>.
-        </p>
+        <p className="text-sm text-finbra-gray">Sin sugerencias: no hay en SIAC un crédito libre con nombre, monto o fecha parecidos. Si sabes cuál es, escribe su número.</p>
       )}
       <div className="flex flex-wrap items-center gap-2">
+        <label className="sr-only" htmlFor={`no-${r.id}`}>Número de crédito de SIAC de {r.empresa}</label>
+        <input
+          id={`no-${r.id}`}
+          value={numero}
+          onChange={(e) => setNumero(e.target.value)}
+          maxLength={40}
+          placeholder={r.sugerencias.length > 0 ? "¿Otro? Número de crédito" : "Número de crédito"}
+          className="w-48 rounded-lg border border-black/10 bg-white px-3 py-1.5 font-mono text-sm focus:border-finbra-purple focus:outline-none"
+        />
+        <button type="button" onClick={ligarNumero} disabled={pendiente || !numero.trim()} className={secundario}>
+          Ligar
+        </button>
         <button type="button" onClick={sinCredito} disabled={pendiente} className={secundario}>
           No tiene crédito en SIAC
         </button>
-        {r.sugerencias.length > 0 && (
-          <Link href={`${BASE}/${r.id}`} className="text-sm text-finbra-purple hover:underline">¿No es ninguno? Búscalo por número en la ficha</Link>
-        )}
         {error && <p className="w-full text-sm text-red-700" role="alert">{error}</p>}
       </div>
     </li>

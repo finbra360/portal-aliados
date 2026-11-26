@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { comoJuntar, ligasSeguras, palabrasDe, parecidoNombre, sugerirCreditos, type CreditoSiac } from "./siac-liga.ts";
+import { comoJuntar, ligasSeguras, nombreEnHubspot, palabrasDe, parecidoNombre, sugerirCreditos, type CreditoSiac } from "./siac-liga.ts";
 
 test("nombres: sin acentos, puntuación ni tipo de sociedad", () => {
   assert.deepEqual([...palabrasDe("Mudanzas Ficticias del Centro, S.A. de C.V.")], ["MUDANZAS", "FICTICIAS", "CENTRO"]);
@@ -40,8 +40,8 @@ test("sugerencias: nombre, monto y fecha; de más a menos probable", () => {
   assert.equal(r[1].razones[1], "monto 25 % distinto");
 });
 
-test("sugerencias: fuera de la ventana no salen, salvo los de la misma empresa", () => {
-  assert.equal(sugerirCreditos(NEGOCIO, [credito({ fechaMinistracion: "2026-06-01" })]).length, 0);
+test("sugerencias: fuera de la ventana no salen los de otro nombre, salvo los de la misma empresa", () => {
+  assert.equal(sugerirCreditos(NEGOCIO, [credito({ cliente: "TALLERES EJEMPLO NORTE", fechaMinistracion: "2026-06-01" })]).length, 0);
   const r = sugerirCreditos(NEGOCIO, [credito({ empresaId: "e1", cliente: "OTRO NOMBRE", fechaMinistracion: "2026-06-01", monto: 500_000 })]);
   assert.equal(r.length, 1);
   assert.equal(r[0].razones[0], "es de la misma empresa");
@@ -81,4 +81,20 @@ test("ligas seguras: 80 puntos, 20 de ventaja y un crédito para un solo negocio
       { id: "n7", creditId: "g" },
     ],
   );
+});
+
+test("sugerencias: lejos de la fecha solo con nombre muy parecido", () => {
+  const lejos = sugerirCreditos(NEGOCIO, [
+    credito({ creditId: "a", noCredito: "D1", fechaMinistracion: "2024-03-10" }),
+    credito({ creditId: "b", noCredito: "D2", cliente: "MUDANZAS EJEMPLO SUR", fechaMinistracion: "2024-03-10" }),
+  ]);
+  assert.deepEqual(lejos.map((s) => [s.creditId, s.puntos]), [["a", 80]]);
+  assert.deepEqual(lejos[0].razones, ["mismo nombre", "mismo monto", "ministrado el 10 mar 2024, lejos de la dispersión"]);
+});
+
+test("nombres: PFAE y crédito no cuentan; nombre del negocio en HubSpot", () => {
+  assert.equal(parecidoNombre("PFAE - Maria Ejemplo Ficticia", "MARIA EJEMPLO FICTICIA"), 1);
+  assert.equal(nombreEnHubspot("Importado de HubSpot (negocio 123: Crédito Talleres Norte). Etapa en HubSpot: Ganado."), "Crédito Talleres Norte");
+  assert.equal(nombreEnHubspot("Importado de HubSpot (negocio 123). Etapa en HubSpot: Ganado."), null);
+  assert.equal(nombreEnHubspot(null), null);
 });
