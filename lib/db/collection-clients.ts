@@ -371,6 +371,28 @@ export async function setContactTipo(p: { contactId: string; tipo: TipoContacto;
   await logAudit({ actorEmail: p.actor, action: "cobranza_contacto_tipo", entityType: "col_contact", entityId: p.contactId, metadata: { tipo: p.tipo, clientId } });
 }
 
+/**
+ * Borra un contacto que agregó el equipo. Los que vienen de SIAC no se borran:
+ * la sincronización los vuelve a crear al día siguiente; se marcan como
+ * inválidos o se corrigen en SIAC. Si recibía los recordatorios, dejan de
+ * llegarle (si no queda otro marcado, van al sugerido por SIAC).
+ */
+export async function borrarContacto(p: { contactId: string; actor: string }) {
+  let clientId = "";
+  let tipo = "";
+  await transaccion(async (tx) => {
+    const k = await loadContact(tx, p.contactId);
+    clientId = k.client_id;
+    tipo = tipoDe(mapContact(k));
+    if (k.origen === "siac") {
+      throw new ContactError("Este contacto viene de SIAC y volvería a aparecer mañana. Márcalo como inválido o corrígelo en SIAC.");
+    }
+    await tx`DELETE FROM col_contacts WHERE id = ${p.contactId}`;
+    await activity(tx, clientId, `Se borró el contacto ${describir(k)}`, p.actor, { contactId: p.contactId, tipo });
+  });
+  await logAudit({ actorEmail: p.actor, action: "cobranza_contacto_borrado", entityType: "col_contact", entityId: p.contactId, metadata: { clientId, tipo } });
+}
+
 const ESTATUS_LABEL = { activo: "activo", invalido: "inválido", baja: "dado de baja de WhatsApp" } as const;
 
 /** Marca un contacto como activo, inválido o dado de baja (el cliente pidió no recibir mensajes). */

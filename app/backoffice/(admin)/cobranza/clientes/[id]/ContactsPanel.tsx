@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
 import type { ProfileContact } from "@/lib/db/collection-clients";
 import { formatFechaHora, formatTelefono } from "@/lib/format";
-import { addContactAction, setEstatusAction, setRecibeAction, setTipoAction, volverAlSugeridoAction, type ActionResult } from "./actions";
+import { addContactAction, borrarContactoAction, setEstatusAction, setRecibeAction, setTipoAction, volverAlSugeridoAction, type ActionResult } from "./actions";
 import { enviarSinBorrar } from "../../enviarSinBorrar";
 
 const TIPOS = Object.entries(TIPOS_CONTACTO) as [TipoContacto, (typeof TIPOS_CONTACTO)[TipoContacto]][];
@@ -112,6 +112,21 @@ function ContactRow({
                 {esDestinatario ? "Dejarlo fijo para recordatorios" : "Mandarle recordatorios"}
               </button>
             )
+          )}
+          {c.origen === "manual" && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => {
+                const que = c.tipo === "telefono" ? formatTelefono(c.valor) : c.valor;
+                if (window.confirm(`¿Borrar el contacto ${que}${c.nombre ? ` (${c.nombre})` : ""}? No se puede deshacer; queda anotado en el historial.`)) {
+                  correr(() => borrarContactoAction(clientId, c.id));
+                }
+              }}
+              className="rounded-lg px-2 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Borrar
+            </button>
           )}
           {c.estatus === "activo" && !c.bajaWhatsappAt ? (
             <>
