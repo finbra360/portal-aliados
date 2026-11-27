@@ -248,7 +248,7 @@ export default function ContactsPanel({
                 <span className="text-finbra-gray">{destinatarios.length === 1 ? "Lo marcó el equipo." : "Los marcó el equipo; cada número recibe su mensaje."}</span>
               )
             ) : (
-              <span className="text-finbra-gray">Es el sugerido por SIAC (celular o, si falta, teléfono del cliente). Marca los que quieras abajo.</span>
+              <span className="text-finbra-gray">Es el sugerido por SIAC (celular o, si falta, teléfono del cliente). Marca abajo los demás números que deban recibirlos; este sigue recibiéndolos.</span>
             )}
           </p>
         ) : (

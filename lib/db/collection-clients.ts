@@ -8,6 +8,7 @@ import {
   TIPOS_CONTACTO,
   chooseRecipient,
   chooseRecipients,
+  marcarAgregando,
   motivoNoRecibe,
   tipoDe,
   validarContactoNuevo,
@@ -291,6 +292,24 @@ async function marcar(tx: Tx, p: { clientId: string; contactId: string; recibe: 
   }
 }
 
+/**
+ * Marca un contacto para recibir los recordatorios sin quitarle al que ya los
+ * recibía: si hasta ahora iban al sugerido por SIAC (nadie marcado), ese
+ * también queda marcado y se anota en el timeline.
+ */
+async function agregarDestinatario(tx: Tx, p: { clientId: string; contactId: string; actor: string }) {
+  let ids = [p.contactId];
+  if (await hayMarca(tx)) {
+    const suyos = await tx`SELECT * FROM col_contacts WHERE client_id = ${p.clientId}`;
+    ids = marcarAgregando(suyos.map(mapContact), p.contactId);
+  }
+  for (const id of ids) await marcar(tx, { clientId: p.clientId, contactId: id, recibe: true, actor: p.actor });
+  if (ids.length > 1) {
+    const [k] = await tx`SELECT * FROM col_contacts WHERE id = ${ids[1]}`;
+    await activity(tx, p.clientId, `${describir(k)} sigue recibiendo los recordatorios (era el sugerido por SIAC)`, p.actor, { contactId: ids[1], recibe: true });
+  }
+}
+
 /** Que un contacto del deudor reciba o deje de recibir los recordatorios por WhatsApp. */
 export async function setRecibeRecordatorios(p: { contactId: string; recibe: boolean; actor: string }) {
   let clientId = "";
@@ -301,7 +320,8 @@ export async function setRecibeRecordatorios(p: { contactId: string; recibe: boo
       const motivo = motivoNoRecibe(mapContact(k));
       if (motivo) throw new ContactError(`No puede recibir los recordatorios: ${motivo.toLowerCase()}`);
     }
-    await marcar(tx, { clientId, contactId: p.contactId, recibe: p.recibe, actor: p.actor });
+    if (p.recibe) await agregarDestinatario(tx, { clientId, contactId: p.contactId, actor: p.actor });
+    else await marcar(tx, { clientId, contactId: p.contactId, recibe: false, actor: p.actor });
     await activity(
       tx,
       clientId,
@@ -415,7 +435,7 @@ export async function addManualContact(p: {
     const quien = p.nombre?.trim() ? `${p.nombre.trim()} (${v.valor})` : v.valor;
     await activity(tx, p.clientId, `Se agregó el contacto ${quien} como "${tipo.label}"`, p.actor, { contactId, tipo: p.tipoContacto });
     if (p.usarParaRecordatorios) {
-      await marcar(tx, { clientId: p.clientId, contactId, recibe: true, actor: p.actor });
+      await agregarDestinatario(tx, { clientId: p.clientId, contactId, actor: p.actor });
       await activity(tx, p.clientId, `${quien} ahora recibe los recordatorios de cobranza`, p.actor, { contactoNuevo: contactId });
       await closePhoneAlertIfFixed(tx, p.clientId, p.actor);
     }
@@ -501,7 +521,7 @@ export async function importarContactos(texto: string, actor: string) {
     for (const f of nuevos.filter((n) => n.usarParaRecordatorios)) {
       const contactId = idDe.get(`${f.clientId}|${f.valor}`);
       if (!contactId || !f.clientId) continue;
-      await marcar(tx, { clientId: f.clientId, contactId, recibe: true, actor });
+      await agregarDestinatario(tx, { clientId: f.clientId, contactId, actor });
       await activity(tx, f.clientId, `${f.nombre ? `${f.nombre} (${f.valor})` : f.valor} ahora recibe los recordatorios de cobranza`, actor, { contactoNuevo: contactId, cargaMasiva: true });
       await closePhoneAlertIfFixed(tx, f.clientId, actor);
       conteo.recordatorios++;

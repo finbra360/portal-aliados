@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { chooseRecipient, chooseRecipients, motivoNoRecibe, porDestinatario, tipoDe, validarContactoNuevo, type ContactLike } from "./contacts.ts";
+import { chooseRecipient, chooseRecipients, marcarAgregando, motivoNoRecibe, porDestinatario, tipoDe, validarContactoNuevo, type ContactLike } from "./contacts.ts";
 
 const contacto = (over: Partial<ContactLike>): ContactLike => ({
   id: "x",
@@ -100,4 +100,15 @@ test("una copia del candidato por destinatario", () => {
   assert.deepEqual(copias.map((x) => [x.contactId, x.candidato.contactos.map((k) => k.id)]), [["a", ["a"]], ["b", ["b"]]]);
   assert.deepEqual(chooseRecipients(copias[1].candidato.contactos, copias[1].candidato.contactoCobranzaId).contactIds, ["b"]);
   assert.deepEqual(porDestinatario({ ...c, contactos: [] }), [{ contactId: null, candidato: { ...c, contactos: [] } }]);
+});
+
+test("marcar el primero agrega, no reemplaza al sugerido por SIAC que ya recibía", () => {
+  const siac = contacto({ id: "siac", esPrincipal: true, telefonoWhatsapp: "525500000001", recibeRecordatorios: false });
+  const otro = contacto({ id: "otro", telefonoWhatsapp: "525500000002", recibeRecordatorios: false });
+  assert.deepEqual(marcarAgregando([siac, otro], "otro"), ["otro", "siac"]);
+  assert.deepEqual(marcarAgregando([siac, otro], "siac"), ["siac"]);
+  // Si ya hay marcados, solo se agrega el nuevo.
+  const marcado = { ...otro, recibeRecordatorios: true };
+  const tercero = contacto({ id: "tercero", telefonoWhatsapp: "525500000003", recibeRecordatorios: false });
+  assert.deepEqual(marcarAgregando([siac, marcado, tercero], "tercero"), ["tercero"]);
 });
