@@ -57,3 +57,31 @@ CREATE TABLE IF NOT EXISTS broker_colocaciones (
 CREATE INDEX IF NOT EXISTS idx_broker_colocaciones_broker ON broker_colocaciones(broker_id, fecha);
 
 ALTER TABLE broker_colocaciones ENABLE ROW LEVEL SECURITY;
+
+-- WhatsApp de Aliados (+52 55 9990 0795): lo que escriben los aliados y lo que
+-- les contesta el equipo desde el backoffice (Brokers → Chat de aliados). Los
+-- mensajes de seguimiento que manda n8n no se guardan aquí. El webhook de Meta
+-- llega al backoffice junto con el de cobranza y se separa por número.
+CREATE TABLE IF NOT EXISTS ali_wa_messages (
+  id BIGSERIAL PRIMARY KEY,
+  -- 52 + 10 dígitos (o el original si no es de México).
+  telefono TEXT NOT NULL,
+  broker_id TEXT REFERENCES brokers(id) ON DELETE SET NULL,
+  -- Nombre de su perfil de WhatsApp.
+  perfil_nombre TEXT,
+  direccion TEXT NOT NULL CHECK (direccion IN ('entrante', 'saliente')),
+  tipo TEXT NOT NULL CHECK (tipo IN ('texto', 'otro')),
+  cuerpo TEXT,
+  -- Foto o documento: { id, mime, nombre } (se descarga de Meta al verlo).
+  media JSONB,
+  wamid TEXT UNIQUE,
+  responde_a TEXT,
+  estado TEXT NOT NULL CHECK (estado IN ('recibido', 'pendiente', 'enviado', 'entregado', 'leido', 'fallido')),
+  error JSONB,
+  enviado_por TEXT,
+  leido_equipo_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  estado_actualizado_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_ali_wa_telefono ON ali_wa_messages(telefono, created_at DESC);
+ALTER TABLE ali_wa_messages ENABLE ROW LEVEL SECURITY;

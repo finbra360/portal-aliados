@@ -243,3 +243,28 @@ export async function descargarMedia(config: WhatsAppConfig, mediaId: string): P
   if (!res.ok) throw new WhatsAppError(`Meta no entregó el archivo (HTTP ${res.status})`, null, { status: res.status });
   return { mime: info.mime_type ?? res.headers.get("content-type") ?? "application/octet-stream", datos: await res.arrayBuffer() };
 }
+
+/**
+ * Número de WhatsApp de Aliados (+52 55 9990 0795, cuenta "Finbra Aliados" en
+ * Meta). Su webhook llega a la misma app que cobranza. El id del número no es
+ * secreto; el token sí. Si no hay WHATSAPP_ALIADOS_TOKEN se intenta con el de
+ * cobranza (funciona solo si ese usuario del sistema también tiene la cuenta de Aliados).
+ */
+export const ALIADOS_PHONE_NUMBER_ID_DEFAULT = "1261038313756962";
+
+export function aliadosPhoneNumberId(): string {
+  return process.env.WHATSAPP_ALIADOS_PHONE_NUMBER_ID || ALIADOS_PHONE_NUMBER_ID_DEFAULT;
+}
+
+export function getWhatsAppAliadosConfig(): (WhatsAppConfig & { tokenPropio: boolean }) | null {
+  const propio = process.env.WHATSAPP_ALIADOS_TOKEN;
+  const token = propio || process.env.WHATSAPP_TOKEN;
+  if (!token) return null;
+  return {
+    token,
+    tokenPropio: Boolean(propio),
+    phoneNumberId: aliadosPhoneNumberId(),
+    apiVersion: process.env.WHATSAPP_API_VERSION || "v20.0",
+    baseUrl: (process.env.WHATSAPP_API_BASE_URL || "https://graph.facebook.com").replace(/\/$/, ""),
+  };
+}
