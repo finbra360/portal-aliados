@@ -416,6 +416,53 @@ export async function setContactEstatus(p: { contactId: string; estatus: "activo
 }
 
 /** Agrega un contacto que no está en SIAC. Opcionalmente lo vuelve el que recibe los recordatorios. */
+/**
+ * Corrige un contacto: nombre y notas en cualquiera (también los de SIAC, que
+ * no traen nombre); el teléfono o correo solo en los que agregó el equipo (los
+ * de SIAC se corrigen en SIAC). El nombre puesto a mano ya no lo cambia la
+ * sincronización; dejarlo vacío regresa al de SIAC.
+ */
+export async function editarContacto(p: { contactId: string; nombre: string; notas: string; valor: string | null; actor: string }) {
+  const nombre = p.nombre.replace(/\s+/g, " ").trim().slice(0, 120) || null;
+  const notas = p.notas.trim().slice(0, 500) || null;
+  let clientId = "";
+  await transaccion(async (tx) => {
+    const k = await loadContact(tx, p.contactId);
+    clientId = k.client_id;
+    let valor = k.valor_original as string;
+    let whatsapp: string | null = (k.telefono_whatsapp as string) ?? null;
+    if (p.valor !== null && p.valor.trim() !== valor) {
+      if (k.origen === "siac") throw new ContactError("El teléfono o correo de un contacto de SIAC se corrige en SIAC.");
+      const v = validarContactoNuevo(k.tipo, p.valor);
+      if (!v.ok) throw new ContactError(v.error);
+      const [dup] = await tx`
+        SELECT id FROM col_contacts WHERE client_id = ${clientId} AND id <> ${p.contactId}
+          AND (lower(valor_original) = lower(${v.valor}) OR (${v.telefonoWhatsapp}::text IS NOT NULL AND telefono_whatsapp = ${v.telefonoWhatsapp}))
+        LIMIT 1
+      `;
+      if (dup) throw new ContactError("Ese contacto ya está registrado para este cliente");
+      valor = v.valor;
+      whatsapp = v.telefonoWhatsapp;
+    }
+    const cambios: string[] = [];
+    if ((k.nombre_contacto ?? null) !== nombre) cambios.push(nombre ? `nombre «${nombre}»` : "sin nombre");
+    if ((k.notas ?? null) !== notas) cambios.push("notas");
+    if (valor !== k.valor_original) cambios.push(`de ${k.valor_original} a ${valor}`);
+    if (!cambios.length) return;
+    const editaNombre = "nombre_editado_por" in k;
+    await tx`
+      UPDATE col_contacts SET nombre_contacto = ${nombre}, notas = ${notas}, valor_original = ${valor}, telefono_whatsapp = ${whatsapp},
+             updated_by = ${p.actor}, updated_at = now()
+      WHERE id = ${p.contactId}
+    `;
+    if (editaNombre && (k.nombre_contacto ?? null) !== nombre) {
+      await tx`UPDATE col_contacts SET nombre_editado_por = ${nombre ? p.actor : null} WHERE id = ${p.contactId}`;
+    }
+    await activity(tx, clientId, `Se corrigió el contacto ${describir(k)}: ${cambios.join(", ")}`, p.actor, { contactId: p.contactId });
+  });
+  await logAudit({ actorEmail: p.actor, action: "cobranza_contacto_editado", entityType: "col_contact", entityId: p.contactId, metadata: { clientId } });
+}
+
 export async function addManualContact(p: {
   clientId: string;
   tipo: "telefono" | "email";

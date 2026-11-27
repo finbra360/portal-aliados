@@ -277,12 +277,15 @@ async function writeDailyPhoto(
         ON CONFLICT (client_id, campo_siac) WHERE origen = 'siac' DO UPDATE SET
           valor_original = EXCLUDED.valor_original,
           telefono_whatsapp = EXCLUDED.telefono_whatsapp,
-          nombre_contacto = EXCLUDED.nombre_contacto,
+          -- El nombre que puso el equipo en el perfil se respeta.
+          nombre_contacto = CASE WHEN to_jsonb(col_contacts)->>'nombre_editado_por' IS NOT NULL THEN col_contacts.nombre_contacto ELSE EXCLUDED.nombre_contacto END,
           es_principal = EXCLUDED.es_principal,
           estatus = CASE WHEN col_contacts.valor_original IS DISTINCT FROM EXCLUDED.valor_original THEN 'activo' ELSE col_contacts.estatus END,
           updated_at = now()
         WHERE (col_contacts.valor_original, col_contacts.nombre_contacto, col_contacts.es_principal)
-              IS DISTINCT FROM (EXCLUDED.valor_original, EXCLUDED.nombre_contacto, EXCLUDED.es_principal)
+              IS DISTINCT FROM (EXCLUDED.valor_original,
+                                CASE WHEN to_jsonb(col_contacts)->>'nombre_editado_por' IS NOT NULL THEN col_contacts.nombre_contacto ELSE EXCLUDED.nombre_contacto END,
+                                EXCLUDED.es_principal)
       `;
     }
   }
