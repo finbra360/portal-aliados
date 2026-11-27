@@ -12,6 +12,7 @@ import {
   setRecibeRecordatorios,
   volverAlSugerido,
   borrarContacto,
+  editarContacto,
 } from "@/lib/db/collection-clients";
 import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
 import {
@@ -61,6 +62,20 @@ export async function volverAlSugeridoAction(clientId: string): Promise<ActionRe
 export async function setTipoAction(clientId: string, contactId: string, tipo: string): Promise<ActionResult> {
   if (!esTipo(tipo)) return { ok: false, error: "Tipo de contacto no válido" };
   return run(clientId, (actor) => setContactTipo({ contactId, tipo, actor }));
+}
+
+/** Corrige nombre y notas (y el teléfono o correo de los agregados por el equipo). */
+export async function editarContactoAction(clientId: string, contactId: string, _prev: ActionResult | null, fd: FormData): Promise<ActionResult> {
+  const valor = fd.get("valor");
+  return run(clientId, (actor) =>
+    editarContacto({
+      contactId,
+      nombre: String(fd.get("nombre") ?? ""),
+      notas: String(fd.get("notas") ?? ""),
+      valor: typeof valor === "string" ? valor : null,
+      actor,
+    }),
+  );
 }
 
 /** Borra un contacto que agregó el equipo (los de SIAC no). */

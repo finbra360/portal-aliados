@@ -170,6 +170,10 @@ ALTER TABLE col_clients ADD COLUMN IF NOT EXISTS contacto_cobranza_at TIMESTAMPT
 -- (es_principal). Reemplaza a col_clients.contacto_cobranza_id, que ya no se
 -- escribe: el elegido de antes queda marcado aquí.
 ALTER TABLE col_contacts ADD COLUMN IF NOT EXISTS recibe_recordatorios BOOLEAN NOT NULL DEFAULT false;
+-- Agregada el 2026-11-27. Quién le puso o corrigió el nombre al contacto en el
+-- perfil. Si tiene valor, la sincronización de SIAC ya no cambia el nombre
+-- (SIAC no trae nombre de los teléfonos y correos del deudor).
+ALTER TABLE col_contacts ADD COLUMN IF NOT EXISTS nombre_editado_por TEXT;
 UPDATE col_contacts k SET recibe_recordatorios = true
 FROM col_clients c
 WHERE c.contacto_cobranza_id = k.id AND NOT k.recibe_recordatorios;

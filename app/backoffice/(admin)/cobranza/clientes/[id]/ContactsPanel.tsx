@@ -4,7 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
 import type { ProfileContact } from "@/lib/db/collection-clients";
 import { formatFechaHora, formatTelefono } from "@/lib/format";
-import { addContactAction, borrarContactoAction, setEstatusAction, setRecibeAction, setTipoAction, volverAlSugeridoAction, type ActionResult } from "./actions";
+import { addContactAction, borrarContactoAction, editarContactoAction, setEstatusAction, setRecibeAction, setTipoAction, volverAlSugeridoAction, type ActionResult } from "./actions";
 import { enviarSinBorrar } from "../../enviarSinBorrar";
 
 const TIPOS = Object.entries(TIPOS_CONTACTO) as [TipoContacto, (typeof TIPOS_CONTACTO)[TipoContacto]][];
@@ -26,6 +26,49 @@ function Estado({ c }: { c: ProfileContact }) {
   return null;
 }
 
+function EditarContacto({ clientId, c, onListo }: { clientId: string; c: ProfileContact; onListo: () => void }) {
+  const [state, action, pending] = useActionState(async (prev: ActionResult | null, fd: FormData) => {
+    const r = await editarContactoAction(clientId, c.id, prev, fd);
+    if (r.ok) onListo();
+    return r;
+  }, null);
+  const campo = "w-full rounded-lg border border-black/10 px-3 py-1.5";
+  return (
+    <form onSubmit={enviarSinBorrar(action)} className="mt-3 space-y-3 rounded-lg border border-black/10 bg-white p-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {c.origen === "manual" ? (
+          <label className="space-y-1 text-sm">
+            <span className="text-finbra-gray">{c.tipo === "telefono" ? "Teléfono" : "Correo"}</span>
+            <input name="valor" required defaultValue={c.valor} className={campo} />
+          </label>
+        ) : (
+          <p className="text-sm text-finbra-gray">
+            {c.tipo === "telefono" ? "El teléfono" : "El correo"} viene de SIAC: se corrige allá.
+          </p>
+        )}
+        <label className="space-y-1 text-sm">
+          <span className="text-finbra-gray">Nombre</span>
+          <input name="nombre" defaultValue={c.nombre ?? ""} maxLength={120} placeholder="Ej. Laura Pérez" className={campo} />
+        </label>
+        <label className="space-y-1 text-sm sm:col-span-2">
+          <span className="text-finbra-gray">Notas</span>
+          <input name="notas" defaultValue={c.notas ?? ""} maxLength={500} placeholder="Ej. Contesta en las mañanas" className={campo} />
+        </label>
+      </div>
+      {c.origen === "siac" && <p className="text-xs text-finbra-gray">El nombre que pongas se queda aunque SIAC se actualice; déjalo vacío para usar el de SIAC.</p>}
+      {state && !state.ok && <p className="text-sm text-red-700" role="alert">{state.error}</p>}
+      <div className="flex gap-2">
+        <button type="submit" disabled={pending} className="rounded-lg bg-finbra-purple px-4 py-1.5 text-sm font-semibold text-white hover:bg-finbra-purple/90 disabled:opacity-50">
+          {pending ? "Guardando…" : "Guardar"}
+        </button>
+        <button type="button" onClick={onListo} className="rounded-lg px-4 py-1.5 text-sm text-finbra-gray hover:bg-black/5">
+          Cancelar
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function ContactRow({
   clientId,
   c,
@@ -42,6 +85,7 @@ function ContactRow({
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [editando, setEditando] = useState(false);
   const correr = (fn: () => Promise<ActionResult>) =>
     start(async () => {
       setError(null);
@@ -113,6 +157,9 @@ function ContactRow({
               </button>
             )
           )}
+          <button type="button" disabled={pending} onClick={() => setEditando((x) => !x)} className="rounded-lg px-2 py-1.5 text-sm text-finbra-purple-700 hover:bg-finbra-purple/10 disabled:opacity-50">
+            Editar
+          </button>
           {c.origen === "manual" && (
             <button
               type="button"
@@ -149,6 +196,7 @@ function ContactRow({
       {!esDestinatario && c.motivoNoRecibe && c.relacion === "titular" && c.tipo === "telefono" && (
         <p className="mt-2 text-xs text-finbra-gray">No puede recibir recordatorios: {c.motivoNoRecibe.toLowerCase()}.</p>
       )}
+      {editando && <EditarContacto clientId={clientId} c={c} onListo={() => setEditando(false)} />}
       {error && <p className="mt-2 text-sm text-red-700" role="alert">{error}</p>}
     </li>
   );
