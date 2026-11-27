@@ -11,6 +11,7 @@ import {
   setContactTipo,
   setRecibeRecordatorios,
   volverAlSugerido,
+  borrarContacto,
 } from "@/lib/db/collection-clients";
 import { TIPOS_CONTACTO, type TipoContacto } from "@/lib/collections/contacts";
 import {
@@ -60,6 +61,11 @@ export async function volverAlSugeridoAction(clientId: string): Promise<ActionRe
 export async function setTipoAction(clientId: string, contactId: string, tipo: string): Promise<ActionResult> {
   if (!esTipo(tipo)) return { ok: false, error: "Tipo de contacto no válido" };
   return run(clientId, (actor) => setContactTipo({ contactId, tipo, actor }));
+}
+
+/** Borra un contacto que agregó el equipo (los de SIAC no). */
+export async function borrarContactoAction(clientId: string, contactId: string): Promise<ActionResult> {
+  return run(clientId, (actor) => borrarContacto({ contactId, actor }));
 }
 
 export async function setEstatusAction(clientId: string, contactId: string, estatus: string): Promise<ActionResult> {
