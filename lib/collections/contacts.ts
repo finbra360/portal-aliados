@@ -148,3 +148,14 @@ export function porDestinatario<T extends { contactos: ContactLike[]; contactoCo
     candidato: { ...c, contactos: c.contactos.filter((k) => k.id === id).map((k) => ({ ...k, recibeRecordatorios: true })), contactoCobranzaId: id },
   }));
 }
+
+/**
+ * Qué contactos quedan marcados al marcar `nuevoId`: ese y, si hasta ahora los
+ * recordatorios iban al sugerido por SIAC (nadie marcado que sirva), también
+ * ese, para que marcar uno agregue un número en vez de reemplazar al que ya recibía.
+ */
+export function marcarAgregando(contactos: ContactLike[], nuevoId: string): string[] {
+  const antes = chooseRecipients(contactos);
+  const sugerido = antes.origen === "siac" ? antes.contactIds[0] : undefined;
+  return sugerido && sugerido !== nuevoId ? [nuevoId, sugerido] : [nuevoId];
+}
